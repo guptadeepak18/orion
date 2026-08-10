@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+ENV/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases & local state
+*.db
+*.sqlite
+*.sqlite3
+
+# Build outputs & dist
+dist/
+build/
+.output/
+
+# Logs & temp
+*.log
+logs/
+tmp/
+scratch/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+!.env.example

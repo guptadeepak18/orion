@@ -1,0 +1,60 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+import app.models  # Register all models on Base.metadata
+from app.core.config import settings
+from app.core.database import engine, AsyncSessionLocal, Base
+from app.api.v1.router import api_router
+from app.services.user_service import seed_initial_data
+from app.schemas.common import ErrorEnvelope, ErrorDetails
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize DB tables for dev/testing if not created by Alembic
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Seed initial roles and admin
+    async with AsyncSessionLocal() as db:
+        await seed_initial_data(db)
+
+    yield
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,
+)
+
+# Set CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content=ErrorEnvelope(
+            error=ErrorDetails(
+                code="INTERNAL_SERVER_ERROR",
+                message=str(exc) if settings.ENVIRONMENT == "local" else "An unexpected error occurred",
+            )
+        ).model_dump(),
+    )
+
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+@app.get("/")
+async def root():
+    return {"message": "CRC One API is running. Access docs at /docs"}

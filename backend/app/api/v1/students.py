@@ -1,0 +1,121 @@
+from typing import List, Optional
+from uuid import UUID
+from fastapi import APIRouter, Depends, Query, status, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.permissions import require_permission, get_current_token_payload
+from app.schemas.common import ResponseEnvelope
+from app.schemas.student import StudentCreate, StudentUpdate, StudentResponse, StudentReportSummary
+from app.schemas.session import StudentAttendanceRecordResponse
+from app.services import student_service, session_service
+
+router = APIRouter(prefix="/students", tags=["Students"])
+
+
+@router.post(
+    "",
+    response_model=ResponseEnvelope[StudentResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def create_student(s_in: StudentCreate, db: AsyncSession = Depends(get_db)):
+    student = await student_service.create_student(db, s_in)
+    student = await student_service.get_student(db, student.id)
+    return ResponseEnvelope(data=await student_service.to_student_response_enriched(db, student))
+
+
+@router.get(
+    "",
+    response_model=ResponseEnvelope[List[StudentResponse]],
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def list_students(
+    program_id: Optional[UUID] = Query(None),
+    batch_id: Optional[UUID] = Query(None),
+    q: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    students = await student_service.list_students(db, program_id=program_id, batch_id=batch_id, query=q)
+    result = []
+    for s in students:
+        result.append(await student_service.to_student_response_enriched(db, s))
+    return ResponseEnvelope(data=result)
+
+
+@router.get(
+    "/me",
+    response_model=ResponseEnvelope[StudentReportSummary],
+)
+async def get_my_student_profile(
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload["sub"])
+    student = await student_service.get_student_by_user_id(db, user_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found for current user")
+
+    student_resp = await student_service.to_student_response_enriched(db, student)
+    summary = StudentReportSummary(
+        student=student_resp,
+        total_sessions_scheduled=student_resp.total_sessions_conducted,
+        total_sessions_completed=student_resp.total_sessions_attended,
+        attendance_percentage=student_resp.attendance_percentage,
+        cgpa=student.cgpa,
+        enrolled_subjects_count=6,
+    )
+    return ResponseEnvelope(data=summary)
+
+
+@router.get(
+    "/{student_id}",
+    response_model=ResponseEnvelope[StudentResponse],
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def get_student(student_id: UUID, db: AsyncSession = Depends(get_db)):
+    student = await student_service.get_student(db, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return ResponseEnvelope(data=await student_service.to_student_response_enriched(db, student))
+
+
+@router.get(
+    "/{student_id}/attendance",
+    response_model=ResponseEnvelope[List[StudentAttendanceRecordResponse]],
+    dependencies=[Depends(require_permission("academic", "view"))],
+    summary="Get a student's full class attendance history",
+)
+async def get_student_attendance_history(student_id: UUID, db: AsyncSession = Depends(get_db)):
+    try:
+        records = await session_service.get_student_attendance_history(db, student_id)
+        return ResponseEnvelope(data=records)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put(
+    "/{student_id}",
+    response_model=ResponseEnvelope[StudentResponse],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def update_student(
+    student_id: UUID, s_in: StudentUpdate, db: AsyncSession = Depends(get_db)
+):
+    student = await student_service.update_student(db, student_id, s_in)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    student = await student_service.get_student(db, student_id)
+    return ResponseEnvelope(data=await student_service.to_student_response_enriched(db, student))
+
+
+@router.delete(
+    "/{student_id}",
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def delete_student(student_id: UUID, db: AsyncSession = Depends(get_db)):
+    success = await student_service.delete_student(db, student_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return ResponseEnvelope(data={"deleted": True})
+
