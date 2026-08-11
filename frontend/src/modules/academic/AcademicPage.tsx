@@ -10,6 +10,11 @@ import {
   ListPlus,
   ChevronRight,
   ChevronDown,
+  Users,
+  UserPlus,
+  UserMinus,
+  X,
+  Search,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
@@ -49,6 +54,20 @@ interface Topic {
   planned_hours: number;
 }
 
+interface StudentBrief {
+  id: string;
+  full_name: string;
+  prn_number: string;
+  program_id?: string;
+  program_name?: string;
+  batch_id?: string;
+  batch_name?: string;
+  trimester: number;
+  email_official: string;
+  roll_no: string;
+  status: string;
+}
+
 export const AcademicPage: React.FC = () => {
   const { canManageCurriculum } = useRoleAccess();
   const [activeTab, setActiveTab] = useState<'programs' | 'batches' | 'subjects'>('programs');
@@ -74,6 +93,12 @@ export const AcademicPage: React.FC = () => {
 
   const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
 
+  // Batch Students State
+  const [selectedBatchForStudents, setSelectedBatchForStudents] = useState<Batch | null>(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignSearch, setAssignSearch] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+
   const queryClient = useQueryClient();
 
   // Queries
@@ -91,6 +116,27 @@ export const AcademicPage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return res.data.data as Batch[];
     },
+  });
+
+  // Batch Students Query (only when a batch is selected)
+  const { data: batchStudentsData, isLoading: batchStudentsLoading } = useQuery({
+    queryKey: ['batch-students', selectedBatchForStudents?.id],
+    queryFn: async () => {
+      if (!selectedBatchForStudents) return [];
+      const res = await api.get(`/academic/batches/${selectedBatchForStudents.id}/students`);
+      return res.data.data as StudentBrief[];
+    },
+    enabled: !!selectedBatchForStudents,
+  });
+
+  // All Students Query (for assign modal)
+  const { data: allStudentsData } = useQuery({
+    queryKey: ['students-all'],
+    queryFn: async () => {
+      const res = await api.get('/students');
+      return res.data.data as StudentBrief[];
+    },
+    enabled: showAssignModal,
   });
 
   const { data: subjectsData, isLoading: subLoading } = useQuery({
@@ -192,6 +238,48 @@ export const AcademicPage: React.FC = () => {
       alert(err?.response?.data?.error?.message || 'Failed to delete batch');
     },
   });
+
+  // Assign students mutation
+  const assignStudentsMutation = useMutation({
+    mutationFn: async ({ batchId, studentIds, assign }: { batchId: string; studentIds: string[]; assign: boolean }) => {
+      const res = await api.post(`/academic/batches/${batchId}/students/assign`, {
+        student_ids: studentIds,
+        assign,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-students', selectedBatchForStudents?.id] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['students-all'] });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      setSelectedStudentIds(new Set());
+      setShowAssignModal(false);
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message || 'Failed to update enrollment');
+    },
+  });
+
+  // Remove single student from batch
+  const removeStudentFromBatch = (studentId: string) => {
+    if (!selectedBatchForStudents) return;
+    if (!confirm('Remove this student from the batch?')) return;
+    assignStudentsMutation.mutate({
+      batchId: selectedBatchForStudents.id,
+      studentIds: [studentId],
+      assign: false,
+    });
+  };
+
+  const handleBulkAssign = () => {
+    if (!selectedBatchForStudents || selectedStudentIds.size === 0) return;
+    assignStudentsMutation.mutate({
+      batchId: selectedBatchForStudents.id,
+      studentIds: Array.from(selectedStudentIds),
+      assign: true,
+    });
+  };
 
   // Subject Mutations
   const createSubjectMutation = useMutation({
@@ -441,32 +529,45 @@ export const AcademicPage: React.FC = () => {
     { header: 'Batch Code', accessor: 'code', className: 'font-mono text-indigo-600 dark:text-indigo-400 font-semibold' },
     { header: 'Batch Name', accessor: 'name', className: 'font-medium text-slate-900 dark:text-slate-100' },
     { header: 'Division', accessor: (r) => r.division || 'Main', className: 'text-slate-500 dark:text-slate-400' },
-    { header: 'Students', accessor: 'student_count', className: 'text-slate-700 dark:text-slate-300 font-medium' },
+    { header: 'Capacity', accessor: 'student_count', className: 'text-slate-700 dark:text-slate-300 font-medium' },
     {
       header: 'Actions',
-      accessor: (r) =>
-        canManageCurriculum ? (
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => openEditBatch(r)}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Edit Batch"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                if (confirm(`Delete batch ${r.name}?`)) deleteBatchMutation.mutate(r.id);
-              }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Delete Batch"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <span className="text-xs text-slate-400">View only</span>
-        ),
+      accessor: (r) => (
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => {
+              setSelectedBatchForStudents(r);
+              setShowAssignModal(false);
+              setSelectedStudentIds(new Set());
+            }}
+            className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors text-xs font-semibold"
+            title="View & Manage Students"
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>Students</span>
+          </button>
+          {canManageCurriculum && (
+            <>
+              <button
+                onClick={() => openEditBatch(r)}
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Edit Batch"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(`Delete batch ${r.name}?`)) deleteBatchMutation.mutate(r.id);
+                }}
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Delete Batch"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -619,18 +720,107 @@ export const AcademicPage: React.FC = () => {
       )}
 
       {activeTab === 'batches' && (
-        <Card title="Active Batches & Divisions">
-          {batchLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading batches...</p>
-          ) : (
-            <DataTable
-              columns={batchColumns}
-              data={batchesData || []}
-              keyExtractor={(r) => r.id}
-              emptyMessage="No batches created yet. Click 'New Batch & Division' above."
-            />
+        <div className="space-y-6">
+          <Card title="Active Batches & Divisions">
+            {batchLoading ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading batches...</p>
+            ) : (
+              <DataTable
+                columns={batchColumns}
+                data={batchesData || []}
+                keyExtractor={(r) => r.id}
+                emptyMessage="No batches created yet. Click 'New Batch & Division' above."
+              />
+            )}
+          </Card>
+
+          {/* Batch Students Panel */}
+          {selectedBatchForStudents && (
+            <Card
+              title={
+                <div className="flex items-center space-x-2">
+                  <Users className="h-4 w-4 text-indigo-500" />
+                  <span>Students in <span className="text-indigo-600 dark:text-indigo-400 font-bold">{selectedBatchForStudents.name}</span></span>
+                </div>
+              }
+              action={
+                <div className="flex items-center space-x-2">
+                  {canManageCurriculum && (
+                    <button
+                      onClick={() => setShowAssignModal(true)}
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-sm hover:opacity-90 transition-opacity"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      <span>Add Students</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectedBatchForStudents(null);
+                      setShowAssignModal(false);
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Close panel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              }
+            >
+              {batchStudentsLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading students...</p>
+              ) : !batchStudentsData || batchStudentsData.length === 0 ? (
+                <div className="py-10 flex flex-col items-center space-y-3 text-center">
+                  <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10">
+                    <Users className="h-8 w-8 text-indigo-400" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No students enrolled in this batch yet.</p>
+                  {canManageCurriculum && (
+                    <button
+                      onClick={() => setShowAssignModal(true)}
+                      className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow transition-colors"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Add Students</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{batchStudentsData.length} student(s) enrolled</p>
+                  {batchStudentsData.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                          {s.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{s.full_name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            PRN: <span className="font-mono">{s.prn_number}</span> · Trimester {s.trimester}
+                            {s.program_name && <span> · {s.program_name}</span>}
+                          </p>
+                        </div>
+                      </div>
+                      {canManageCurriculum && (
+                        <button
+                          onClick={() => removeStudentFromBatch(s.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                          title="Remove from batch"
+                        >
+                          <UserMinus className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           )}
-        </Card>
+        </div>
       )}
 
       {activeTab === 'subjects' && (
@@ -693,6 +883,117 @@ export const AcademicPage: React.FC = () => {
               )}
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Assign Students Modal */}
+      {showAssignModal && selectedBatchForStudents && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-2xl max-h-[80vh] flex flex-col rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Add Students to Batch</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select students to enroll in <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selectedBatchForStudents.name}</span></p>
+              </div>
+              <button
+                onClick={() => { setShowAssignModal(false); setSelectedStudentIds(new Set()); setAssignSearch(''); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or PRN..."
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Student List */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-2">
+              {(() => {
+                const enrolledIds = new Set(batchStudentsData?.map((s) => s.id) || []);
+                const unassigned = (allStudentsData || []).filter(
+                  (s) => !enrolledIds.has(s.id) &&
+                    (assignSearch === '' ||
+                      s.full_name.toLowerCase().includes(assignSearch.toLowerCase()) ||
+                      s.prn_number.toLowerCase().includes(assignSearch.toLowerCase()))
+                );
+                if (unassigned.length === 0) {
+                  return (
+                    <div className="py-10 text-center">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {assignSearch ? 'No students match your search.' : 'All students are already enrolled in this batch.'}
+                      </p>
+                    </div>
+                  );
+                }
+                return unassigned.map((s) => (
+                  <label
+                    key={s.id}
+                    className={`flex items-center space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                      selectedStudentIds.has(s.id)
+                        ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 hover:border-indigo-300 dark:hover:border-indigo-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedStudentIds.has(s.id)}
+                      onChange={(e) => {
+                        const next = new Set(selectedStudentIds);
+                        if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                        setSelectedStudentIds(next);
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-700 dark:text-indigo-300 flex-shrink-0">
+                      {s.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{s.full_name}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        PRN: <span className="font-mono">{s.prn_number}</span>
+                        {s.program_name && <span> · {s.program_name}</span>}
+                        {s.batch_name && <span> · Currently in: {s.batch_name}</span>}
+                      </p>
+                    </div>
+                  </label>
+                ));
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {selectedStudentIds.size > 0 ? `${selectedStudentIds.size} student(s) selected` : 'Select students to enroll'}
+              </p>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => { setShowAssignModal(false); setSelectedStudentIds(new Set()); setAssignSearch(''); }}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkAssign}
+                  disabled={selectedStudentIds.size === 0 || assignStudentsMutation.isPending}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow disabled:opacity-50 hover:opacity-90 transition-opacity"
+                >
+                  {assignStudentsMutation.isPending ? 'Enrolling...' : `Enroll ${selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

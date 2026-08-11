@@ -1,8 +1,8 @@
 import React from 'react';
 import { clsx } from 'clsx';
 
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  title?: string;
+interface CardProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
+  title?: React.ReactNode;
   subtitle?: string;
   action?: React.ReactNode;
 }

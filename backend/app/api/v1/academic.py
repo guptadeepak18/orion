@@ -1,6 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -14,9 +15,15 @@ from app.schemas.academic import (
     SubjectCreate, SubjectUpdate, SubjectResponse,
     TopicCreate, TopicUpdate, TopicResponse,
 )
-from app.services import academic_service
+from app.schemas.student import StudentResponse
+from app.services import academic_service, student_service
 
 router = APIRouter(prefix="/academic", tags=["Academic"])
+
+
+class BatchStudentAssignRequest(BaseModel):
+    student_ids: List[UUID]
+    assign: bool = True  # True = assign to batch, False = remove from batch
 
 
 # Programs
@@ -258,3 +265,51 @@ async def delete_topic(topic_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Topic not found")
     return ResponseEnvelope(data={"deleted": True})
 
+
+# Batch Student Enrollment
+@router.get(
+    "/batches/{batch_id}/students",
+    response_model=ResponseEnvelope[List[StudentResponse]],
+    dependencies=[Depends(require_permission("academic", "view"))],
+    summary="List students enrolled in a batch",
+)
+async def list_batch_students(batch_id: UUID, db: AsyncSession = Depends(get_db)):
+    batch = await academic_service.get_batch(db, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    students = await student_service.list_students(db, batch_id=batch_id)
+    result = []
+    for s in students:
+        result.append(await student_service.to_student_response_enriched(db, s))
+    return ResponseEnvelope(data=result)
+
+
+@router.post(
+    "/batches/{batch_id}/students/assign",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+    summary="Assign or remove students from a batch",
+)
+async def assign_batch_students(
+    batch_id: UUID,
+    body: BatchStudentAssignRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    batch = await academic_service.get_batch(db, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    from app.models.student import Student
+    from sqlalchemy import select
+
+    updated = 0
+    for student_id in body.student_ids:
+        stmt = select(Student).where(Student.id == student_id, Student.is_deleted == False)
+        res = await db.execute(stmt)
+        student = res.scalar_one_or_none()
+        if student:
+            student.batch_id = batch_id if body.assign else None
+            updated += 1
+
+    await db.commit()
+    return ResponseEnvelope(data={"updated": updated, "action": "assigned" if body.assign else "removed"})
