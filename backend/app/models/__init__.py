@@ -1,6 +1,6 @@
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 from app.models.auth import User, Role, UserRole
-from app.models.academic import Program, AcademicYear, Semester, Batch, Subject, Topic
+from app.models.academic import Program, AcademicYear, Semester, Batch, Subject, Topic, Division, SubjectProgram, SubjectBatch
 from app.models.faculty import FacultyInternal, FacultyExternal, FacultyDocument
 from app.models.session import Timetable, TimetableRevision, Session, Engagement, StudentAttendance
 from app.models.finance import RemunerationRule, RemunerationCalculation, Invoice, Payment
@@ -9,6 +9,7 @@ from app.models.feedback import FeedbackForm, FeedbackResponse
 from app.models.system import Notification, AuditLog, AIAgentRun
 
 from app.models.student import Student
+from app.models.student_registration import StudentRegistration
 
 __all__ = [
     "Base",

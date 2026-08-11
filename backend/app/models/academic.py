@@ -21,6 +21,7 @@ class Program(Base, TimestampMixin):
 
     semesters: Mapped[List["Semester"]] = relationship("Semester", back_populates="program")
     batches: Mapped[List["Batch"]] = relationship("Batch", back_populates="program")
+    divisions: Mapped[List["Division"]] = relationship("Division", back_populates="program", cascade="all, delete-orphan")
 
 
 class AcademicYear(Base, TimestampMixin):
@@ -66,7 +67,7 @@ class Batch(Base, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     program_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("programs.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), nullable=False
     )
     academic_year_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("academic_years.id", ondelete="RESTRICT"), nullable=False
@@ -86,20 +87,89 @@ class Batch(Base, TimestampMixin, SoftDeleteMixin):
     subjects: Mapped[List["Subject"]] = relationship("Subject", back_populates="batch")
 
 
+class Division(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "divisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    program_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    student_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    program: Mapped["Program"] = relationship("Program", back_populates="divisions")
+    students: Mapped[List["Student"]] = relationship(
+        "Student", secondary="student_divisions", back_populates="divisions"
+    )
+
+
+class SubjectProgram(Base):
+    __tablename__ = "subject_programs"
+
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), primary_key=True
+    )
+    program_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class SubjectBatch(Base, TimestampMixin):
+    __tablename__ = "subject_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    term_type: Mapped[str] = mapped_column(String(50), default="trimester", nullable=False)
+    term_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    term_label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    subject: Mapped["Subject"] = relationship("Subject", back_populates="batch_allocations")
+    batch: Mapped["Batch"] = relationship("Batch")
+
+
 class Subject(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "subjects"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    batch_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("batches.id", ondelete="CASCADE"), nullable=False
-    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    trimester: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_non_credit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     credits: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
-    batch: Mapped["Batch"] = relationship("Batch", back_populates="subjects")
+    syllabus: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    session_plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hyperbuild_activities: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Legacy batch_id for fallback/backward compatibility
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("batches.id", ondelete="SET NULL"), nullable=True
+    )
+
+    batch: Mapped[Optional["Batch"]] = relationship("Batch")
+    programs: Mapped[List["Program"]] = relationship(
+        "Program", secondary="subject_programs", lazy="selectin"
+    )
+    batch_allocations: Mapped[List["SubjectBatch"]] = relationship(
+        "SubjectBatch", back_populates="subject", cascade="all, delete-orphan", lazy="selectin"
+    )
     topics: Mapped[List["Topic"]] = relationship("Topic", back_populates="subject")
 
 

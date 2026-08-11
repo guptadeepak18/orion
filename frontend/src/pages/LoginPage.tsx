@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Mail, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
@@ -107,7 +107,16 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-8 text-center border-t border-slate-200 dark:border-slate-800/80 pt-4">
+          <div className="mt-6 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              New student?{' '}
+              <Link to="/register" className="text-cyan-600 dark:text-cyan-400 font-semibold hover:underline">
+                Register with @mile.education →
+              </Link>
+            </p>
+          </div>
+
+          <div className="mt-6 text-center border-t border-slate-200 dark:border-slate-800/80 pt-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Default Admin: <code className="text-cyan-700 dark:text-cyan-400 font-semibold">admin@lexiconmile.com</code> / <code className="text-cyan-700 dark:text-cyan-400 font-semibold">Admin@123456</code>
             </p>

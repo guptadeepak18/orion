@@ -14,19 +14,19 @@ export const Logo: React.FC<LogoProps> = ({
 }) => {
   return (
     <div className={clsx('w-full flex flex-col items-center select-none', className)}>
-      {/* Tight Full-Width Pure White Logo Container */}
-      <div className="relative w-full rounded-2xl overflow-hidden shadow-sm transition-all duration-300 hover:scale-[1.01] bg-white p-2 border border-slate-200/80 dark:border-slate-800">
-        {/* Light Mode Logo (Pure White Background & Tightly Cropped) */}
+      {/* Seamless High-Resolution Full-Width Logo Container */}
+      <div className="relative w-full flex items-center justify-center bg-transparent border-none shadow-none">
+        {/* Light Mode High-Res Logo */}
         <img
-          src="/logo-light.jpg"
-          alt="CRC One Logo"
-          className="w-full h-auto max-h-36 object-contain block dark:hidden bg-white rounded-xl"
+          src="/logo-light.png"
+          alt="Orion Logo"
+          className="w-full h-auto object-contain block dark:hidden transition-transform duration-300 hover:scale-[1.01]"
         />
-        {/* Dark Mode Logo */}
+        {/* Dark Mode High-Res Logo */}
         <img
-          src="/logo-dark.jpg"
-          alt="CRC One Logo"
-          className="w-full h-auto max-h-36 object-contain hidden dark:block rounded-xl"
+          src="/logo-dark.png"
+          alt="Orion Logo"
+          className="w-full h-auto object-contain hidden dark:block transition-transform duration-300 hover:scale-[1.01]"
         />
       </div>
 
@@ -34,7 +34,7 @@ export const Logo: React.FC<LogoProps> = ({
       {showText && (
         <div className="flex flex-col justify-center items-center mt-2">
           <span className="font-extrabold text-lg tracking-tight gradient-text">
-            CRC One
+            Orion
           </span>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
             Lexicon MILE

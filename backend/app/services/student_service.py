@@ -11,14 +11,12 @@ from app.schemas.student import StudentCreate, StudentUpdate, StudentResponse, S
 
 async def create_student(db: AsyncSession, s_in: StudentCreate) -> Student:
     data = s_in.model_dump()
-    
-    # Calculate full_name if not explicitly supplied
-    first_name = data.get("first_name", "").strip()
-    last_name = (data.get("last_name") or "").strip()
-    full_name = f"{first_name} {last_name}".strip() if (first_name or last_name) else (data.get("full_name") or "")
-    data["full_name"] = full_name
+    division_ids = data.pop("division_ids", None)
 
-    # Backwards compatibility sync
+    first = (data.get("first_name") or "").strip()
+    last = (data.get("last_name") or "").strip()
+    data["full_name"] = f"{first} {last}".strip() if first or last else "Student"
+
     if not data.get("email"):
         data["email"] = data.get("email_official", "")
     if not data.get("phone"):
@@ -32,13 +30,41 @@ async def create_student(db: AsyncSession, s_in: StudentCreate) -> Student:
     db.add(student)
     await db.commit()
     await db.refresh(student)
-    return student
+
+    if division_ids is not None and len(division_ids) > 0:
+        from app.models.student import StudentDivision
+        from app.models.academic import Division
+        from sqlalchemy import select, func
+
+        valid_stmt = select(Division.id).where(
+            Division.id.in_(division_ids),
+            Division.program_id == student.program_id,
+            Division.is_deleted == False
+        )
+        valid_div_ids = list((await db.execute(valid_stmt)).scalars().all())
+
+        for div_id in valid_div_ids:
+            db.add(StudentDivision(student_id=student.id, division_id=div_id))
+        await db.commit()
+
+        for div_id in valid_div_ids:
+            cnt = (await db.execute(select(func.count(StudentDivision.student_id)).where(StudentDivision.division_id == div_id))).scalar() or 0
+            d_obj = (await db.execute(select(Division).where(Division.id == div_id))).scalar_one_or_none()
+            if d_obj:
+                d_obj.student_count = cnt
+        await db.commit()
+
+    return await get_student(db, student.id) or student
 
 
 async def get_student(db: AsyncSession, student_id: UUID) -> Optional[Student]:
     stmt = (
         select(Student)
-        .options(selectinload(Student.program), selectinload(Student.batch))
+        .options(
+            selectinload(Student.program),
+            selectinload(Student.batch),
+            selectinload(Student.divisions),
+        )
         .where(Student.id == student_id, Student.is_deleted == False)
     )
     res = await db.execute(stmt)
@@ -48,7 +74,11 @@ async def get_student(db: AsyncSession, student_id: UUID) -> Optional[Student]:
 async def get_student_by_user_id(db: AsyncSession, user_id: UUID) -> Optional[Student]:
     stmt = (
         select(Student)
-        .options(selectinload(Student.program), selectinload(Student.batch))
+        .options(
+            selectinload(Student.program),
+            selectinload(Student.batch),
+            selectinload(Student.divisions),
+        )
         .where(Student.user_id == user_id, Student.is_deleted == False)
     )
     res = await db.execute(stmt)
@@ -63,7 +93,11 @@ async def list_students(
 ) -> List[Student]:
     stmt = (
         select(Student)
-        .options(selectinload(Student.program), selectinload(Student.batch))
+        .options(
+            selectinload(Student.program),
+            selectinload(Student.batch),
+            selectinload(Student.divisions),
+        )
         .where(Student.is_deleted == False)
     )
     if program_id:
@@ -99,6 +133,8 @@ async def update_student(db: AsyncSession, student_id: UUID, s_in: StudentUpdate
         return None
 
     update_dict = s_in.model_dump(exclude_unset=True)
+    division_ids = update_dict.pop("division_ids", None)
+
     for field, value in update_dict.items():
         setattr(student, field, value)
 
@@ -107,7 +143,24 @@ async def update_student(db: AsyncSession, student_id: UUID, s_in: StudentUpdate
     last = (student.last_name or "").strip()
     if first or last:
         student.full_name = f"{first} {last}".strip()
-    
+
+    if division_ids is not None:
+        from app.models.student import StudentDivision
+        from app.models.academic import Division
+        from sqlalchemy import delete, select, func
+
+        await db.execute(delete(StudentDivision).where(StudentDivision.student_id == student.id))
+
+        if len(division_ids) > 0:
+            valid_stmt = select(Division.id).where(
+                Division.id.in_(division_ids),
+                Division.program_id == student.program_id,
+                Division.is_deleted == False
+            )
+            valid_div_ids = list((await db.execute(valid_stmt)).scalars().all())
+            for div_id in valid_div_ids:
+                db.add(StudentDivision(student_id=student.id, division_id=div_id))
+
     if "email_official" in update_dict and update_dict["email_official"]:
         student.email = update_dict["email_official"]
     if "mobile_number" in update_dict and update_dict["mobile_number"]:
@@ -136,15 +189,14 @@ def to_student_response(student: Student) -> StudentResponse:
         resp.program_name = student.program.name
     if student.batch:
         resp.batch_name = student.batch.name
+    if hasattr(student, "divisions") and student.divisions:
+        resp.division_ids = [d.id for d in student.divisions if not d.is_deleted]
+        resp.division_names = [d.name for d in student.divisions if not d.is_deleted]
     return resp
 
 
 async def to_student_response_enriched(db: AsyncSession, student: Student) -> StudentResponse:
-    resp = StudentResponse.model_validate(student)
-    if student.program:
-        resp.program_name = student.program.name
-    if student.batch:
-        resp.batch_name = student.batch.name
+    resp = to_student_response(student)
 
     if student.batch_id:
         from app.models.session import Session, StudentAttendance

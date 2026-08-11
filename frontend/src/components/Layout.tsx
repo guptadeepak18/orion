@@ -10,6 +10,7 @@ import {
   CheckSquare,
   BarChart3,
   Settings as SettingsIcon,
+  BookOpen,
   LogOut,
   UserCheck,
 } from 'lucide-react';
@@ -47,6 +48,12 @@ const navItems: NavItem[] = [
     path: '/academic',
     icon: GraduationCap,
     roles: ['crc_admin', 'crc_coordinator'],
+  },
+  {
+    label: 'Subjects',
+    path: '/subjects',
+    icon: BookOpen,
+    roles: ['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external', 'approver', 'reporting_readonly'],
   },
   {
     label: 'Student Directory',
@@ -122,6 +129,12 @@ const navItems: NavItem[] = [
     icon: SettingsIcon,
     roles: ['crc_admin'],
   },
+  {
+    label: 'My Profile',
+    path: '/profile',
+    icon: UserCheck,
+    roles: [],
+  },
 ];
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -140,7 +153,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   const filteredNav = navItems.filter((item) =>
-    item.roles.some((role) => userRoles.includes(role) || userRoles.includes('crc_admin'))
+    item.path === '/profile' || item.roles.some((role) => userRoles.includes(role) || userRoles.includes('crc_admin'))
   );
 
   return (
@@ -204,18 +217,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Top Header */}
-        <header className="h-16 glass-panel border-b border-slate-200 dark:border-slate-800/80 px-6 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center space-x-3">
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Environment:</span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30">
-              Local Dev (Phases 0–6 Operational)
-            </span>
-          </div>
-
+        <header className="h-16 glass-panel border-b border-slate-200 dark:border-slate-800/80 px-6 flex items-center justify-end sticky top-0 z-10">
           <div className="flex items-center space-x-4">
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:inline">
-              Single Source of Truth — Career Readiness Cell
-            </span>
             <ThemeSwitcher />
           </div>
         </header>

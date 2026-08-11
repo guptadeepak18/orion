@@ -1,6 +1,7 @@
+import re
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, Query, status, HTTPException, UploadFile, File, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +15,10 @@ from app.schemas.academic import (
     BatchCreate, BatchUpdate, BatchResponse,
     SubjectCreate, SubjectUpdate, SubjectResponse,
     TopicCreate, TopicUpdate, TopicResponse,
+    DivisionCreate, DivisionUpdate, DivisionResponse,
 )
 from app.schemas.student import StudentResponse
-from app.services import academic_service, student_service
+from app.services import academic_service, student_service, syllabus_parser_service, syllabus_export_service
 
 router = APIRouter(prefix="/academic", tags=["Academic"])
 
@@ -186,10 +188,118 @@ async def create_subject(sub_in: SubjectCreate, db: AsyncSession = Depends(get_d
     dependencies=[Depends(require_permission("academic", "view"))],
 )
 async def list_subjects(
-    batch_id: Optional[UUID] = Query(None), db: AsyncSession = Depends(get_db)
+    batch_id: Optional[UUID] = Query(None),
+    program_id: Optional[UUID] = Query(None),
+    trimester: Optional[int] = Query(None),
+    is_archived: Optional[bool] = Query(False),
+    db: AsyncSession = Depends(get_db),
 ):
-    subjects = await academic_service.list_subjects(db, batch_id)
+    subjects = await academic_service.list_subjects(
+        db, batch_id=batch_id, program_id=program_id, trimester=trimester, is_archived=is_archived
+    )
     return ResponseEnvelope(data=[SubjectResponse.model_validate(s) for s in subjects])
+
+
+@router.post(
+    "/subjects/{subject_id}/archive",
+    response_model=ResponseEnvelope[SubjectResponse],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def archive_subject(subject_id: UUID, db: AsyncSession = Depends(get_db)):
+    subject = await academic_service.archive_subject(db, subject_id)
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    return ResponseEnvelope(data=SubjectResponse.model_validate(subject))
+
+
+@router.post(
+    "/subjects/{subject_id}/unarchive",
+    response_model=ResponseEnvelope[SubjectResponse],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def unarchive_subject(subject_id: UUID, db: AsyncSession = Depends(get_db)):
+    subject = await academic_service.unarchive_subject(db, subject_id)
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    return ResponseEnvelope(data=SubjectResponse.model_validate(subject))
+
+
+@router.post(
+    "/subjects/parse-syllabus-file",
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def parse_syllabus_file_endpoint(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+    try:
+        data = syllabus_parser_service.parse_syllabus_file(content, file.filename)
+        return ResponseEnvelope(data=data)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Error parsing syllabus document: {str(e)}")
+
+
+@router.get(
+    "/subjects/{subject_id}/syllabus/export",
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def export_subject_syllabus(
+    subject_id: UUID,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    subject = await academic_service.get_subject(db, subject_id)
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+
+    # Helper to parse stored syllabus JSON or build default
+    syllabus_data = {}
+    if subject.syllabus:
+        try:
+            if subject.syllabus.startswith('{'):
+                import json
+                syllabus_data = json.loads(subject.syllabus)
+            else:
+                syllabus_data = {"course_overview": subject.syllabus}
+        except Exception:
+            syllabus_data = {"course_overview": subject.syllabus}
+
+    credits_info = "Non-Credit" if subject.is_non_credit else f"{subject.credits} Credits"
+
+    filename = f"{subject.code}_Syllabus.{format}"
+    safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+
+    if format == "pdf":
+        pdf_bytes = syllabus_export_service.generate_syllabus_pdf(subject.name, subject.code, credits_info, syllabus_data)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        )
+    else:
+        docx_bytes = syllabus_export_service.generate_syllabus_docx(subject.name, subject.code, credits_info, syllabus_data)
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        )
+
+
+@router.get(
+    "/subjects/{subject_id}/completion-report",
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def get_subject_completion_report(
+    subject_id: UUID,
+    batch_id: Optional[UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await academic_service.get_subject_completion_report(db, subject_id, batch_id)
+    if "error" in report:
+        raise HTTPException(status_code=404, detail=report["error"])
+    return ResponseEnvelope(data=report)
 
 
 @router.put(
@@ -313,3 +423,97 @@ async def assign_batch_students(
 
     await db.commit()
     return ResponseEnvelope(data={"updated": updated, "action": "assigned" if body.assign else "removed"})
+
+
+# Divisions
+@router.post(
+    "/divisions",
+    response_model=ResponseEnvelope[DivisionResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def create_division(d_in: DivisionCreate, db: AsyncSession = Depends(get_db)):
+    division = await academic_service.create_division(db, d_in)
+    prog = await academic_service.get_program(db, division.program_id)
+    resp = DivisionResponse.model_validate(division)
+    if prog:
+        resp.program_name = prog.name
+    return ResponseEnvelope(data=resp)
+
+
+@router.get(
+    "/divisions",
+    response_model=ResponseEnvelope[List[DivisionResponse]],
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def list_divisions(
+    program_id: Optional[UUID] = Query(None), db: AsyncSession = Depends(get_db)
+):
+    divisions = await academic_service.list_divisions(db, program_id=program_id)
+    res = []
+    for d in divisions:
+        r = DivisionResponse.model_validate(d)
+        if d.program:
+            r.program_name = d.program.name
+        res.append(r)
+    return ResponseEnvelope(data=res)
+
+
+@router.put(
+    "/divisions/{division_id}",
+    response_model=ResponseEnvelope[DivisionResponse],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def update_division(
+    division_id: UUID, d_in: DivisionUpdate, db: AsyncSession = Depends(get_db)
+):
+    division = await academic_service.update_division(db, division_id, d_in)
+    if not division:
+        raise HTTPException(status_code=404, detail="Division not found")
+    resp = DivisionResponse.model_validate(division)
+    if division.program:
+        resp.program_name = division.program.name
+    return ResponseEnvelope(data=resp)
+
+
+@router.delete(
+    "/divisions/{division_id}",
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def delete_division(division_id: UUID, db: AsyncSession = Depends(get_db)):
+    success = await academic_service.delete_division(db, division_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Division not found")
+    return ResponseEnvelope(data={"deleted": True})
+
+
+@router.get(
+    "/divisions/{division_id}/students",
+    response_model=ResponseEnvelope[List[StudentResponse]],
+    dependencies=[Depends(require_permission("academic", "view"))],
+)
+async def list_division_students(
+    division_id: UUID, db: AsyncSession = Depends(get_db)
+):
+    students = await academic_service.list_students_for_division(db, division_id)
+    res = []
+    for s in students:
+        res.append(await student_service.to_student_response_enriched(db, s))
+    return ResponseEnvelope(data=res)
+
+
+@router.post(
+    "/divisions/{division_id}/students/assign",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def assign_division_students(
+    division_id: UUID,
+    body: BatchStudentAssignRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    success = await academic_service.assign_students_to_division(
+        db, division_id, body.student_ids, assign=body.assign
+    )
+    return ResponseEnvelope(data={"success": success, "updated": len(body.student_ids)})
+

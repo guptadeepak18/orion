@@ -68,6 +68,37 @@ async def get_my_student_profile(
     return ResponseEnvelope(data=summary)
 
 
+@router.put(
+    "/me",
+    response_model=ResponseEnvelope[StudentResponse],
+)
+async def update_my_student_profile(
+    body: dict,
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    """Student can update ONLY their own personal (non-academic) fields."""
+    user_id = UUID(payload["sub"])
+    student = await student_service.get_student_by_user_id(db, user_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found for current user")
+
+    # Allowed personal fields only
+    ALLOWED_FIELDS = {
+        "mobile_number", "email_personal", "alternate_contact_number",
+        "emergency_contact_name", "emergency_contact_number", "emergency_contact_relation",
+        "blood_group",
+    }
+    for field, value in body.items():
+        if field in ALLOWED_FIELDS:
+            setattr(student, field, value)
+
+    await db.commit()
+    await db.refresh(student)
+    student = await student_service.get_student(db, student.id)
+    return ResponseEnvelope(data=await student_service.to_student_response_enriched(db, student))
+
+
 @router.get(
     "/{student_id}",
     response_model=ResponseEnvelope[StudentResponse],

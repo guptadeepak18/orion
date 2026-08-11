@@ -6,7 +6,6 @@ import { api } from '../lib/api';
 import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import {
-  ShieldCheck,
   Users,
   Calendar,
   FileCheck,
@@ -178,47 +177,35 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
-      <div className="glass-panel rounded-3xl p-6 md:p-8 border border-slate-200/90 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200 shadow-sm">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 dark:bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            {/* Highlighted Date & Real-Time Live Clock Badge */}
-            <div className="inline-flex items-center space-x-3 px-4 py-2 rounded-2xl bg-gradient-to-r from-cyan-500/15 via-indigo-500/15 to-purple-500/15 border border-cyan-500/30 dark:border-cyan-400/30 shadow-sm backdrop-blur-md mb-3">
-              <div className="flex items-center space-x-2 text-xs font-bold text-cyan-900 dark:text-cyan-200">
-                <Calendar className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                <span>{currentDate}</span>
-              </div>
-              <div className="h-4 w-px bg-cyan-500/30 dark:bg-cyan-400/30" />
-              <div className="flex items-center space-x-2 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                </span>
-                <Clock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span>{formattedTime}</span>
-              </div>
-            </div>
-
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+      <div className="glass-panel rounded-3xl p-6 md:p-8 border border-slate-200/90 dark:border-slate-800/80 relative overflow-hidden transition-all duration-300 shadow-sm bg-gradient-to-r from-slate-50/80 via-indigo-50/30 to-cyan-50/50 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-slate-950/90">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-cyan-500/10 via-indigo-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-1.5 min-w-0 flex-1">
+            <h1 className="text-2xl md:text-3.5xl font-extrabold tracking-tight text-slate-900 dark:text-white">
               {getGreeting()}, <span className="gradient-text">{getDisplayName()}</span>
             </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1.5 max-w-xl text-sm leading-relaxed">
-              Welcome to CRC One. Here is your operational overview for academic delivery, schedules, and active tasks.
+            <p className="text-slate-600 dark:text-slate-400 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+              Welcome to <span className="font-semibold text-cyan-600 dark:text-cyan-400">Orion by HyperBuild</span> — Empowering institutional excellence with intelligent academic operations.
             </p>
           </div>
 
-          <div className="glass-card p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center space-x-4 shrink-0 bg-white/80 dark:bg-slate-900/60 shadow-sm">
-            <div className="h-12 w-12 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
-              <ShieldCheck className="h-6 w-6" />
+          {/* Right Side: Live Date & Time Widget (Seamless Background, No White Box) */}
+          <div className="flex items-center space-x-3.5 shrink-0 bg-transparent">
+            <div className="h-11 w-11 rounded-2xl bg-cyan-500/10 dark:bg-cyan-400/10 border border-cyan-500/20 dark:border-cyan-400/20 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-sm">
+              <Clock className="h-5.5 w-5.5" />
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Logged in as</p>
-              <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-                {getDisplayName()}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize">
-                {user?.roles?.[0]?.replace('_', ' ') || 'CRC Administrator'}
-              </p>
+            <div className="space-y-0.5">
+              <div className="flex items-center space-x-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                <Calendar className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>{currentDate}</span>
+              </div>
+              <div className="flex items-center space-x-2 text-base md:text-lg font-mono font-extrabold text-slate-900 dark:text-white">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                </span>
+                <span className="tracking-tight">{formattedTime}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -229,7 +216,7 @@ export const DashboardPage: React.FC = () => {
         <Link to="/academic" className="group block">
           <Card
             title="Active Programs"
-            subtitle="Academic Backbone"
+            subtitle="Program Setup"
             action={<Layers className="h-5 w-5 text-cyan-600 dark:text-cyan-400 group-hover:scale-110 transition-transform" />}
           >
             <div className="mt-2 flex items-baseline justify-between">

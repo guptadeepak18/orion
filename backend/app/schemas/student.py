@@ -34,6 +34,7 @@ class StudentCreate(BaseModel):
     # 14 & 15. Program and Batch
     program_id: Optional[UUID] = None
     batch_id: Optional[UUID] = None
+    division_ids: Optional[List[UUID]] = None
 
     # 16. Trimester
     trimester: int = Field(1, ge=1, le=6, description="Trimester number (1, 2, 3, 4, 5, 6)")
@@ -75,6 +76,7 @@ class StudentUpdate(BaseModel):
     prn_number: Optional[str] = None
     program_id: Optional[UUID] = None
     batch_id: Optional[UUID] = None
+    division_ids: Optional[List[UUID]] = None
     trimester: Optional[int] = Field(None, ge=1, le=6)
     ug_degree: Optional[str] = None
     ug_score_type: Optional[Literal["percentage", "cgpa"]] = None
@@ -120,11 +122,13 @@ class StudentResponse(BaseModel):
     blood_group: str = "O+"
     prn_number: str = ""
 
-    # 14 & 15. Program and Batch
+    # 14 & 15. Program, Batch, and Divisions
     program_id: Optional[UUID] = None
     batch_id: Optional[UUID] = None
     program_name: Optional[str] = None
     batch_name: Optional[str] = None
+    division_ids: List[UUID] = []
+    division_names: List[str] = []
 
     # 16. Trimester
     trimester: int = 1

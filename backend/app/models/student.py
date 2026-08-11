@@ -77,3 +77,17 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     user: Mapped[Optional["User"]] = relationship("User")
     program: Mapped[Optional["Program"]] = relationship("Program")
     batch: Mapped[Optional["Batch"]] = relationship("Batch")
+    divisions: Mapped[list["Division"]] = relationship(
+        "Division", secondary="student_divisions", back_populates="students"
+    )
+
+
+class StudentDivision(Base):
+    __tablename__ = "student_divisions"
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE"), primary_key=True
+    )
+    division_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), primary_key=True
+    )

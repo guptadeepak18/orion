@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "CRC One"
+    PROJECT_NAME: str = "Orion by HyperBuild"
     API_V1_STR: str = "/api/v1"
     
     DATABASE_URL: str = "postgresql+asyncpg://crc_one:crc_one_password@db:5432/crc_one"
@@ -18,8 +18,15 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     
     ENVIRONMENT: str = "local"
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost,http://127.0.0.1"
     FILE_STORAGE_PATH: str = "./uploads"
+
+    # SMTP / Email settings (optional — falls back to console log in dev if unset)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@mile.education"
 
     model_config = SettingsConfigDict(
         env_file=".env",

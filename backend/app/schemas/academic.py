@@ -88,7 +88,6 @@ class BatchCreate(BaseModel):
     name: str
     code: str
     division: Optional[str] = None
-    student_count: int = 0
     is_active: bool = True
 
 
@@ -96,7 +95,6 @@ class BatchUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
     division: Optional[str] = None
-    student_count: Optional[int] = None
     is_active: Optional[bool] = None
 
 
@@ -108,32 +106,90 @@ class BatchResponse(BaseModel):
     name: str
     code: str
     division: Optional[str] = None
-    student_count: int
+    student_count: int = 0
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
 # Subject
-class SubjectCreate(BaseModel):
-    batch_id: Optional[UUID] = None
+class SubjectBatchAllocation(BaseModel):
+    batch_id: UUID
+    term_type: str = "trimester"
+    term_number: int = 1
+    term_label: Optional[str] = "Trimester 1"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+
+class SubjectBatchAllocationResponse(BaseModel):
+    id: UUID
+    batch_id: UUID
+    batch_name: Optional[str] = None
+    term_type: str = "trimester"
+    term_number: int = 1
+    term_label: Optional[str] = "Trimester 1"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubjectProgramSummary(BaseModel):
+    id: UUID
     name: str
     code: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubjectCreate(BaseModel):
+    name: str
+    code: str
+    trimester: int = 1
+    is_non_credit: bool = False
     credits: int = 3
+    syllabus: Optional[str] = None
+    session_plan: Optional[str] = None
+    hyperbuild_activities: Optional[str] = None
+    program_ids: List[UUID] = []
+    batch_allocations: List[SubjectBatchAllocation] = []
+
+
+class SubjectCurriculumUpdate(BaseModel):
+    syllabus: Optional[str] = None
+    session_plan: Optional[str] = None
+    hyperbuild_activities: Optional[str] = None
 
 
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
+    trimester: Optional[int] = None
+    is_non_credit: Optional[bool] = None
     credits: Optional[int] = None
+    is_archived: Optional[bool] = None
+    syllabus: Optional[str] = None
+    session_plan: Optional[str] = None
+    hyperbuild_activities: Optional[str] = None
+    program_ids: Optional[List[UUID]] = None
+    batch_allocations: Optional[List[SubjectBatchAllocation]] = None
 
 
 class SubjectResponse(BaseModel):
     id: UUID
-    batch_id: UUID
     name: str
     code: str
-    credits: int
+    trimester: int = 1
+    is_non_credit: bool = False
+    credits: int = 3
+    is_archived: bool = False
+    syllabus: Optional[str] = None
+    session_plan: Optional[str] = None
+    hyperbuild_activities: Optional[str] = None
+    programs: List[SubjectProgramSummary] = []
+    batch_allocations: List[SubjectBatchAllocationResponse] = []
+    batch_id: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -160,3 +216,34 @@ class TopicResponse(BaseModel):
     planned_hours: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Division
+class DivisionCreate(BaseModel):
+    program_id: UUID
+    name: str
+    code: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class DivisionUpdate(BaseModel):
+    program_id: Optional[UUID] = None
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class DivisionResponse(BaseModel):
+    id: UUID
+    program_id: UUID
+    program_name: Optional[str] = None
+    name: str
+    code: str
+    description: Optional[str] = None
+    student_count: int = 0
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+

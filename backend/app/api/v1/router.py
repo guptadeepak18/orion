@@ -2,7 +2,8 @@ from fastapi import APIRouter
 from app.api.v1 import (
     auth, users, health, academic, sessions, timetable,
     faculty, engagements, remuneration, approvals, invoices, payments,
-    calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard, students
+    calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard,
+    students, student_registrations
 )
 
 api_router = APIRouter()
@@ -13,6 +14,7 @@ api_router.include_router(users.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(academic.router)
 api_router.include_router(students.router)
+api_router.include_router(student_registrations.router)
 api_router.include_router(sessions.router)
 
 api_router.include_router(timetable.router)

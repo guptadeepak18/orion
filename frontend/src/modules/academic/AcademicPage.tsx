@@ -4,22 +4,21 @@ import {
   Plus,
   GraduationCap,
   Layers,
-  BookOpen,
+  FolderTree,
   Pencil,
   Trash2,
-  ListPlus,
-  ChevronRight,
-  ChevronDown,
   Users,
   UserPlus,
-  UserMinus,
+  RefreshCw,
   X,
   Search,
+  Download,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { DataTable, Column } from '../../components/DataTable';
 import { useRoleAccess } from '../../lib/useRoleAccess';
+import { StudentExportModal } from '../../components/StudentExportModal';
 
 interface Program {
   id: string;
@@ -34,24 +33,19 @@ interface Batch {
   program_id: string;
   name: string;
   code: string;
-  division?: string;
   student_count: number;
   is_active: boolean;
 }
 
-interface Subject {
+interface Division {
   id: string;
+  program_id: string;
+  program_name?: string;
   name: string;
   code: string;
-  credits: number;
-}
-
-interface Topic {
-  id: string;
-  subject_id: string;
-  name: string;
-  sequence_no: number;
-  planned_hours: number;
+  description?: string;
+  student_count: number;
+  is_active: boolean;
 }
 
 interface StudentBrief {
@@ -62,6 +56,8 @@ interface StudentBrief {
   program_name?: string;
   batch_id?: string;
   batch_name?: string;
+  division_ids?: string[];
+  division_names?: string[];
   trimester: number;
   email_official: string;
   roll_no: string;
@@ -70,11 +66,11 @@ interface StudentBrief {
 
 export const AcademicPage: React.FC = () => {
   const { canManageCurriculum } = useRoleAccess();
-  const [activeTab, setActiveTab] = useState<'programs' | 'batches' | 'subjects'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'batches' | 'divisions'>('programs');
 
   // Modal States
   const [modalType, setModalType] = useState<
-    'createProgram' | 'editProgram' | 'createBatch' | 'editBatch' | 'createSubject' | 'editSubject' | 'createTopic' | null
+    'createProgram' | 'editProgram' | 'createBatch' | 'editBatch' | 'createDivision' | 'editDivision' | null
   >(null);
 
   // Form State
@@ -83,21 +79,29 @@ export const AcademicPage: React.FC = () => {
   const [codeInput, setCodeInput] = useState('');
   const [descInput, setDescInput] = useState('');
   const [programIdInput, setProgramIdInput] = useState('');
-  const [divisionInput, setDivisionInput] = useState('');
-  const [studentCountInput, setStudentCountInput] = useState(60);
-  const [creditsInput, setCreditsInput] = useState(3);
-  const [sequenceNoInput, setSequenceNoInput] = useState(1);
-  const [plannedHoursInput, setPlannedHoursInput] = useState(2);
-  const [subjectIdForTopic, setSubjectIdForTopic] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
 
   // Batch Students State
   const [selectedBatchForStudents, setSelectedBatchForStudents] = useState<Batch | null>(null);
-  const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignSearch, setAssignSearch] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [reassigningStudent, setReassigningStudent] = useState<StudentBrief | null>(null);
+  const [targetBatchId, setTargetBatchId] = useState<string>('');
+  const [batchModalTab, setBatchModalTab] = useState<'enrolled' | 'unassigned'>('enrolled');
+
+  // Division Students Modal State
+  const [selectedDivisionForStudents, setSelectedDivisionForStudents] = useState<Division | null>(null);
+  const [divModalTab, setDivModalTab] = useState<'enrolled' | 'unassigned'>('enrolled');
+  const [divAssignSearch, setDivAssignSearch] = useState('');
+  const [selectedDivStudentIds, setSelectedDivStudentIds] = useState<Set<string>>(new Set());
+
+  // Export Modal State
+  const [exportTarget, setExportTarget] = useState<{
+    title: string;
+    subtitle: string;
+    students: StudentBrief[];
+    filenamePrefix: string;
+  } | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -118,43 +122,55 @@ export const AcademicPage: React.FC = () => {
     },
   });
 
-  // Batch Students Query (only when a batch is selected)
+  const { data: divisionsData, isLoading: divLoading } = useQuery({
+    queryKey: ['divisions'],
+    queryFn: async () => {
+      const res = await api.get('/academic/divisions');
+      return res.data.data as Division[];
+    },
+  });
+
+  // Batch Students Query
   const { data: batchStudentsData, isLoading: batchStudentsLoading } = useQuery({
     queryKey: ['batch-students', selectedBatchForStudents?.id],
     queryFn: async () => {
       if (!selectedBatchForStudents) return [];
-      const res = await api.get(`/academic/batches/${selectedBatchForStudents.id}/students`);
+      const res = await api.get(`/students?batch_id=${selectedBatchForStudents.id}`);
       return res.data.data as StudentBrief[];
     },
     enabled: !!selectedBatchForStudents,
   });
 
-  // All Students Query (for assign modal)
-  const { data: allStudentsData } = useQuery({
+  // All Students Query (for batch unassigned modal)
+  const { data: allStudentsData, isLoading: allStudentsLoading } = useQuery({
     queryKey: ['students-all'],
     queryFn: async () => {
       const res = await api.get('/students');
       return res.data.data as StudentBrief[];
     },
-    enabled: showAssignModal,
+    enabled: !!selectedBatchForStudents,
   });
 
-  const { data: subjectsData, isLoading: subLoading } = useQuery({
-    queryKey: ['subjects'],
+  // Division Students Query
+  const { data: divStudentsData, isLoading: divStudentsLoading } = useQuery({
+    queryKey: ['division-students', selectedDivisionForStudents?.id],
     queryFn: async () => {
-      const res = await api.get('/academic/subjects');
-      return res.data.data as Subject[];
+      if (!selectedDivisionForStudents) return [];
+      const res = await api.get(`/academic/divisions/${selectedDivisionForStudents.id}/students`);
+      return res.data.data as StudentBrief[];
     },
+    enabled: !!selectedDivisionForStudents,
   });
 
-  const { data: topicsData } = useQuery({
-    queryKey: ['topics', expandedSubjectId],
+  // Parent Program Students Query (for Division allocation across all batches in Program)
+  const { data: programStudentsData, isLoading: programStudentsLoading } = useQuery({
+    queryKey: ['program-students-for-div', selectedDivisionForStudents?.program_id],
     queryFn: async () => {
-      if (!expandedSubjectId) return [];
-      const res = await api.get(`/academic/topics?subject_id=${expandedSubjectId}`);
-      return res.data.data as Topic[];
+      if (!selectedDivisionForStudents) return [];
+      const res = await api.get(`/students?program_id=${selectedDivisionForStudents.program_id}`);
+      return res.data.data as StudentBrief[];
     },
-    enabled: !!expandedSubjectId,
+    enabled: !!selectedDivisionForStudents,
   });
 
   // Program Mutations
@@ -200,7 +216,7 @@ export const AcademicPage: React.FC = () => {
 
   // Batch Mutations
   const createBatchMutation = useMutation({
-    mutationFn: async (payload: { program_id?: string; name: string; code: string; division: string; student_count: number }) => {
+    mutationFn: async (payload: { program_id?: string; name: string; code: string }) => {
       const res = await api.post('/academic/batches', payload);
       return res.data;
     },
@@ -209,7 +225,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create batch & division');
+      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create batch');
     },
   });
 
@@ -239,110 +255,101 @@ export const AcademicPage: React.FC = () => {
     },
   });
 
-  // Assign students mutation
-  const assignStudentsMutation = useMutation({
-    mutationFn: async ({ batchId, studentIds, assign }: { batchId: string; studentIds: string[]; assign: boolean }) => {
+  // Division Mutations
+  const createDivisionMutation = useMutation({
+    mutationFn: async (payload: { program_id: string; name: string; code: string; description?: string }) => {
+      const res = await api.post('/academic/divisions', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['divisions'] });
+      closeModal();
+    },
+    onError: (err: any) => {
+      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create division');
+    },
+  });
+
+  const updateDivisionMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<Division> }) => {
+      const res = await api.put(`/academic/divisions/${id}`, payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['divisions'] });
+      closeModal();
+    },
+    onError: (err: any) => {
+      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update division');
+    },
+  });
+
+  const deleteDivisionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/academic/divisions/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['divisions'] });
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message || 'Failed to delete division');
+    },
+  });
+
+  // Batch Reassign Mutation (removes from current batch, assigns to target active batch)
+  const reassignStudentBatchMutation = useMutation({
+    mutationFn: async ({ studentId, batchId }: { studentId: string; batchId: string }) => {
+      const res = await api.put(`/students/${studentId}`, { batch_id: batchId });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-students', selectedBatchForStudents?.id] });
+      queryClient.invalidateQueries({ queryKey: ['students-all'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      setReassigningStudent(null);
+      setTargetBatchId('');
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message || 'Failed to reassign student batch');
+    },
+  });
+
+  // Bulk Assign Mutation
+  const bulkAssignStudentsMutation = useMutation({
+    mutationFn: async ({ batchId, studentIds }: { batchId: string; studentIds: string[] }) => {
       const res = await api.post(`/academic/batches/${batchId}/students/assign`, {
+        student_ids: studentIds,
+        assign: true,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-students', selectedBatchForStudents?.id] });
+      queryClient.invalidateQueries({ queryKey: ['students-all'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      setSelectedStudentIds(new Set());
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message || 'Failed to assign students');
+    },
+  });
+
+  // Assign Division Students Mutation
+  const assignDivisionStudentsMutation = useMutation({
+    mutationFn: async ({ divisionId, studentIds, assign }: { divisionId: string; studentIds: string[]; assign: boolean }) => {
+      const res = await api.post(`/academic/divisions/${divisionId}/students/assign`, {
         student_ids: studentIds,
         assign,
       });
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['batch-students', selectedBatchForStudents?.id] });
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      queryClient.invalidateQueries({ queryKey: ['students-all'] });
-      queryClient.invalidateQueries({ queryKey: ['students'] });
-      setSelectedStudentIds(new Set());
-      setShowAssignModal(false);
+      queryClient.invalidateQueries({ queryKey: ['division-students', selectedDivisionForStudents?.id] });
+      queryClient.invalidateQueries({ queryKey: ['divisions'] });
+      setSelectedDivStudentIds(new Set());
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.detail || err?.response?.data?.error?.message || err?.message || 'Failed to update enrollment');
-    },
-  });
-
-  // Remove single student from batch
-  const removeStudentFromBatch = (studentId: string) => {
-    if (!selectedBatchForStudents) return;
-    if (!confirm('Remove this student from the batch?')) return;
-    assignStudentsMutation.mutate({
-      batchId: selectedBatchForStudents.id,
-      studentIds: [studentId],
-      assign: false,
-    });
-  };
-
-  const handleBulkAssign = () => {
-    if (!selectedBatchForStudents || selectedStudentIds.size === 0) return;
-    assignStudentsMutation.mutate({
-      batchId: selectedBatchForStudents.id,
-      studentIds: Array.from(selectedStudentIds),
-      assign: true,
-    });
-  };
-
-  // Subject Mutations
-  const createSubjectMutation = useMutation({
-    mutationFn: async (payload: { name: string; code: string; credits: number }) => {
-      const res = await api.post('/academic/subjects', payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-      closeModal();
-    },
-    onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create subject');
-    },
-  });
-
-  const updateSubjectMutation = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: Partial<Subject> }) => {
-      const res = await api.put(`/academic/subjects/${id}`, payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-      closeModal();
-    },
-    onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update subject');
-    },
-  });
-
-  const deleteSubjectMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/academic/subjects/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-    },
-    onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to delete subject');
-    },
-  });
-
-  // Topic Mutation
-  const createTopicMutation = useMutation({
-    mutationFn: async (payload: { subject_id: string; name: string; sequence_no: number; planned_hours: number }) => {
-      const res = await api.post('/academic/topics', payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['topics', expandedSubjectId] });
-      closeModal();
-    },
-    onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create topic');
-    },
-  });
-
-  const deleteTopicMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/academic/topics/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['topics', expandedSubjectId] });
+      alert(err?.response?.data?.error?.message || 'Failed to update division students');
     },
   });
 
@@ -354,12 +361,6 @@ export const AcademicPage: React.FC = () => {
     setCodeInput('');
     setDescInput('');
     setProgramIdInput('');
-    setDivisionInput('');
-    setStudentCountInput(60);
-    setCreditsInput(3);
-    setSequenceNoInput(1);
-    setPlannedHoursInput(2);
-    setSubjectIdForTopic(null);
     setErrorMsg(null);
   };
 
@@ -391,31 +392,75 @@ export const AcademicPage: React.FC = () => {
     setNameInput(batch.name);
     setCodeInput(batch.code);
     setProgramIdInput(batch.program_id || '');
-    setDivisionInput(batch.division || 'Main');
-    setStudentCountInput(batch.student_count);
     setModalType('editBatch');
   };
 
-  const openCreateSubject = () => {
+  const openCreateDivision = () => {
     closeModal();
-    setModalType('createSubject');
+    if (programsData && programsData.length > 0) {
+      setProgramIdInput(programsData[0].id);
+    }
+    setModalType('createDivision');
   };
 
-  const openEditSubject = (sub: Subject) => {
+  const openEditDivision = (div: Division) => {
     closeModal();
-    setSelectedId(sub.id);
-    setNameInput(sub.name);
-    setCodeInput(sub.code);
-    setCreditsInput(sub.credits);
-    setModalType('editSubject');
+    setSelectedId(div.id);
+    setNameInput(div.name);
+    setCodeInput(div.code);
+    setProgramIdInput(div.program_id || '');
+    setDescInput(div.description || '');
+    setModalType('editDivision');
   };
 
-  const openCreateTopic = (subjectId: string) => {
-    closeModal();
-    setSubjectIdForTopic(subjectId);
-    setExpandedSubjectId(subjectId);
-    setSequenceNoInput((topicsData?.length || 0) + 1);
-    setModalType('createTopic');
+  const openBatchStudentsModal = (batch: Batch) => {
+    setSelectedBatchForStudents(batch);
+    setBatchModalTab('enrolled');
+    setAssignSearch('');
+    setSelectedStudentIds(new Set());
+  };
+
+  const openDivisionStudentsModal = (div: Division) => {
+    setSelectedDivisionForStudents(div);
+    setDivModalTab('enrolled');
+    setDivAssignSearch('');
+    setSelectedDivStudentIds(new Set());
+  };
+
+  const openReassignModal = (student: StudentBrief) => {
+    setReassigningStudent(student);
+    const availableBatches = (batchesData || []).filter((b) => b.id !== selectedBatchForStudents?.id);
+    if (availableBatches.length > 0) {
+      setTargetBatchId(availableBatches[0].id);
+    } else {
+      setTargetBatchId('');
+    }
+  };
+
+  const handleConfirmReassign = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassigningStudent || !targetBatchId) return;
+    reassignStudentBatchMutation.mutate({
+      studentId: reassigningStudent.id,
+      batchId: targetBatchId,
+    });
+  };
+
+  const handleBulkAssign = () => {
+    if (!selectedBatchForStudents || selectedStudentIds.size === 0) return;
+    bulkAssignStudentsMutation.mutate({
+      batchId: selectedBatchForStudents.id,
+      studentIds: Array.from(selectedStudentIds),
+    });
+  };
+
+  const handleBulkDivAssign = (assign: boolean) => {
+    if (!selectedDivisionForStudents || selectedDivStudentIds.size === 0) return;
+    assignDivisionStudentsMutation.mutate({
+      divisionId: selectedDivisionForStudents.id,
+      studentIds: Array.from(selectedDivStudentIds),
+      assign,
+    });
   };
 
   // Submit Handlers
@@ -434,8 +479,6 @@ export const AcademicPage: React.FC = () => {
         program_id: programIdInput || undefined,
         name: nameInput,
         code: codeInput,
-        division: divisionInput || 'Main',
-        student_count: Number(studentCountInput),
       });
     } else if (modalType === 'editBatch' && selectedId) {
       updateBatchMutation.mutate({
@@ -444,27 +487,24 @@ export const AcademicPage: React.FC = () => {
           program_id: programIdInput || undefined,
           name: nameInput,
           code: codeInput,
-          division: divisionInput,
-          student_count: Number(studentCountInput),
         },
       });
-    } else if (modalType === 'createSubject') {
-      createSubjectMutation.mutate({
+    } else if (modalType === 'createDivision') {
+      createDivisionMutation.mutate({
+        program_id: programIdInput,
         name: nameInput,
         code: codeInput,
-        credits: Number(creditsInput),
+        description: descInput,
       });
-    } else if (modalType === 'editSubject' && selectedId) {
-      updateSubjectMutation.mutate({
+    } else if (modalType === 'editDivision' && selectedId) {
+      updateDivisionMutation.mutate({
         id: selectedId,
-        payload: { name: nameInput, code: codeInput, credits: Number(creditsInput) },
-      });
-    } else if (modalType === 'createTopic' && subjectIdForTopic) {
-      createTopicMutation.mutate({
-        subject_id: subjectIdForTopic,
-        name: nameInput,
-        sequence_no: Number(sequenceNoInput),
-        planned_hours: Number(plannedHoursInput),
+        payload: {
+          program_id: programIdInput || undefined,
+          name: nameInput,
+          code: codeInput,
+          description: descInput,
+        },
       });
     }
   };
@@ -474,9 +514,8 @@ export const AcademicPage: React.FC = () => {
     updateProgramMutation.isPending ||
     createBatchMutation.isPending ||
     updateBatchMutation.isPending ||
-    createSubjectMutation.isPending ||
-    updateSubjectMutation.isPending ||
-    createTopicMutation.isPending;
+    createDivisionMutation.isPending ||
+    updateDivisionMutation.isPending;
 
   // Columns Definitions
   const programColumns: Column<Program>[] = [
@@ -487,10 +526,10 @@ export const AcademicPage: React.FC = () => {
       header: 'Status',
       accessor: (r) => (
         <span
-          className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
             r.is_active
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
-              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
           }`}
         >
           {r.is_active ? 'Active' : 'Inactive'}
@@ -526,22 +565,23 @@ export const AcademicPage: React.FC = () => {
   ];
 
   const batchColumns: Column<Batch>[] = [
-    { header: 'Batch Code', accessor: 'code', className: 'font-mono text-indigo-600 dark:text-indigo-400 font-semibold' },
+    { header: 'Batch Code', accessor: 'code', className: 'font-mono text-cyan-600 dark:text-cyan-400 font-semibold' },
     { header: 'Batch Name', accessor: 'name', className: 'font-medium text-slate-900 dark:text-slate-100' },
-    { header: 'Division', accessor: (r) => r.division || 'Main', className: 'text-slate-500 dark:text-slate-400' },
-    { header: 'Capacity', accessor: 'student_count', className: 'text-slate-700 dark:text-slate-300 font-medium' },
+    {
+      header: 'Enrolled Students',
+      accessor: (r) => (
+        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30">
+          {r.student_count || 0} Students
+        </span>
+      ),
+    },
     {
       header: 'Actions',
       accessor: (r) => (
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => {
-              setSelectedBatchForStudents(r);
-              setShowAssignModal(false);
-              setSelectedStudentIds(new Set());
-            }}
-            className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors text-xs font-semibold"
-            title="View & Manage Students"
+            onClick={() => openBatchStudentsModal(r)}
+            className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center space-x-1"
           >
             <Users className="h-3.5 w-3.5" />
             <span>Students</span>
@@ -571,53 +611,51 @@ export const AcademicPage: React.FC = () => {
     },
   ];
 
-  const subjectColumns: Column<Subject>[] = [
+  const divisionColumns: Column<Division>[] = [
+    { header: 'Division Code', accessor: 'code', className: 'font-mono text-cyan-600 dark:text-cyan-400 font-semibold' },
+    { header: 'Division Name', accessor: 'name', className: 'font-medium text-slate-900 dark:text-slate-100' },
+    { header: 'Parent Program', accessor: (r) => r.program_name || '—', className: 'text-slate-700 dark:text-slate-300 font-medium' },
     {
-      header: '',
+      header: 'Assigned Students',
       accessor: (r) => (
-        <button
-          onClick={() => setExpandedSubjectId(expandedSubjectId === r.id ? null : r.id)}
-          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
-        >
-          {expandedSubjectId === r.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
+        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/30">
+          {r.student_count || 0} Students
+        </span>
       ),
     },
-    { header: 'Subject Code', accessor: 'code', className: 'font-mono text-sky-600 dark:text-sky-400 font-semibold' },
-    { header: 'Subject Name', accessor: 'name', className: 'font-medium text-slate-900 dark:text-slate-100' },
-    { header: 'Credits', accessor: 'credits', className: 'text-slate-700 dark:text-slate-300 font-medium' },
     {
       header: 'Actions',
-      accessor: (r) =>
-        canManageCurriculum ? (
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => openCreateTopic(r.id)}
-              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-200 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30 dark:hover:bg-cyan-500/20 flex items-center space-x-1 transition-colors"
-            >
-              <ListPlus className="h-3.5 w-3.5" />
-              <span>Add Topic</span>
-            </button>
-            <button
-              onClick={() => openEditSubject(r)}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Edit Subject"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                if (confirm(`Delete subject ${r.name}?`)) deleteSubjectMutation.mutate(r.id);
-              }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Delete Subject"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <span className="text-xs text-slate-400">View only</span>
-        ),
+      accessor: (r) => (
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => openDivisionStudentsModal(r)}
+            className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center space-x-1"
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>Students</span>
+          </button>
+          {canManageCurriculum && (
+            <>
+              <button
+                onClick={() => openEditDivision(r)}
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Edit Division"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(`Delete division ${r.name}?`)) deleteDivisionMutation.mutate(r.id);
+                }}
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Delete Division"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -626,9 +664,9 @@ export const AcademicPage: React.FC = () => {
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">Academic Backbone</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">Program Setup</h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Manage institutional programs, academic terms, batches, divisions, subjects, and topics.
+            Manage institutional programs, academic terms, batches, and sub-divisions.
           </p>
         </div>
         {canManageCurriculum && (
@@ -649,17 +687,17 @@ export const AcademicPage: React.FC = () => {
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
-                <span>New Batch & Division</span>
+                <span>New Batch</span>
               </button>
             )}
 
-            {activeTab === 'subjects' && (
+            {activeTab === 'divisions' && (
               <button
-                onClick={openCreateSubject}
-                className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-sky-600 to-emerald-600 text-white shadow-lg shadow-sky-500/20 hover:shadow-sky-500/35 transition-all duration-200"
+                onClick={openCreateDivision}
+                className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
-                <span>New Subject</span>
+                <span>New Division</span>
               </button>
             )}
           </div>
@@ -688,18 +726,18 @@ export const AcademicPage: React.FC = () => {
           }`}
         >
           <Layers className="h-4 w-4" />
-          <span>Batches & Divisions ({batchesData?.length || 0})</span>
+          <span>Batches ({batchesData?.length || 0})</span>
         </button>
         <button
-          onClick={() => setActiveTab('subjects')}
+          onClick={() => setActiveTab('divisions')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
-            activeTab === 'subjects'
+            activeTab === 'divisions'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
-          <BookOpen className="h-4 w-4" />
-          <span>Subjects & Topics ({subjectsData?.length || 0})</span>
+          <FolderTree className="h-4 w-4" />
+          <span>Divisions ({divisionsData?.length || 0})</span>
         </button>
       </div>
 
@@ -720,279 +758,580 @@ export const AcademicPage: React.FC = () => {
       )}
 
       {activeTab === 'batches' && (
-        <div className="space-y-6">
-          <Card title="Active Batches & Divisions">
-            {batchLoading ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading batches...</p>
-            ) : (
-              <DataTable
-                columns={batchColumns}
-                data={batchesData || []}
-                keyExtractor={(r) => r.id}
-                emptyMessage="No batches created yet. Click 'New Batch & Division' above."
-              />
-            )}
-          </Card>
-
-          {/* Batch Students Panel */}
-          {selectedBatchForStudents && (
-            <Card
-              title={
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-indigo-500" />
-                  <span>Students in <span className="text-indigo-600 dark:text-indigo-400 font-bold">{selectedBatchForStudents.name}</span></span>
-                </div>
-              }
-              action={
-                <div className="flex items-center space-x-2">
-                  {canManageCurriculum && (
-                    <button
-                      onClick={() => setShowAssignModal(true)}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-sm hover:opacity-90 transition-opacity"
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      <span>Add Students</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setSelectedBatchForStudents(null);
-                      setShowAssignModal(false);
-                    }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Close panel"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              }
-            >
-              {batchStudentsLoading ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading students...</p>
-              ) : !batchStudentsData || batchStudentsData.length === 0 ? (
-                <div className="py-10 flex flex-col items-center space-y-3 text-center">
-                  <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10">
-                    <Users className="h-8 w-8 text-indigo-400" />
-                  </div>
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No students enrolled in this batch yet.</p>
-                  {canManageCurriculum && (
-                    <button
-                      onClick={() => setShowAssignModal(true)}
-                      className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow transition-colors"
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      <span>Add Students</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{batchStudentsData.length} student(s) enrolled</p>
-                  {batchStudentsData.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                          {s.full_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{s.full_name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            PRN: <span className="font-mono">{s.prn_number}</span> · Trimester {s.trimester}
-                            {s.program_name && <span> · {s.program_name}</span>}
-                          </p>
-                        </div>
-                      </div>
-                      {canManageCurriculum && (
-                        <button
-                          onClick={() => removeStudentFromBatch(s.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-                          title="Remove from batch"
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+        <Card title="Academic Batches">
+          {batchLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading batches...</p>
+          ) : (
+            <DataTable
+              columns={batchColumns}
+              data={batchesData || []}
+              keyExtractor={(r) => r.id}
+              emptyMessage="No batches created yet. Click 'New Batch' to add a batch."
+            />
           )}
-        </div>
+        </Card>
       )}
 
-      {activeTab === 'subjects' && (
-        <div className="space-y-4">
-          <Card title="Curriculum Subjects & Topics">
-            {subLoading ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading subjects...</p>
-            ) : (
-              <DataTable
-                columns={subjectColumns}
-                data={subjectsData || []}
-                keyExtractor={(r) => r.id}
-                emptyMessage="No subjects registered yet. Click 'New Subject' above."
-              />
-            )}
-          </Card>
-
-          {/* Topics List Card for Expanded Subject */}
-          {expandedSubjectId && (
-            <Card
-              title={`Topics for ${subjectsData?.find((s) => s.id === expandedSubjectId)?.name || 'Subject'}`}
-              action={
-                <button
-                  onClick={() => openCreateTopic(expandedSubjectId)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-600 text-white shadow transition-colors"
-                >
-                  + Add Topic
-                </button>
-              }
-            >
-              {topicsData?.length === 0 ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400 italic py-2">No topics added for this subject yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {topicsData?.map((t) => (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-sm"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="h-6 w-6 rounded-full bg-cyan-50 dark:bg-slate-800 border border-cyan-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-700 dark:text-cyan-400">
-                          {t.sequence_no}
-                        </span>
-                        <div>
-                          <p className="font-medium text-slate-800 dark:text-slate-200">{t.name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{t.planned_hours} planned hours</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete topic ${t.name}?`)) deleteTopicMutation.mutate(t.id);
-                        }}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+      {activeTab === 'divisions' && (
+        <Card title="Program Divisions">
+          {divLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading divisions...</p>
+          ) : (
+            <DataTable
+              columns={divisionColumns}
+              data={divisionsData || []}
+              keyExtractor={(r) => r.id}
+              emptyMessage="No divisions created yet. Click 'New Division' to add a division under a program."
+            />
           )}
-        </div>
+        </Card>
       )}
 
-      {/* Assign Students Modal */}
-      {showAssignModal && selectedBatchForStudents && (
+      {/* Batch Students Enrollment Modal */}
+      {selectedBatchForStudents && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-2xl max-h-[80vh] flex flex-col rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <div className="glass-panel w-full max-w-4xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Add Students to Batch</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select students to enroll in <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selectedBatchForStudents.name}</span></p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Students in {selectedBatchForStudents.name} ({selectedBatchForStudents.code})
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Manage enrolled students and assign unallocated students to this batch.
+                </p>
               </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() =>
+                    setExportTarget({
+                      title: `Batch: ${selectedBatchForStudents.name}`,
+                      subtitle: `Batch Code: ${selectedBatchForStudents.code}`,
+                      students: batchStudentsData || [],
+                      filenamePrefix: `Batch_${selectedBatchForStudents.name}_Students`,
+                    })
+                  }
+                  disabled={!batchStudentsData || batchStudentsData.length === 0}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                  title="Export student list to Excel (.xlsx)"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export XLSX</span>
+                </button>
+                <button
+                  onClick={() => setSelectedBatchForStudents(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Tab navigation within Modal */}
+            <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
               <button
-                onClick={() => { setShowAssignModal(false); setSelectedStudentIds(new Set()); setAssignSearch(''); }}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onClick={() => setBatchModalTab('enrolled')}
+                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                  batchModalTab === 'enrolled'
+                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
               >
-                <X className="h-5 w-5" />
+                <Users className="h-4 w-4" />
+                <span>Enrolled Students ({batchStudentsData?.length || 0})</span>
+              </button>
+              <button
+                onClick={() => setBatchModalTab('unassigned')}
+                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                  batchModalTab === 'unassigned'
+                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <UserPlus className="h-4 w-4" />
+                <span>
+                  Enroll Remaining Students (
+                  {(allStudentsData || []).filter((s) => !s.batch_id).length})
+                </span>
               </button>
             </div>
 
-            {/* Search */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name or PRN..."
-                  value={assignSearch}
-                  onChange={(e) => setAssignSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
-                />
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-4">
+              {batchModalTab === 'enrolled' ? (
+                batchStudentsLoading ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
+                    Loading batch students...
+                  </p>
+                ) : batchStudentsData?.length === 0 ? (
+                  <div className="text-center py-10">
+                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
+                      No students enrolled in this batch yet.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Switch to "Enroll Remaining Students" tab to allocate students to this batch.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {batchStudentsData?.map((s) => (
+                      <div key={s.id} className="py-3 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-9 w-9 rounded-full bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-700 dark:text-cyan-300 font-bold text-xs">
+                            {s.full_name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{s.full_name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              PRN: <span className="font-mono">{s.prn_number}</span> · Trimester {s.trimester}
+                              {s.program_name && <span> · {s.program_name}</span>}
+                            </p>
+                          </div>
+                        </div>
+                        {canManageCurriculum && (
+                          <button
+                            onClick={() => openReassignModal(s)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 transition-colors"
+                            title="Reassign to another batch"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Reassign Batch</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                /* Unassigned / Remaining Students Allocation Tab */
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search remaining students by PRN or Name..."
+                      value={assignSearch}
+                      onChange={(e) => setAssignSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-cyan-500 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  {allStudentsLoading ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
+                      Loading remaining directory students...
+                    </p>
+                  ) : (
+                    (() => {
+                      const unassignedList = (allStudentsData || []).filter((s) => {
+                        const notInBatch = !s.batch_id;
+                        const matchQuery =
+                          !assignSearch ||
+                          s.full_name.toLowerCase().includes(assignSearch.toLowerCase()) ||
+                          s.prn_number.toLowerCase().includes(assignSearch.toLowerCase());
+                        return notInBatch && matchQuery;
+                      });
+
+                      if (unassignedList.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
+                              All students in the directory are already allocated to a batch.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between px-1">
+                            <button
+                              onClick={() => {
+                                if (selectedStudentIds.size === unassignedList.length) {
+                                  setSelectedStudentIds(new Set());
+                                } else {
+                                  setSelectedStudentIds(new Set(unassignedList.map((s) => s.id)));
+                                }
+                              }}
+                              className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                            >
+                              {selectedStudentIds.size === unassignedList.length
+                                ? 'Deselect All'
+                                : `Select All (${unassignedList.length})`}
+                            </button>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {selectedStudentIds.size} student(s) selected
+                            </span>
+                          </div>
+
+                          <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 bg-slate-50/50 dark:bg-slate-950/50">
+                            {unassignedList.map((s) => {
+                              const isChecked = selectedStudentIds.has(s.id);
+                              return (
+                                <div
+                                  key={s.id}
+                                  onClick={() => {
+                                    const newSet = new Set(selectedStudentIds);
+                                    if (isChecked) newSet.delete(s.id);
+                                    else newSet.add(s.id);
+                                    setSelectedStudentIds(newSet);
+                                  }}
+                                  className={`py-2.5 px-3 flex items-center justify-between cursor-pointer rounded-xl transition-colors ${
+                                    isChecked
+                                      ? 'bg-cyan-50/80 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30'
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-900'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {}}
+                                      className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                                    />
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                        {s.full_name}
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        PRN: <span className="font-mono">{s.prn_number}</span> · {s.program_name || 'No Program'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-3">
+              <button
+                onClick={() => setSelectedBatchForStudents(null)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Close
+              </button>
+
+              {batchModalTab === 'unassigned' && selectedStudentIds.size > 0 && (
+                <button
+                  onClick={handleBulkAssign}
+                  disabled={bulkAssignStudentsMutation.isPending}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow disabled:opacity-50 transition-opacity"
+                >
+                  {bulkAssignStudentsMutation.isPending
+                    ? 'Enrolling...'
+                    : `Enroll ${selectedStudentIds.size} Selected Student(s)`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Division Students Modal */}
+      {selectedDivisionForStudents && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-4xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Students in Division {selectedDivisionForStudents.name} ({selectedDivisionForStudents.code})
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Parent Program: <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedDivisionForStudents.program_name}</span>
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() =>
+                    setExportTarget({
+                      title: `Division: ${selectedDivisionForStudents.name}`,
+                      subtitle: `Program: ${selectedDivisionForStudents.program_name || 'Academic Program'}`,
+                      students: divStudentsData || [],
+                      filenamePrefix: `Division_${selectedDivisionForStudents.name}_Students`,
+                    })
+                  }
+                  disabled={!divStudentsData || divStudentsData.length === 0}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                  title="Export student list to Excel (.xlsx)"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export XLSX</span>
+                </button>
+                <button
+                  onClick={() => setSelectedDivisionForStudents(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
             </div>
 
-            {/* Student List */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-2">
-              {(() => {
-                const enrolledIds = new Set(batchStudentsData?.map((s) => s.id) || []);
-                const unassigned = (allStudentsData || []).filter(
-                  (s) => !enrolledIds.has(s.id) &&
-                    (assignSearch === '' ||
-                      s.full_name.toLowerCase().includes(assignSearch.toLowerCase()) ||
-                      s.prn_number.toLowerCase().includes(assignSearch.toLowerCase()))
-                );
-                if (unassigned.length === 0) {
-                  return (
-                    <div className="py-10 text-center">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {assignSearch ? 'No students match your search.' : 'All students are already enrolled in this batch.'}
-                      </p>
-                    </div>
-                  );
-                }
-                return unassigned.map((s) => (
-                  <label
-                    key={s.id}
-                    className={`flex items-center space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                      selectedStudentIds.has(s.id)
-                        ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 hover:border-indigo-300 dark:hover:border-indigo-700'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedStudentIds.has(s.id)}
-                      onChange={(e) => {
-                        const next = new Set(selectedStudentIds);
-                        if (e.target.checked) next.add(s.id); else next.delete(s.id);
-                        setSelectedStudentIds(next);
-                      }}
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <div className="h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-700 dark:text-indigo-300 flex-shrink-0">
-                      {s.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{s.full_name}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        PRN: <span className="font-mono">{s.prn_number}</span>
-                        {s.program_name && <span> · {s.program_name}</span>}
-                        {s.batch_name && <span> · Currently in: {s.batch_name}</span>}
-                      </p>
-                    </div>
-                  </label>
-                ));
-              })()}
+            {/* Tab navigation within Modal */}
+            <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
+              <button
+                onClick={() => setDivModalTab('enrolled')}
+                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                  divModalTab === 'enrolled'
+                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Users className="h-4 w-4" />
+                <span>Assigned Students ({divStudentsData?.length || 0})</span>
+              </button>
+              <button
+                onClick={() => setDivModalTab('unassigned')}
+                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                  divModalTab === 'unassigned'
+                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <UserPlus className="h-4 w-4" />
+                <span>
+                  Assign Remaining Program Students (
+                  {(programStudentsData || []).filter((s) => !divStudentsData?.some((ds) => ds.id === s.id)).length})
+                </span>
+              </button>
             </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {selectedStudentIds.size > 0 ? `${selectedStudentIds.size} student(s) selected` : 'Select students to enroll'}
-              </p>
-              <div className="flex items-center space-x-3">
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-4">
+              {divModalTab === 'enrolled' ? (
+                divStudentsLoading ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
+                    Loading division students...
+                  </p>
+                ) : divStudentsData?.length === 0 ? (
+                  <div className="text-center py-10">
+                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
+                      No students assigned to this division yet.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Switch to "Assign Remaining Program Students" tab to allocate students from {selectedDivisionForStudents.program_name}.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {divStudentsData?.map((s) => (
+                      <div key={s.id} className="py-3 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-9 w-9 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-xs">
+                            {s.full_name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{s.full_name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              PRN: <span className="font-mono">{s.prn_number}</span> · Batch: {s.batch_name || 'No Batch'}
+                            </p>
+                          </div>
+                        </div>
+                        {canManageCurriculum && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Remove ${s.full_name} from division ${selectedDivisionForStudents.name}?`)) {
+                                assignDivisionStudentsMutation.mutate({
+                                  divisionId: selectedDivisionForStudents.id,
+                                  studentIds: [s.id],
+                                  assign: false,
+                                });
+                              }
+                            }}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 transition-colors"
+                          >
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                /* Assign Remaining Program Students Tab */
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search program students by PRN or Name..."
+                      value={divAssignSearch}
+                      onChange={(e) => setDivAssignSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  {programStudentsLoading ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
+                      Loading program students...
+                    </p>
+                  ) : (
+                    (() => {
+                      const unassignedFromDiv = (programStudentsData || []).filter((s) => {
+                        const notInDiv = !divStudentsData?.some((ds) => ds.id === s.id);
+                        const matchQuery =
+                          !divAssignSearch ||
+                          s.full_name.toLowerCase().includes(divAssignSearch.toLowerCase()) ||
+                          s.prn_number.toLowerCase().includes(divAssignSearch.toLowerCase());
+                        return notInDiv && matchQuery;
+                      });
+
+                      if (unassignedFromDiv.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
+                              All students in {selectedDivisionForStudents.program_name} are already assigned to this division.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between px-1">
+                            <button
+                              onClick={() => {
+                                if (selectedDivStudentIds.size === unassignedFromDiv.length) {
+                                  setSelectedDivStudentIds(new Set());
+                                } else {
+                                  setSelectedDivStudentIds(new Set(unassignedFromDiv.map((s) => s.id)));
+                                }
+                              }}
+                              className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                              {selectedDivStudentIds.size === unassignedFromDiv.length
+                                ? 'Deselect All'
+                                : `Select All (${unassignedFromDiv.length})`}
+                            </button>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {selectedDivStudentIds.size} student(s) selected
+                            </span>
+                          </div>
+
+                          <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 bg-slate-50/50 dark:bg-slate-950/50">
+                            {unassignedFromDiv.map((s) => {
+                              const isChecked = selectedDivStudentIds.has(s.id);
+                              return (
+                                <div
+                                  key={s.id}
+                                  onClick={() => {
+                                    const newSet = new Set(selectedDivStudentIds);
+                                    if (isChecked) newSet.delete(s.id);
+                                    else newSet.add(s.id);
+                                    setSelectedDivStudentIds(newSet);
+                                  }}
+                                  className={`py-2.5 px-3 flex items-center justify-between cursor-pointer rounded-xl transition-colors ${
+                                    isChecked
+                                      ? 'bg-indigo-50/80 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30'
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-900'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {}}
+                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                        {s.full_name}
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        PRN: <span className="font-mono">{s.prn_number}</span> · Batch: {s.batch_name || 'No Batch'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-3">
+              <button
+                onClick={() => setSelectedDivisionForStudents(null)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Close
+              </button>
+
+              {divModalTab === 'unassigned' && selectedDivStudentIds.size > 0 && (
                 <button
-                  onClick={() => { setShowAssignModal(false); setSelectedStudentIds(new Set()); setAssignSearch(''); }}
+                  onClick={() => handleBulkDivAssign(true)}
+                  disabled={assignDivisionStudentsMutation.isPending}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow disabled:opacity-50 transition-opacity"
+                >
+                  {assignDivisionStudentsMutation.isPending
+                    ? 'Assigning...'
+                    : `Assign ${selectedDivStudentIds.size} Student(s) to Division`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reassign Batch Confirmation Modal */}
+      {reassigningStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-md rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Reassign Student Batch
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+              Select an active batch to transfer <span className="font-bold text-slate-900 dark:text-slate-100">{reassigningStudent.full_name}</span> (PRN: {reassigningStudent.prn_number}).
+            </p>
+
+            <form onSubmit={handleConfirmReassign} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Target Batch
+                </label>
+                <select
+                  value={targetBatchId}
+                  onChange={(e) => setTargetBatchId(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                >
+                  {(batchesData || [])
+                    .filter((b) => b.id !== selectedBatchForStudents?.id)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name || b.code}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setReassigningStudent(null)}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleBulkAssign}
-                  disabled={selectedStudentIds.size === 0 || assignStudentsMutation.isPending}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow disabled:opacity-50 hover:opacity-90 transition-opacity"
+                  type="submit"
+                  disabled={reassignStudentBatchMutation.isPending || !targetBatchId}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow disabled:opacity-50 transition-opacity"
                 >
-                  {assignStudentsMutation.isPending ? 'Enrolling...' : `Enroll ${selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}`}
+                  {reassignStudentBatchMutation.isPending ? 'Transferring...' : 'Confirm Reassignment'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -1004,11 +1343,10 @@ export const AcademicPage: React.FC = () => {
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
               {modalType === 'createProgram' && 'Create Academic Program'}
               {modalType === 'editProgram' && 'Edit Academic Program'}
-              {modalType === 'createBatch' && 'Create Batch & Division'}
-              {modalType === 'editBatch' && 'Edit Batch & Division'}
-              {modalType === 'createSubject' && 'Create Subject'}
-              {modalType === 'editSubject' && 'Edit Subject'}
-              {modalType === 'createTopic' && 'Add Topic to Subject'}
+              {modalType === 'createBatch' && 'Create Batch'}
+              {modalType === 'editBatch' && 'Edit Batch'}
+              {modalType === 'createDivision' && 'Create Division'}
+              {modalType === 'editDivision' && 'Edit Division'}
             </h3>
 
             {errorMsg && (
@@ -1018,11 +1356,11 @@ export const AcademicPage: React.FC = () => {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Program selection for Batches */}
-              {(modalType === 'createBatch' || modalType === 'editBatch') && programsData && programsData.length > 0 && (
+              {/* Program selection for Batches & Divisions */}
+              {(modalType === 'createBatch' || modalType === 'editBatch' || modalType === 'createDivision' || modalType === 'editDivision') && programsData && programsData.length > 0 && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    Academic Program
+                    Parent Academic Program
                   </label>
                   <select
                     value={programIdInput}
@@ -1041,10 +1379,8 @@ export const AcademicPage: React.FC = () => {
               {/* Name Input */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  {modalType.includes('Topic')
-                    ? 'Topic Name'
-                    : modalType.includes('Subject')
-                    ? 'Subject Name'
+                  {modalType.includes('Division')
+                    ? 'Division Name'
                     : modalType.includes('Batch')
                     ? 'Batch Name'
                     : 'Program Name'}
@@ -1059,31 +1395,29 @@ export const AcademicPage: React.FC = () => {
                 />
               </div>
 
-              {/* Code Input for Program / Batch / Subject */}
-              {!modalType.includes('Topic') && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    Code
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. MBA-EXEC or BATCH-2026"
-                    value={codeInput}
-                    onChange={(e) => setCodeInput(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              )}
+              {/* Code Input */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. DIV-A or BATCH-2026"
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
 
-              {/* Description for Program */}
-              {(modalType === 'createProgram' || modalType === 'editProgram') && (
+              {/* Description for Program or Division */}
+              {(modalType === 'createProgram' || modalType === 'editProgram' || modalType === 'createDivision' || modalType === 'editDivision') && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                     Description
                   </label>
                   <textarea
-                    placeholder="Program overview and description..."
+                    placeholder="Overview and description..."
                     value={descInput}
                     onChange={(e) => setDescInput(e.target.value)}
                     className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 h-20"
@@ -1091,81 +1425,6 @@ export const AcademicPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Batch specific inputs */}
-              {(modalType === 'createBatch' || modalType === 'editBatch') && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Division
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Div-A"
-                      value={divisionInput}
-                      onChange={(e) => setDivisionInput(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Student Count
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={studentCountInput}
-                      onChange={(e) => setStudentCountInput(Number(e.target.value))}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Subject specific inputs */}
-              {(modalType === 'createSubject' || modalType === 'editSubject') && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    Credits
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={creditsInput}
-                    onChange={(e) => setCreditsInput(Number(e.target.value))}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              )}
-
-              {/* Topic specific inputs */}
-              {modalType === 'createTopic' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Sequence No
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={sequenceNoInput}
-                      onChange={(e) => setSequenceNoInput(Number(e.target.value))}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Planned Hours
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={plannedHoursInput}
-                      onChange={(e) => setPlannedHoursInput(Number(e.target.value))}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
-              )}
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
@@ -1186,6 +1445,17 @@ export const AcademicPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+      {/* Student Field Export Modal */}
+      {exportTarget && (
+        <StudentExportModal
+          isOpen={!!exportTarget}
+          onClose={() => setExportTarget(null)}
+          title={exportTarget.title}
+          subtitle={exportTarget.subtitle}
+          students={exportTarget.students}
+          filenamePrefix={exportTarget.filenamePrefix}
+        />
       )}
     </div>
   );

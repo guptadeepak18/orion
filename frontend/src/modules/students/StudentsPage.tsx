@@ -19,11 +19,15 @@ import {
   User,
   Users,
   Briefcase,
+  CheckCircle2,
+  Download,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { DataTable, Column } from '../../components/DataTable';
 import { useRoleAccess } from '../../lib/useRoleAccess';
+import { StudentExportModal } from '../../components/StudentExportModal';
+import { StudentRegistrationsPage } from './StudentRegistrationsPage';
 
 interface Program {
   id: string;
@@ -33,6 +37,13 @@ interface Program {
 
 interface Batch {
   id: string;
+  name: string;
+  code: string;
+}
+
+interface Division {
+  id: string;
+  batch_id: string;
   name: string;
   code: string;
 }
@@ -56,6 +67,8 @@ interface Student {
   prn_number: string;
   program_id?: string;
   batch_id?: string;
+  division_ids?: string[];
+  division_names?: string[];
   program_name?: string;
   batch_name?: string;
   trimester: number;
@@ -98,7 +111,9 @@ const UG_DEGREES = [
 ];
 
 export const StudentsPage: React.FC = () => {
-  const { canManageStudents, isStudent } = useRoleAccess();
+  const { canManageStudents, isStudent, isAdmin, isCoordinator } = useRoleAccess();
+  const canViewRegistrationApprovals = !isStudent && (isAdmin || isCoordinator);
+  const [activeSection, setActiveSection] = useState<'directory' | 'approvals'>('directory');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProgramFilter, setSelectedProgramFilter] = useState('');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState('');
@@ -126,6 +141,7 @@ export const StudentsPage: React.FC = () => {
   const [prnNumber, setPrnNumber] = useState('');
   const [programId, setProgramId] = useState('');
   const [batchId, setBatchId] = useState('');
+  const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([]);
   const [trimester, setTrimester] = useState(1);
   const [ugDegree, setUgDegree] = useState('BBA / BMS');
   const [ugScoreType, setUgScoreType] = useState<'percentage' | 'cgpa'>('cgpa');
@@ -134,6 +150,7 @@ export const StudentsPage: React.FC = () => {
   const [specMinor, setSpecMinor] = useState('Finance');
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -152,6 +169,16 @@ export const StudentsPage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return res.data.data as Batch[];
     },
+  });
+
+  const { data: programDivisions } = useQuery({
+    queryKey: ['divisions-for-program', programId],
+    queryFn: async () => {
+      if (!programId) return [];
+      const res = await api.get(`/academic/divisions?program_id=${programId}`);
+      return res.data.data as Division[];
+    },
+    enabled: !!programId,
   });
 
   const { data: studentsData, isLoading } = useQuery({
@@ -228,6 +255,7 @@ export const StudentsPage: React.FC = () => {
     setPrnNumber('');
     setProgramId('');
     setBatchId('');
+    setSelectedDivisionIds([]);
     setTrimester(1);
     setUgDegree('BBA / BMS');
     setUgScoreType('cgpa');
@@ -263,6 +291,7 @@ export const StudentsPage: React.FC = () => {
     setPrnNumber(st.prn_number || st.roll_no || '');
     setProgramId(st.program_id || (programs?.[0]?.id || ''));
     setBatchId(st.batch_id || (batches?.[0]?.id || ''));
+    setSelectedDivisionIds(st.division_ids || []);
     setTrimester(st.trimester || 1);
     setUgDegree(st.ug_degree || 'BBA / BMS');
     setUgScoreType(st.ug_score_type || 'cgpa');
@@ -335,6 +364,7 @@ export const StudentsPage: React.FC = () => {
       prn_number: prnNumber.trim(),
       program_id: programId,
       batch_id: batchId,
+      division_ids: selectedDivisionIds,
       trimester: Number(trimester),
       ug_degree: ugDegree.trim(),
       ug_score_type: ugScoreType,
@@ -407,6 +437,15 @@ export const StudentsPage: React.FC = () => {
               Trim {r.trimester || 1}
             </span>
           </div>
+          {r.division_names && r.division_names.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {r.division_names.map((dname, idx) => (
+                <span key={idx} className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 text-[10px] font-semibold">
+                  {dname}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ),
     },
@@ -502,6 +541,37 @@ export const StudentsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {canViewRegistrationApprovals && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2 rounded-2xl inline-flex items-center space-x-1">
+          <button
+            type="button"
+            onClick={() => setActiveSection('directory')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
+              activeSection === 'directory'
+                ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            Student Directory
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSection('approvals')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
+              activeSection === 'approvals'
+                ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            Registration Approvals
+          </button>
+        </div>
+      )}
+
+      {activeSection === 'approvals' ? (
+        <StudentRegistrationsPage embedded />
+      ) : (
+        <>
       {/* Page Title & Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -514,15 +584,26 @@ export const StudentsPage: React.FC = () => {
               : 'Record and manage comprehensive student profiles (personal, parentage, emergency, academic trimester, and UG background).'}
           </p>
         </div>
-        {canManageStudents && (
+        <div className="flex items-center space-x-3">
           <button
-            onClick={openCreateModal}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/35 transition-all duration-200"
+            onClick={() => setExportOpen(true)}
+            disabled={!studentsData || studentsData.length === 0}
+            className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors shadow-sm"
+            title="Export student directory to Excel (.xlsx)"
           >
-            <Plus className="h-4 w-4" />
-            <span>Enroll New Student</span>
+            <Download className="h-4 w-4" />
+            <span>Export XLSX</span>
           </button>
-        )}
+          {canManageStudents && (
+            <button
+              onClick={openCreateModal}
+              className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/35 transition-all duration-200"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Enroll New Student</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -536,7 +617,7 @@ export const StudentsPage: React.FC = () => {
         </Card>
         <Card
           title="Active Batches"
-          subtitle="Academic Backbone"
+          subtitle="Program Setup"
           action={<GraduationCap className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
         >
           <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{batches?.length || 1}</p>
@@ -972,6 +1053,45 @@ export const StudentsPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Divisions Selection (Mandatory Multi-Select) */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                      Program Divisions <span className="text-rose-500">*</span> <span className="text-slate-400 font-normal capitalize">(Select one or more)</span>
+                    </label>
+                    {programDivisions && programDivisions.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {programDivisions.map((div) => {
+                          const isSelected = selectedDivisionIds.includes(div.id);
+                          return (
+                            <button
+                              key={div.id}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedDivisionIds(selectedDivisionIds.filter((id) => id !== div.id));
+                                } else {
+                                  setSelectedDivisionIds([...selectedDivisionIds, div.id]);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center space-x-1.5 ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-800 hover:border-indigo-400'
+                              }`}
+                            >
+                              {isSelected && <CheckCircle2 className="h-3.5 w-3.5" />}
+                              <span>{div.name} ({div.code})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">
+                        No divisions defined for this program yet. You can create divisions under Program Setup.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
@@ -1291,6 +1411,19 @@ export const StudentsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {/* Student Field Export Modal */}
+      {exportOpen && (
+        <StudentExportModal
+          isOpen={exportOpen}
+          onClose={() => setExportOpen(false)}
+          title="Student Directory Export"
+          subtitle="Export filtered directory list"
+          students={studentsData || []}
+          filenamePrefix="Student_Directory"
+        />
+      )}
+      </>
       )}
     </div>
   );

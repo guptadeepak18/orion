@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 import { AcademicPage } from './modules/academic/AcademicPage';
+import { SubjectsPage } from './modules/subjects/SubjectsPage';
 import { StudentsPage } from './modules/students/StudentsPage';
 import { SessionsPage } from './modules/sessions/SessionsPage';
 import { FacultyPage } from './modules/faculty/FacultyPage';
@@ -17,6 +18,10 @@ import { CalendarPage } from './modules/calendar/CalendarPage';
 import { FeedbackPage } from './modules/feedback/FeedbackPage';
 import { ReportsPage } from './modules/reports/ReportsPage';
 import { SystemSettingsPage } from './modules/system/SystemSettingsPage';
+import { RegisterPage } from './pages/RegisterPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { PendingApprovalPage } from './pages/PendingApprovalPage';
+import { StudentProfilePage } from './pages/StudentProfilePage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
   children,
@@ -46,7 +51,24 @@ export const App: React.FC = () => {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/pending-approval" element={<PendingApprovalPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
+          <Route
+            path="/student-registrations"
+            element={<Navigate to="/students" replace />}
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <StudentProfilePage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/dashboard"
@@ -62,6 +84,15 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator']}>
                 <AcademicPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/subjects"
+            element={
+              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external', 'approver', 'reporting_readonly']}>
+                <SubjectsPage />
               </ProtectedRoute>
             }
           />
