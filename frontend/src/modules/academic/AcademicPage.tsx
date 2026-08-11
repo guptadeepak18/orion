@@ -257,7 +257,7 @@ export const AcademicPage: React.FC = () => {
       setShowAssignModal(false);
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to update enrollment');
+      alert(err?.response?.data?.detail || err?.response?.data?.error?.message || err?.message || 'Failed to update enrollment');
     },
   });
 

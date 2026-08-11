@@ -5,8 +5,16 @@ from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
 db_url = settings.DATABASE_URL
-# Handle SQLite for testing if needed
 connect_args = {}
+
+if db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+if "sslmode" in db_url:
+    db_url = db_url.replace("?sslmode=require", "").replace("&sslmode=require", "").replace("?sslmode=prefer", "").replace("&sslmode=prefer", "")
+    connect_args["ssl"] = "require"
+
+# Handle SQLite for testing if needed
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
