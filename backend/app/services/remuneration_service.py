@@ -67,13 +67,10 @@ async def calculate_engagement_remuneration(
     tax_amount = gross * (tax_pct / 100.0) if is_gst_applicable else 0.0
     net_payable = gross + tax_amount
 
-    # Anomaly Detection: Flag if gross > 25,000 or hours > 8
+    # Anomaly Detection: Flag if hours > 8
     is_anomaly = False
     anomaly_reason = None
-    if gross > 25000.0:
-        is_anomaly = True
-        anomaly_reason = f"High remuneration anomaly: Gross amount ₹{gross:.2f} exceeds threshold ₹25,000.00"
-    elif hours > 8.0:
+    if hours > 8.0:
         is_anomaly = True
         anomaly_reason = f"High workload anomaly: Single engagement duration {hours}h exceeds 8.0h limit"
 

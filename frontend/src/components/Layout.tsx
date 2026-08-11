@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    label: 'Academic Backbone',
+    label: 'Programs',
     path: '/academic',
     icon: GraduationCap,
     roles: ['crc_admin', 'crc_coordinator'],

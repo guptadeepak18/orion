@@ -200,7 +200,7 @@ async def test_full_crc_one_e2e_lifecycle(
             "faculty_type": "external",
             "faculty_external_id": fac_id,
             "topic_delivered": "M&A Valuation Models",
-            "hours": 6.0,
+            "hours": 10.0,
             "program_id": p_id,
             "batch_id": b_id,
         },
@@ -212,7 +212,7 @@ async def test_full_crc_one_e2e_lifecycle(
     calc_res = await client.post(f"/remuneration/calculate?engagement_id={eng_id}", headers=headers)
     assert calc_res.status_code == 200
     calc_data = calc_res.json()["data"]
-    assert calc_data["gross_amount"] == 30000.0  # 6h * 5000 = 30,000 > 25,000 threshold
+    assert calc_data["gross_amount"] == 50000.0  # 10h * 5000 = 50,000
     assert calc_data["is_anomaly_flagged"] == True
 
     # STEP 8: Process Approval -> Triggers InvoiceSentinel Auto-Draft
@@ -240,7 +240,7 @@ async def test_full_crc_one_e2e_lifecycle(
 
     verify_res = await client.post(
         f"/invoices/{target_inv['id']}/verify",
-        json={"file_path": "/uploads/inv_thorne.pdf", "extracted_amount": 35400.0},
+        json={"file_path": "/uploads/inv_thorne.pdf", "extracted_amount": 59000.0},
         headers=headers,
     )
     assert verify_res.status_code == 200
