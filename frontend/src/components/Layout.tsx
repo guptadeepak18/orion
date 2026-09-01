@@ -19,6 +19,7 @@ import {
   BrainCircuit,
   ChevronDown,
   ShieldCheck,
+  Mail,
   MessageSquare,
   User,
   Layers,
@@ -291,6 +292,12 @@ const navCategories: NavCategory[] = [
         label: 'User Accounts & Permissions',
         path: '/users',
         icon: ShieldCheck,
+        roles: ['crc_admin'],
+      },
+      {
+        label: 'Email Notifications & Templates',
+        path: '/email-templates',
+        icon: Mail,
         roles: ['crc_admin'],
       },
       {

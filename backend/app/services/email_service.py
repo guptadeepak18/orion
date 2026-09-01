@@ -327,6 +327,88 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     return True
 
 
+def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bool:
+    """
+    Send any custom HTML email to a recipient.
+    Used for live previews, testing, and system activity triggers.
+    """
+    # 1. Try Hostinger Direct Mail API
+    hostinger_api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
+    if hostinger_api_key:
+        headers = {
+            "Authorization": f"Bearer {hostinger_api_key.strip()}",
+            "Content-Type": "application/json",
+        }
+        mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
+        url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
+        payload = {
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+        }
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                if resp.status_code in (200, 201, 204):
+                    logger.info(f"[Hostinger Mail API] Custom email successfully sent to {to_email}")
+                    return True
+                else:
+                    logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
+        except Exception as e:
+            logger.error(f"[Hostinger Mail API] Custom email failed: {e}")
+
+    # 2. Try Resend HTTP API
+    resend_key = getattr(settings, "RESEND_API_KEY", "")
+    if resend_key:
+        url = "https://api.resend.com/emails"
+        headers = {
+            "Authorization": f"Bearer {resend_key.strip()}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "from": f"Orion Portal <{settings.SMTP_FROM_EMAIL}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+            "reply_to": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education",
+        }
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                if resp.status_code in (200, 201):
+                    return True
+        except Exception:
+            pass
+
+    # 3. Try SMTP fallback
+    smtp_host = getattr(settings, "SMTP_HOST", "")
+    smtp_user = getattr(settings, "SMTP_USER", "")
+    smtp_password = getattr(settings, "SMTP_PASSWORD", "")
+    smtp_port = int(getattr(settings, "SMTP_PORT", 587))
+    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
+    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
+
+    if smtp_host and smtp_user and smtp_password:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"Orion Portal <{from_email}>"
+        msg["To"] = to_email
+        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+        msg.attach(MIMEText(html_content, "html"))
+        try:
+            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
+            return True
+        except Exception:
+            pass
+
+    print(f"\n{'='*70}")
+    print(f"  [CUSTOM EMAIL DISPATCH LOG]")
+    print(f"  To:      {to_email}")
+    print(f"  Subject: {subject}")
+    print(f"{'='*70}\n")
+    return True
+
+
 def generate_and_send_otp(to_email: str, full_name: str) -> str:
     """Generate a 6-digit OTP, send it, and return the OTP string."""
     otp = _generate_otp(6)

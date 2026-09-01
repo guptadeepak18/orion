@@ -17,6 +17,7 @@ import { ApprovalsPage } from './modules/approvals/ApprovalsPage';
 import { FeedbackPage } from './modules/feedback/FeedbackPage';
 import { ReportsPage } from './modules/reports/ReportsPage';
 import { SystemSettingsPage } from './modules/system/SystemSettingsPage';
+import { EmailTemplatesPage } from './modules/system/EmailTemplatesPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PendingApprovalPage } from './pages/PendingApprovalPage';
@@ -366,6 +367,15 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['crc_admin']}>
                 <SystemSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/email-templates"
+            element={
+              <ProtectedRoute allowedRoles={['crc_admin']}>
+                <EmailTemplatesPage />
               </ProtectedRoute>
             }
           />

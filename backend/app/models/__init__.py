@@ -10,6 +10,7 @@ from app.models.system import Notification, AuditLog, AIAgentRun
 
 from app.models.student import Student
 from app.models.student_registration import StudentRegistration
+from app.models.email_template import EmailTemplate
 from app.models.case_study import CaseStudy, UserCaseAnalysis
 from app.models.activity import SubjectActivity
 from app.models.lms import (
