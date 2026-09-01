@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    SMTP_FROM_EMAIL: str = "noreply@mile.education"
+    SMTP_FROM_EMAIL: str = "no-reply@dataxplore.club"
+    SMTP_REPLY_TO: str = "deepak.gupta@mile.education"
 
     model_config = SettingsConfigDict(
         env_file=".env",

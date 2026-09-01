@@ -61,7 +61,7 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion by Hy
       <p>Best regards,<br /><strong>The {app_name} Team</strong></p>
     </div>
     <div class="footer">
-      This is an automated message — please do not reply to this email.
+      Questions or issues? Reply directly to this email or contact <a href="mailto:deepak.gupta@mile.education" style="color: #0891b2;">deepak.gupta@mile.education</a>.
     </div>
   </div>
 </body>
@@ -78,7 +78,8 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     smtp_user = getattr(settings, "SMTP_USER", None)
     smtp_password = getattr(settings, "SMTP_PASSWORD", None)
     smtp_port = int(getattr(settings, "SMTP_PORT", 587))
-    from_email = getattr(settings, "SMTP_FROM_EMAIL", smtp_user or "noreply@mile.education")
+    from_email = getattr(settings, "SMTP_FROM_EMAIL", smtp_user or "no-reply@dataxplore.club")
+    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
     if not smtp_host or not smtp_user:
         # Dev mode fallback — log prominently to console
@@ -88,17 +89,20 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
         )
         print(f"\n{'='*60}")
         print(f"  EMAIL VERIFICATION OTP (dev mode — SMTP not configured)")
-        print(f"  To:   {to_email}")
-        print(f"  Name: {full_name}")
-        print(f"  OTP:  {otp}")
+        print(f"  To:       {to_email}")
+        print(f"  Name:     {full_name}")
+        print(f"  OTP:      {otp}")
+        print(f"  From:     {from_email}")
+        print(f"  Reply-To: {reply_to}")
         print(f"{'='*60}\n")
         return True
 
     try:
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "CRC One — Verify Your Email Address"
-        msg["From"] = f"CRC One <{from_email}>"
+        msg["Subject"] = "Orion — Verify Your Email Address"
+        msg["From"] = f"Orion Portal <{from_email}>"
         msg["To"] = to_email
+        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
 
         html_content = _build_otp_email_html(full_name, otp)
         msg.attach(MIMEText(html_content, "html"))
