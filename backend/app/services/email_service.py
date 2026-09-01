@@ -205,29 +205,80 @@ def _dispatch_smtp(smtp_host: str, smtp_port: int, smtp_user: str, smtp_password
             server.sendmail(from_email, to_email, msg.as_string())
 
 
+def _send_via_hostinger_mail_api(api_key: str, to_email: str, full_name: str, otp: str) -> bool:
+    """
+    Send transactional verification email via Hostinger Mail API (HTTPS Port 443).
+    Bypasses cloud host SMTP port blocks on Render/AWS/GCP.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "")
+    if not mailbox_id:
+        try:
+            with httpx.Client(timeout=6.0) as client:
+                me_res = client.get("https://api.mail.hostinger.com/api/v1/me", headers=headers)
+                if me_res.status_code == 200:
+                    mailboxes = me_res.json().get("data", {}).get("mailboxes", [])
+                    if mailboxes:
+                        mailbox_id = mailboxes[0].get("resourceId", "")
+        except Exception as e:
+            logger.warning(f"[Hostinger Mail API] Could not fetch mailbox info: {e}")
+
+    if not mailbox_id:
+        mailbox_id = "AC450fbdeffe5c83d81e26fcf45213"
+
+    url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
+    payload = {
+        "to": [to_email],
+        "subject": "Orion — Verify Your Email Address",
+        "html": _build_otp_email_html(full_name, otp),
+    }
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201, 204):
+                logger.info(f"[Hostinger Mail API] Verification email successfully sent to {to_email}")
+                return True
+            else:
+                logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.error(f"[Hostinger Mail API] Request failed: {e}")
+    return False
+
+
 def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     """
     Send OTP verification email.
-    1. First attempts HTTPS REST APIs (Resend, Brevo, SendGrid) which work 100% on Render without port blocking.
-    2. Then attempts direct SMTP with fast fallback.
-    3. Always logs OTP code to server console as fallback so student registration is never blocked.
+    1. First attempts Hostinger Direct Mail API (HTTPS Port 443 — works directly on Render with 0 port blocking).
+    2. Then attempts other configured HTTPS REST APIs (Resend, Brevo, SendGrid).
+    3. Then attempts direct SMTP with fast fallback.
+    4. Always logs OTP code to server console as fallback so student registration is never blocked.
     """
     from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
     reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
-    # 1. Try Resend HTTP API
+    # 1. Try Hostinger Direct Mail API (Primary HTTPS)
+    hostinger_api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
+    if hostinger_api_key:
+        if _send_via_hostinger_mail_api(hostinger_api_key, to_email, full_name, otp):
+            return True
+
+    # 2. Try Resend HTTP API
     resend_key = getattr(settings, "RESEND_API_KEY", "")
     if resend_key:
         if _send_via_resend(resend_key, from_email, to_email, full_name, otp):
             return True
 
-    # 2. Try Brevo HTTP API
+    # 3. Try Brevo HTTP API
     brevo_key = getattr(settings, "BREVO_API_KEY", "")
     if brevo_key:
         if _send_via_brevo(brevo_key, from_email, to_email, full_name, otp):
             return True
 
-    # 3. Try SendGrid HTTP API
+    # 4. Try SendGrid HTTP API
     sendgrid_key = getattr(settings, "SENDGRID_API_KEY", "")
     if sendgrid_key:
         if _send_via_sendgrid(sendgrid_key, from_email, to_email, full_name, otp):

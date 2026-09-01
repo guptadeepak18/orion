@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost,http://127.0.0.1"
     FILE_STORAGE_PATH: str = "./uploads"
 
-    # Email settings (HTTP API takes precedence over SMTP on platforms like Render where SMTP ports are blocked)
+    # Email API settings (HTTP APIs take precedence over SMTP on platforms like Render where SMTP ports are blocked)
+    HOSTINGER_MAIL_API_KEY: str = "47365baa0ca73c5e8c639bd961149cf4ad99f5e3b3fef47dd64dac28f69932b5"
+    HOSTINGER_MAILBOX_ID: str = "AC450fbdeffe5c83d81e26fcf45213"
     RESEND_API_KEY: str = ""
     BREVO_API_KEY: str = ""
     SENDGRID_API_KEY: str = ""
