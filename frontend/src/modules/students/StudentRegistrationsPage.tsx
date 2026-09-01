@@ -345,23 +345,29 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 uppercase text-[11px] tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-4">Student Name</th>
-                  <th className="px-6 py-4">Official Email</th>
-                  <th className="px-6 py-4">PRN Number</th>
-                  <th className="px-6 py-4">Mobile Number</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Submitted On</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4 min-w-[220px]">Student Details</th>
+                  <th className="px-6 py-4 min-w-[210px]">Official Email</th>
+                  <th className="px-6 py-4 min-w-[130px]">PRN Number</th>
+                  <th className="px-6 py-4 min-w-[130px]">Mobile</th>
+                  <th className="px-6 py-4 min-w-[140px]">Status</th>
+                  <th className="px-6 py-4 min-w-[120px]">Submitted</th>
+                  <th className="px-6 py-4 text-right min-w-[240px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredList.map((reg) => (
-                  <tr key={reg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                  <tr
+                    key={reg.id}
+                    onClick={() => setSelectedReg(reg)}
+                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                  >
                     <td className="px-6 py-4">
-                      <div className="font-medium text-slate-900 dark:text-white">{reg.full_name}</div>
+                      <div className="font-semibold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                        {reg.full_name}
+                      </div>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {reg.ug_degree && (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                             {reg.ug_degree} ({reg.ug_score} {reg.ug_score_type?.toUpperCase()})
                           </span>
                         )}
@@ -373,43 +379,59 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono text-xs">{reg.email}</td>
-                    <td className="px-6 py-4 text-slate-900 dark:text-white font-semibold">{reg.prn_number || 'N/A'}</td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{reg.mobile_number}</td>
-                    <td className="px-6 py-4">{getStatusBadge(reg.status)}</td>
-                    <td className="px-6 py-4 text-slate-500 text-xs">
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono text-xs">
+                      {reg.email}
+                    </td>
+                    <td className="px-6 py-4 text-slate-900 dark:text-white font-bold font-mono text-xs">
+                      {reg.prn_number || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300 text-xs">
+                      {reg.mobile_number}
+                    </td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(reg.status)}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 text-xs whitespace-nowrap">
                       {new Date(reg.created_at).toLocaleDateString('en-IN', {
                         day: '2-digit',
                         month: 'short',
                         year: 'numeric',
                       })}
                     </td>
-                    <td className="px-6 py-4 text-right space-x-2">
-                      <button
-                        onClick={() => setSelectedReg(reg)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      >
-                        <Eye className="h-3.5 w-3.5" /> View
-                      </button>
-                      {reg.status === 'pending_review' && (
-                        <>
-                          <button
-                            onClick={() => handleOpenApprove(reg)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                          </button>
-                          <button
-                            onClick={() => {
-                              setRejectingReg(reg);
-                              setRejectionReason('');
-                            }}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-                          >
-                            <XCircle className="h-3.5 w-3.5" /> Reject
-                          </button>
-                        </>
-                      )}
+                    <td className="px-6 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReg(reg)}
+                          title="View student profile details"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-slate-400" /> View
+                        </button>
+                        {reg.status === 'pending_review' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenApprove(reg)}
+                              title="Review profile and approve registration"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRejectingReg(reg);
+                                setRejectionReason('');
+                              }}
+                              title="Reject registration application"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-xs font-semibold transition-all cursor-pointer shrink-0"
+                            >
+                              <XCircle className="h-3.5 w-3.5" /> Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
