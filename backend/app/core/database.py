@@ -10,9 +10,10 @@ connect_args = {}
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-if "sslmode" in db_url:
-    db_url = db_url.replace("?sslmode=require", "").replace("&sslmode=require", "").replace("?sslmode=prefer", "").replace("&sslmode=prefer", "")
-    connect_args["ssl"] = "require"
+for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&sslmode=prefer", "?ssl=require", "&ssl=require", "?ssl=prefer", "&ssl=prefer"]:
+    if ssl_param in db_url:
+        db_url = db_url.replace(ssl_param, "")
+        connect_args["ssl"] = "require"
 
 # Handle SQLite for testing if needed
 if db_url.startswith("sqlite"):
