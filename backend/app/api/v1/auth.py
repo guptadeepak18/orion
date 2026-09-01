@@ -1,3 +1,4 @@
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,9 +33,25 @@ from app.services.auth_service import (
     confirm_change_password,
 )
 from app.services.user_service import get_user_by_id
-from app.services import student_registration_service
+from app.services import student_registration_service, academic_service
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.get("/public-programs", response_model=ResponseEnvelope[List[dict]])
+async def get_public_programs(db: AsyncSession = Depends(get_db)):
+    """Public endpoint: Returns active academic programs for registration selection."""
+    programs = await academic_service.list_programs(db)
+    result = [
+        {
+            "id": str(p.id),
+            "code": p.code,
+            "name": p.name,
+            "description": p.description or "",
+        }
+        for p in programs
+    ]
+    return ResponseEnvelope(data=result)
 
 
 @router.post("/login", response_model=ResponseEnvelope[TokenResponse])

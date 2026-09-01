@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
@@ -13,8 +14,10 @@ class StudentRegisterRequest(BaseModel):
     password: str
     confirm_password: str
 
-    # Academic ID
+    # Academic ID & Program
     prn_number: str
+    program_code: Optional[str] = "PGDM"
+    program_name: Optional[str] = "Post Graduate Diploma in Management"
 
     # Identity
     first_name: str
@@ -55,10 +58,34 @@ class StudentRegisterRequest(BaseModel):
             raise ValueError(f"Registration is only allowed with @{ALLOWED_DOMAIN} email addresses")
         return v
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter (A-Z).")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain at least one lowercase letter (a-z).")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain at least one numeric digit (0-9).")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            raise ValueError("Password must contain at least one special character.")
+        return v
+
     @model_validator(mode="after")
-    def passwords_match(self) -> "StudentRegisterRequest":
+    def validate_rules(self) -> "StudentRegisterRequest":
         if self.password != self.confirm_password:
-            raise ValueError("Passwords do not match")
+            raise ValueError("Passwords do not match.")
+
+        # PGDM PRN validation: Exactly 14 digits and numeric
+        prog_code = (self.program_code or "").strip().upper()
+        prog_name = (self.program_name or "").strip().upper()
+        if prog_code == "PGDM" or "PGDM" in prog_name:
+            prn_clean = (self.prn_number or "").strip()
+            if not re.match(r"^\d{14}$", prn_clean):
+                raise ValueError("For PGDM program, PRN number must be exactly 14 numeric digits (e.g. 20261029384756).")
+
         return self
 
 
@@ -85,6 +112,8 @@ class StudentRegistrationResponse(BaseModel):
     id: UUID
     email: str
     prn_number: Optional[str] = None
+    program_code: Optional[str] = None
+    program_name: Optional[str] = None
     first_name: str
     last_name: Optional[str] = None
     full_name: str

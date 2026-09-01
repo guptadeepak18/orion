@@ -83,6 +83,8 @@ async def create_registration(
         full_name=f"{data.first_name} {data.last_name or ''}".strip(),
         gender=data.gender,
         prn_number=data.prn_number,
+        program_code=data.program_code,
+        program_name=data.program_name,
         father_name=data.father_name,
         mother_name=data.mother_name,
         mobile_number=data.mobile_number,

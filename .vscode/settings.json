@@ -7,6 +7,7 @@
         "**/__pycache__/**": true,
         "**/.pytest_cache/**": true,
         "**/.mypy_cache/**": true,
+        "**/.ruff_cache/**": true,
         "**/.cache/**": true,
         "**/dist/**": true,
         "**/build/**": true,
@@ -15,9 +16,18 @@
         "**/tmp/**": true,
         "**/temp/**": true,
         "**/backend/uploads/**": true,
+        "**/*.pyc": true,
         "**/*.log": true,
         "**/*.tmp": true,
         "**/*.bak": true
+    },
+
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true
     },
 
     "search.exclude": {
@@ -28,6 +38,7 @@
         "**/__pycache__": true,
         "**/.pytest_cache": true,
         "**/.mypy_cache": true,
+        "**/.ruff_cache": true,
         "**/dist": true,
         "**/build": true,
         "**/coverage": true,

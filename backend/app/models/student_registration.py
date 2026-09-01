@@ -27,8 +27,10 @@ class StudentRegistration(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     gender: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    # --- Academic ID (student-supplied at registration) ---
+    # --- Academic ID & Program (student-supplied at registration) ---
     prn_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    program_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    program_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # --- Family ---
     father_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
