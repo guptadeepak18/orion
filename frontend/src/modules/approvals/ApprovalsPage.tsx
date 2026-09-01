@@ -49,27 +49,27 @@ export const ApprovalsPage: React.FC = () => {
       {/* Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">Approval Inbox & SLA Watchdog</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">Approvals & Sign-off Inbox</h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Review academic engagements and invoice approvals with AI context summaries and turnaround monitoring.
+            Review academic engagements, curriculum updates, and fee approvals with automated context summaries.
           </p>
         </div>
       </div>
 
-      {/* Watchdog Status Banner */}
+      {/* SLA Status Banner */}
       <div className="p-4 rounded-2xl glass-card border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-950/20 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Approval Watchdog Active</h4>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Turnaround Tracking Active</h4>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              Generates LLM context summaries, sends reminders at 50% SLA elapsed, and escalates items at 100% SLA.
+              Generates concise summaries and sends timely reminders to ensure prompt review cycles.
             </p>
           </div>
         </div>
-        <StatusBadge status="active" label="SLA Watchdog Active" />
+        <StatusBadge status="active" label="Tracking Active" />
       </div>
 
       {/* Pending Items */}

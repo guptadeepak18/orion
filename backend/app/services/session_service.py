@@ -42,6 +42,12 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
     db.add(session)
     await db.commit()
     await db.refresh(session)
+
+    # HyperBuild Activity Release:
+    # Logic moved to a time-gated check in the activity retrieval service 
+    # to prevent early release before class start time.
+
+
     return session
 
 
@@ -78,8 +84,18 @@ async def update_session(db: AsyncSession, session_id: UUID, s_in: SessionUpdate
     for field, val in update_data.items():
         setattr(session, field, val)
 
+    # HyperBuild Activity Release:
+    # If session_type was updated to hyperbuild (or already was) and activity_no is present
+    current_type = session.session_type
+    current_act_no = session.hyperbuild_activity_no
+
     await db.commit()
     await db.refresh(session)
+
+    # HyperBuild Activity Release:
+    # Logic moved to a time-gated check in the activity retrieval service 
+    # to prevent early release before class start time.
+
 
     if session.status == "completed" and session.faculty_type == "external":
         await process_completed_external_session(db, session)
@@ -398,13 +414,14 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
             student.attendance_percentage = 100.0
             continue
 
-        # Count how many of the marked sessions this student attended (present or late)
+        # Count how many of the marked sessions this student attended (present, late, excused, on duty)
+        PRESENT_STATUSES = ["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"]
         att_stmt = (
             select(StudentAttendance)
             .where(
                 StudentAttendance.student_id == student.id,
                 StudentAttendance.session_id.in_(marked_session_ids),
-                StudentAttendance.status.in_(["present", "late"])
+                StudentAttendance.status.in_(PRESENT_STATUSES)
             )
         )
         att_res = await db.execute(att_stmt)

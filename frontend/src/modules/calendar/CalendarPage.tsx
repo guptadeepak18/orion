@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon, Clock, MapPin } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
+import { useAuthStore } from '../../lib/store';
 
 interface CalendarEvent {
   id: string;
@@ -18,6 +19,9 @@ interface CalendarEvent {
 }
 
 export const CalendarPage: React.FC = () => {
+  const userRoles = useAuthStore((state) => state.user?.roles || []);
+  const isStudent = userRoles.includes('student') && !userRoles.includes('crc_admin');
+
   const [viewMode, setViewMode] = useState<'agenda' | 'month'>('agenda');
 
   const { data: events, isLoading } = useQuery({
@@ -33,9 +37,13 @@ export const CalendarPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">Master Calendar & Schedule</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">
+            {isStudent ? 'Academic Calendar & Events' : 'Master Calendar & Schedule'}
+          </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Consolidated academic schedule views across programs, batches, venues, and faculty engagements.
+            {isStudent
+              ? 'View scheduled academic sessions, exams, and institutional events.'
+              : 'Consolidated academic schedule views across programs, batches, venues, and faculty engagements.'}
           </p>
         </div>
 

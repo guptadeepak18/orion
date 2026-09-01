@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.permissions import require_permission, get_current_token_payload
+from app.core.permissions import require_permission, require_role, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.schemas.session import (
     SessionCreate, SessionUpdate, SessionResponse, SessionBulkEditRequest,
@@ -16,6 +16,9 @@ from app.agents.scheduler_sentinel import SchedulerConflictException
 from app.agents.faculty_compliance_agent import FacultyComplianceException
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
+
+STAFF_ROLES = ["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external", "finance", "approver", "reporting_readonly"]
+FACULTY_ADMIN_ROLES = ["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]
 
 
 @router.post(
@@ -48,14 +51,28 @@ async def create_session(s_in: SessionCreate, db: AsyncSession = Depends(get_db)
 @router.get(
     "",
     response_model=ResponseEnvelope[List[SessionResponse]],
-    dependencies=[Depends(require_permission("academic", "view"))],
+    dependencies=[Depends(get_current_token_payload)],
 )
 async def list_sessions(
     batch_id: Optional[UUID] = Query(None),
     session_date: Optional[date] = Query(None),
     status: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    payload=Depends(get_current_token_payload),
 ):
+    # Smart Guard: Resolve batch_id if student is accessing
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    
+    # Check if user is a student and try to force their batch_id
+    from app.models.student import Student
+    from sqlalchemy import select
+    
+    if not batch_id and user_id:
+        student_res = await db.execute(select(Student).where(Student.user_id == user_id))
+        student = student_res.scalar_one_or_none()
+        if student:
+            batch_id = student.batch_id
+
     sessions = await session_service.list_sessions(db, batch_id, session_date, status)
     return ResponseEnvelope(data=sessions)
 
@@ -100,7 +117,7 @@ async def bulk_edit_sessions(
 @router.get(
     "/{session_id}/attendance",
     response_model=ResponseEnvelope[SessionAttendanceSheetResponse],
-    dependencies=[Depends(require_permission("academic", "view"))],
+    dependencies=[Depends(require_role(STAFF_ROLES))],
     summary="Get attendance sheet for a session",
 )
 async def get_session_attendance(session_id: UUID, db: AsyncSession = Depends(get_db)):
@@ -114,7 +131,7 @@ async def get_session_attendance(session_id: UUID, db: AsyncSession = Depends(ge
 @router.post(
     "/{session_id}/attendance",
     response_model=ResponseEnvelope[SessionAttendanceSheetResponse],
-    dependencies=[Depends(require_permission("academic", "edit"))],
+    dependencies=[Depends(require_role(FACULTY_ADMIN_ROLES))],
     summary="Mark/update attendance for a session",
 )
 async def mark_session_attendance(

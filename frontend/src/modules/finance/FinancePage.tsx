@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileCheck, CheckCircle2, AlertTriangle, Sparkles, CreditCard,
@@ -77,7 +78,11 @@ interface Payment {
 
 export const FinancePage: React.FC = () => {
   const { canManageFinance } = useRoleAccess();
-  const [activeTab, setActiveTab] = useState<'remuneration' | 'invoices' | 'payments'>('remuneration');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'remuneration' | 'invoices' | 'payments'>(
+    urlTab === 'invoices' || urlTab === 'payments' ? urlTab : 'remuneration'
+  );
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -88,8 +93,50 @@ export const FinancePage: React.FC = () => {
 
   const queryClient = useQueryClient();
 
+  const handleTabChange = (t: 'remuneration' | 'invoices' | 'payments') => {
+    setActiveTab(t);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', t);
+    setSearchParams(next);
+  };
+
+  const updateUrlModal = (m: string | null, params: Record<string, string | undefined> = {}) => {
+    const next = new URLSearchParams(searchParams);
+    if (!m) {
+      next.delete('modal');
+      next.delete('id');
+    } else {
+      next.set('modal', m);
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      });
+    }
+    setSearchParams(next);
+  };
+
+  const handleOpenBilling = (b: ExternalBilling, syncUrl = true) => {
+    setSelectedBilling(b);
+    if (syncUrl) updateUrlModal('voucherDossier', { id: b.id });
+  };
+
+  const handleCloseBilling = (syncUrl = true) => {
+    setSelectedBilling(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  const handleOpenInvoice = (inv: Invoice, syncUrl = true) => {
+    setSelectedInvoice(inv);
+    if (syncUrl) updateUrlModal('verifyOcr', { id: inv.id });
+  };
+
+  const handleCloseInvoice = (syncUrl = true) => {
+    setSelectedInvoice(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
   // Queries
-  const { data: billings = [], isLoading: billLoading } = useQuery({
+  const { data: billings = [] } = useQuery({
     queryKey: ['remuneration_billings'],
     queryFn: async () => {
       const res = await api.get('/remuneration/billings');
@@ -97,7 +144,7 @@ export const FinancePage: React.FC = () => {
     },
   });
 
-  const { data: invoices = [], isLoading: invLoading } = useQuery({
+  const { data: invoices = [] } = useQuery({
     queryKey: ['invoices'],
     queryFn: async () => {
       const res = await api.get('/invoices');
@@ -105,13 +152,45 @@ export const FinancePage: React.FC = () => {
     },
   });
 
-  const { data: payments = [], isLoading: payLoading } = useQuery({
+  const { data: payments = [] } = useQuery({
     queryKey: ['payments'],
     queryFn: async () => {
       const res = await api.get('/payments');
       return res.data.data as Payment[];
     },
   });
+
+  // URL sync effect
+  const urlModal = searchParams.get('modal');
+  const urlId = searchParams.get('id');
+
+  useEffect(() => {
+    if (urlTab && (urlTab === 'remuneration' || urlTab === 'invoices' || urlTab === 'payments') && urlTab !== activeTab) {
+      setActiveTab(urlTab);
+    }
+  }, [urlTab]);
+
+  useEffect(() => {
+    if (!urlModal) {
+      if (selectedBilling) handleCloseBilling(false);
+      if (selectedInvoice) handleCloseInvoice(false);
+      return;
+    }
+
+    if (urlId) {
+      if (urlModal === 'voucherDossier' && billings.length > 0) {
+        const found = billings.find((b: ExternalBilling) => b.id === urlId);
+        if (found && (!selectedBilling || selectedBilling.id !== found.id)) {
+          handleOpenBilling(found, false);
+        }
+      } else if (urlModal === 'verifyOcr' && invoices.length > 0) {
+        const found = invoices.find((i: Invoice) => i.id === urlId);
+        if (found && (!selectedInvoice || selectedInvoice.id !== found.id)) {
+          handleOpenInvoice(found, false);
+        }
+      }
+    }
+  }, [urlModal, urlId, billings, invoices]);
 
   const verifyMutation = useMutation({
     mutationFn: async ({ id, file_path, extracted_amount }: any) => {
@@ -120,7 +199,7 @@ export const FinancePage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      setSelectedInvoice(null);
+      handleCloseInvoice();
     },
   });
 
@@ -216,7 +295,7 @@ export const FinancePage: React.FC = () => {
       header: 'Actions',
       accessor: (r) => (
         <button
-          onClick={() => setSelectedBilling(r)}
+          onClick={() => handleOpenBilling(r)}
           className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition-colors"
         >
           <Eye className="h-3.5 w-3.5" />
@@ -252,7 +331,7 @@ export const FinancePage: React.FC = () => {
         canManageFinance ? (
           r.status === 'draft' ? (
             <button
-              onClick={() => setSelectedInvoice(r)}
+              onClick={() => handleOpenInvoice(r)}
               className="px-3 py-1 text-xs font-semibold rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition-colors"
             >
               Verify OCR & Upload
@@ -296,9 +375,9 @@ export const FinancePage: React.FC = () => {
       {/* Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">External Faculty Remuneration & Finance Vault</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">External Faculty Remuneration & Finance Hub</h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Automated remuneration billing based on profile cost structures, GST calculations, OCR verification, and disbursements.
+            Automated remuneration billing based on agreed fee structures, GST calculations, voucher verifications, and disbursements.
           </p>
         </div>
       </div>
@@ -334,35 +413,35 @@ export const FinancePage: React.FC = () => {
 
         <div className="p-4 rounded-2xl glass-card border border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/20">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Flagged Anomalies</p>
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Flagged Sessions</p>
             <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">{anomalyCount}</p>
-          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5 font-medium">Rate / Workload Sentinel alerts</p>
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5 font-medium">Sessions requiring rate or policy verification</p>
         </div>
       </div>
 
-      {/* Sentinel Banner */}
+      {/* Automation Status Banner */}
       <div className="p-4 rounded-2xl glass-card border border-cyan-200 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Remuneration Sentinel Engine Active</h4>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Automatic Payment Calculation Active</h4>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              Completed external sessions automatically compute gross remuneration, 18% GST, and auto-draft invoices using the faculty's profile rate structure.
+              Completed external sessions automatically compute gross remuneration, 18% GST, and draft payment vouchers using the faculty's profile rate structure.
             </p>
           </div>
         </div>
-        <StatusBadge status="active" label="Remuneration Sentinel Active" />
+        <StatusBadge status="active" label="Active" />
       </div>
 
       {/* Navigation Tabs & Search Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 gap-4 pb-1">
         <div className="flex space-x-6 w-full sm:w-auto">
           <button
-            onClick={() => setActiveTab('remuneration')}
+            onClick={() => handleTabChange('remuneration')}
             className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
               activeTab === 'remuneration'
                 ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400'
@@ -373,7 +452,7 @@ export const FinancePage: React.FC = () => {
             <span>Class Remuneration & Billing ({billings.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab('invoices')}
+            onClick={() => handleTabChange('invoices')}
             className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
               activeTab === 'invoices'
                 ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400'
@@ -381,10 +460,10 @@ export const FinancePage: React.FC = () => {
             }`}
           >
             <FileCheck className="h-4 w-4" />
-            <span>Invoice Vault ({invoices.length})</span>
+            <span>Invoices & Vouchers ({invoices.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab('payments')}
+            onClick={() => handleTabChange('payments')}
             className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
               activeTab === 'payments'
                 ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400'
@@ -400,108 +479,98 @@ export const FinancePage: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search billing records..."
+            placeholder="Search external faculty, classes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-cyan-500 text-slate-900 dark:text-slate-100"
+            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 transition-colors"
           />
         </div>
       </div>
 
-      {/* Active Tab Content */}
+      {/* Remuneration View */}
       {activeTab === 'remuneration' && (
-        <Card title="Completed External Class Remuneration Statements">
-          {billLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Calculating external class remuneration...</p>
-          ) : (
-            <DataTable
-              columns={billingColumns}
-              data={filteredBillings}
-              keyExtractor={(r) => r.id}
-              emptyMessage="No completed external faculty sessions found. Once an external faculty session is completed or attendance is marked, its billing will auto-calculate here."
-            />
-          )}
+        <Card title={`External Faculty Class Billing Ledger (${filteredBillings.length})`}>
+          <DataTable<ExternalBilling>
+            data={filteredBillings}
+            columns={billingColumns}
+            keyExtractor={(r) => r.id}
+            emptyMessage="No external faculty billing records found for completed sessions."
+          />
         </Card>
       )}
 
+      {/* Invoices View */}
       {activeTab === 'invoices' && (
-        <Card title="Faculty Invoice Sentinel Vault">
-          {invLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading invoices...</p>
-          ) : (
-            <DataTable
-              columns={invoiceColumns}
-              data={invoices}
-              keyExtractor={(r) => r.id}
-              emptyMessage="No invoices generated yet."
-            />
-          )}
+        <Card title={`Automated & Draft Invoices Vault (${invoices.length})`}>
+          <DataTable<Invoice>
+            data={invoices}
+            columns={invoiceColumns}
+            keyExtractor={(r) => r.id}
+            emptyMessage="No invoices generated yet."
+          />
         </Card>
       )}
 
+      {/* Payments View */}
       {activeTab === 'payments' && (
-        <Card title="Disbursement & Payment Tracking">
-          {payLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading payments...</p>
-          ) : (
-            <DataTable
-              columns={paymentColumns}
-              data={payments}
-              keyExtractor={(r) => r.id}
-              emptyMessage="No pending or released payments."
-            />
-          )}
+        <Card title={`Disbursements & Settlements (${payments.length})`}>
+          <DataTable<Payment>
+            data={payments}
+            columns={paymentColumns}
+            keyExtractor={(r) => r.id}
+            emptyMessage="No payment disbursements recorded yet."
+          />
         </Card>
       )}
 
-      {/* ── MODAL / DRAWER: REMUNERATION VOUCHER DOSSIER ─────────────────────── */}
+      {/* Voucher Modal */}
       {selectedBilling && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="glass-panel w-full max-w-xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 my-8">
-            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <Receipt className="h-5 w-5 text-emerald-500" />
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">External Remuneration Voucher</h3>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="h-9 w-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+                  <Receipt className="h-5 w-5" />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Invoice Ref: <span className="font-mono text-cyan-600 dark:text-cyan-400 font-semibold">{selectedBilling.invoice_number || 'AUTO-DRAFTED'}</span>
-                </p>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">External Faculty Session Remuneration Voucher</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Voucher Reference #{selectedBilling.id.substring(0, 8).toUpperCase()}</p>
+                </div>
               </div>
-              <button onClick={() => setSelectedBilling(null)} className="p-1 text-slate-400 hover:text-slate-600">
+              <button
+                onClick={() => handleCloseBilling()}
+                className="p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="py-4 space-y-4 text-xs">
-              {/* Faculty & Banking Info */}
+            <div className="space-y-4 my-4 text-xs">
+              {/* Faculty Profile Card */}
               <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="h-4 w-4 text-cyan-500" /> Beneficiary Faculty & Banking Details
+                <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-cyan-500" /> Faculty Details
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Name:</span> {selectedBilling.faculty_name}</p>
-                  <p><span className="font-semibold text-slate-500">Organization:</span> {selectedBilling.organization || 'Independent'}</p>
+                  <p><span className="font-semibold text-slate-500">Org:</span> {selectedBilling.organization || 'Independent'}</p>
                   <p><span className="font-semibold text-slate-500">Email:</span> {selectedBilling.email}</p>
-                  <p><span className="font-semibold text-slate-500">Phone:</span> {selectedBilling.phone || '—'}</p>
-                  <p><span className="font-semibold text-slate-500">PAN Card:</span> <span className="font-mono">{selectedBilling.pan || '—'}</span></p>
-                  <p><span className="font-semibold text-slate-500">GSTIN:</span> <span className="font-mono">{selectedBilling.gst_number || '—'}</span></p>
-                  <p><span className="font-semibold text-slate-500">Bank Name:</span> {selectedBilling.bank_name || '—'}</p>
-                  <p><span className="font-semibold text-slate-500">Account No:</span> <span className="font-mono">{selectedBilling.bank_account_no || '—'}</span></p>
-                  <p className="col-span-2"><span className="font-semibold text-slate-500">IFSC Code:</span> <span className="font-mono">{selectedBilling.bank_ifsc || '—'}</span></p>
+                  <p><span className="font-semibold text-slate-500">Phone:</span> {selectedBilling.phone || 'N/A'}</p>
+                  <p><span className="font-semibold text-slate-500">PAN:</span> {selectedBilling.pan || 'N/A'}</p>
+                  <p><span className="font-semibold text-slate-500">GSTIN:</span> {selectedBilling.gst_number || 'N/A'}</p>
                 </div>
               </div>
 
-              {/* Class & Session Details */}
+              {/* Class & Subject Details */}
               <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <Building className="h-4 w-4 text-cyan-500" /> Completed Session Log
+                <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Building className="h-4 w-4 text-indigo-500" /> Session Particulars
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Subject:</span> {selectedBilling.subject_name || selectedBilling.topic_delivered}</p>
                   <p><span className="font-semibold text-slate-500">Batch:</span> {selectedBilling.batch_name || 'PGDM'}</p>
                   <p><span className="font-semibold text-slate-500">Class Date:</span> {selectedBilling.session_date}</p>
-                  <p><span className="font-semibold text-slate-500">Time Slot:</span> {selectedBilling.start_time} – {selectedBilling.end_time} ({selectedBilling.duration_hours} hrs)</p>
+                  <p><span className="font-semibold text-slate-500">Time:</span> {selectedBilling.start_time} – {selectedBilling.end_time}</p>
                   <p><span className="font-semibold text-slate-500">Venue:</span> {selectedBilling.venue}</p>
                   <p><span className="font-semibold text-slate-500">Status:</span> {selectedBilling.session_status}</p>
                 </div>
@@ -535,19 +604,11 @@ export const FinancePage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Anomaly Alert */}
-              {selectedBilling.is_anomaly_flagged && (
-                <div className="p-3 bg-rose-50 dark:bg-rose-500/10 rounded-2xl border border-rose-200 dark:border-rose-500/30 text-rose-800 dark:text-rose-300 space-y-1">
-                  <p className="font-bold flex items-center gap-1.5 text-xs"><AlertTriangle className="h-4 w-4" /> Sentinel Anomaly Flagged</p>
-                  <p className="text-xs">{selectedBilling.anomaly_reason}</p>
-                </div>
-              )}
             </div>
 
             <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
-                onClick={() => setSelectedBilling(null)}
+                onClick={() => handleCloseBilling()}
                 className="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
               >
                 Close Voucher
@@ -595,7 +656,7 @@ export const FinancePage: React.FC = () => {
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setSelectedInvoice(null)}
+                  onClick={() => handleCloseInvoice()}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   Cancel

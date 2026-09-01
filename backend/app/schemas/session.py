@@ -23,6 +23,7 @@ class SessionCreate(BaseModel):
     mode: str = "offline"  # online|offline|hybrid
     duration_minutes: int
     notes: Optional[str] = None
+    hyperbuild_activity_no: Optional[int] = None
 
 
 class SessionUpdate(BaseModel):
@@ -38,6 +39,7 @@ class SessionUpdate(BaseModel):
     duration_minutes: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    hyperbuild_activity_no: Optional[int] = None
 
 
 class SessionResponse(BaseModel):
@@ -60,6 +62,7 @@ class SessionResponse(BaseModel):
     duration_minutes: int
     status: str
     attendance_status: Optional[str] = None
+    hyperbuild_activity_no: Optional[int] = None
     feedback_status: Optional[str] = None
     notes: Optional[str] = None
 

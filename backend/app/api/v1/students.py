@@ -4,13 +4,15 @@ from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.permissions import require_permission, get_current_token_payload
+from app.core.permissions import require_permission, require_role, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.schemas.student import StudentCreate, StudentUpdate, StudentResponse, StudentReportSummary
 from app.schemas.session import StudentAttendanceRecordResponse
 from app.services import student_service, session_service
 
 router = APIRouter(prefix="/students", tags=["Students"])
+
+STAFF_ROLES = ["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external", "finance", "approver", "reporting_readonly"]
 
 
 @router.post(
@@ -28,7 +30,7 @@ async def create_student(s_in: StudentCreate, db: AsyncSession = Depends(get_db)
 @router.get(
     "",
     response_model=ResponseEnvelope[List[StudentResponse]],
-    dependencies=[Depends(require_permission("academic", "view"))],
+    dependencies=[Depends(require_role(STAFF_ROLES))],
 )
 async def list_students(
     program_id: Optional[UUID] = Query(None),
@@ -102,22 +104,57 @@ async def update_my_student_profile(
 @router.get(
     "/{student_id}",
     response_model=ResponseEnvelope[StudentResponse],
-    dependencies=[Depends(require_permission("academic", "view"))],
+    dependencies=[Depends(get_current_token_payload)],
 )
-async def get_student(student_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_student(
+    student_id: UUID,
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_staff = any(r in STAFF_ROLES for r in roles)
+
     student = await student_service.get_student(db, student_id)
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+
+    if not is_staff and "student" in roles:
+        if student.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Students can only view their own record.",
+            )
+
     return ResponseEnvelope(data=await student_service.to_student_response_enriched(db, student))
 
 
 @router.get(
     "/{student_id}/attendance",
     response_model=ResponseEnvelope[List[StudentAttendanceRecordResponse]],
-    dependencies=[Depends(require_permission("academic", "view"))],
+    dependencies=[Depends(get_current_token_payload)],
     summary="Get a student's full class attendance history",
 )
-async def get_student_attendance_history(student_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_student_attendance_history(
+    student_id: UUID,
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_staff = any(r in STAFF_ROLES for r in roles)
+
+    student = await student_service.get_student(db, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if not is_staff and "student" in roles:
+        if student.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Students can only view their own attendance history.",
+            )
+
     try:
         records = await session_service.get_student_attendance_history(db, student_id)
         return ResponseEnvelope(data=records)

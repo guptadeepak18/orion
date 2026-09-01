@@ -1,29 +1,29 @@
 import asyncio
-import asyncpg
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import AsyncSessionLocal
+from app.models.auth import User, Role
 
-async def check():
-    conn = await asyncpg.connect(
-        'postgresql://neondb_owner:npg_qKgko53pGtyx@ep-proud-poetry-aze89kl6-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb',
-        ssl='require'
-    )
-    print('Connected to Neon OK')
+async def check_admin():
+    async with AsyncSessionLocal() as session:
+        user_stmt = select(User).where(User.email == "admin@lexiconmile.com")
+        result = await session.execute(user_stmt)
+        user = result.unique().scalar_one_or_none()
 
-    rows = await conn.fetch('SELECT id, email, full_name, is_active, password_hash FROM users LIMIT 20')
-    print(f'Found {len(rows)} user(s):')
-    for r in rows:
-        ph = r['password_hash']
-        hash_preview = ph[:20] + '...' if ph else 'NULL/EMPTY'
-        print(f'  email={r["email"]}  name={r["full_name"]}  active={r["is_active"]}  hash_starts={hash_preview}')
+        if not user:
+            print("User admin@lexiconmile.com NOT FOUND in database.")
+            return
 
-    role_rows = await conn.fetch(
-        'SELECT u.email, r.name as role FROM users u '
-        'JOIN user_roles ur ON u.id=ur.user_id '
-        'JOIN roles r ON r.id=ur.role_id'
-    )
-    print(f'\nRole assignments ({len(role_rows)}):')
-    for r in role_rows:
-        print(f'  {r["email"]} -> {r["role"]}')
+        print(f"User found: {user.full_name} ({user.email})")
+        print(f"Status: {'Active' if user.is_active else 'Inactive'}")
+        
+        roles = [role.name for role in user.roles]
+        print(f"Roles: {roles}")
+        
+        if "crc_admin" not in roles:
+            print("User is missing the 'crc_admin' role!")
+        else:
+            print("User has 'crc_admin' role.")
 
-    await conn.close()
-
-asyncio.run(check())
+if __name__ == "__main__":
+    asyncio.run(check_admin())

@@ -70,6 +70,7 @@ async def get_me(
         email=user.email,
         full_name=user.full_name,
         phone=user.phone,
+        avatar_url=user.avatar_url,
         is_active=user.is_active,
         roles=[role.name for role in user.roles],
     )
@@ -90,10 +91,12 @@ async def update_me(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if user_update.full_name:
-        user.full_name = user_update.full_name
+    if user_update.full_name is not None:
+        user.full_name = user_update.full_name.strip()
     if user_update.phone is not None:
-        user.phone = user_update.phone
+        user.phone = user_update.phone.strip() if user_update.phone else None
+    if user_update.avatar_url is not None:
+        user.avatar_url = user_update.avatar_url.strip() if user_update.avatar_url else None
 
     await db.commit()
     await db.refresh(user)
@@ -103,6 +106,35 @@ async def update_me(
         email=user.email,
         full_name=user.full_name,
         phone=user.phone,
+        avatar_url=user.avatar_url,
+        is_active=user.is_active,
+        roles=[role.name for role in user.roles],
+    )
+    return ResponseEnvelope(data=user_summary)
+
+
+@router.post("/me/avatar", response_model=ResponseEnvelope[UserSummary])
+async def upload_my_avatar(
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Direct avatar upload or avatar synchronization for the current user profile.
+    """
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    user = await get_user_by_id(db, user_id_str)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_summary = UserSummary(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        phone=user.phone,
+        avatar_url=user.avatar_url,
         is_active=user.is_active,
         roles=[role.name for role in user.roles],
     )

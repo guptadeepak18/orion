@@ -1,5 +1,5 @@
 """
-Email service for CRC One.
+Email service for Orion.
 Uses SMTP configured via environment variables.
 Falls back to console logging if SMTP is not configured (dev mode).
 """
@@ -81,15 +81,16 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     from_email = getattr(settings, "SMTP_FROM_EMAIL", smtp_user or "noreply@mile.education")
 
     if not smtp_host or not smtp_user:
-        # Dev mode fallback — log to console
+        # Dev mode fallback — log prominently to console
         logger.warning(
             f"[EMAIL - DEV MODE] To: {to_email} | OTP: {otp} | "
-            "Configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD in .env to send real emails."
+            "Configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD in .env or Render Environment Variables to send real emails."
         )
         print(f"\n{'='*60}")
-        print(f"  EMAIL VERIFICATION OTP (dev mode)")
-        print(f"  To:  {to_email}")
-        print(f"  OTP: {otp}")
+        print(f"  EMAIL VERIFICATION OTP (dev mode — SMTP not configured)")
+        print(f"  To:   {to_email}")
+        print(f"  Name: {full_name}")
+        print(f"  OTP:  {otp}")
         print(f"{'='*60}\n")
         return True
 
@@ -102,17 +103,28 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
         html_content = _build_otp_email_html(full_name, otp)
         msg.attach(MIMEText(html_content, "html"))
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.sendmail(from_email, to_email, msg.as_string())
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(from_email, to_email, msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(from_email, to_email, msg.as_string())
 
         logger.info(f"Verification email sent to {to_email}")
         return True
 
     except Exception as e:
         logger.error(f"Failed to send verification email to {to_email}: {e}")
+        # Always log the OTP code to server console so registration flow is never blocked
+        print(f"\n{'='*60}")
+        print(f"  EMAIL SEND FAILED ({e}) — FALLBACK OTP:")
+        print(f"  To:  {to_email}")
+        print(f"  OTP: {otp}")
+        print(f"{'='*60}\n")
         return False
 
 

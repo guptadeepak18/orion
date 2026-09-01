@@ -5,6 +5,7 @@ export interface UserSummary {
   email: string;
   full_name: string;
   phone?: string;
+  avatar_url?: string | null;
   is_active: boolean;
   roles: string[];
 }

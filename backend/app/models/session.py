@@ -1,7 +1,7 @@
 import uuid
-from datetime import date, time
+from datetime import date, time, datetime
 from typing import Optional, List
-from sqlalchemy import String, Text, Integer, Numeric, Date, Time, ForeignKey, JSON
+from sqlalchemy import String, Text, Integer, Numeric, Date, Time, DateTime, Boolean, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +92,7 @@ class Session(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str] = mapped_column(
         String(50), default="scheduled", nullable=False
     )  # scheduled|in_progress|completed|cancelled
+    hyperbuild_activity_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     attendance_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     feedback_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -166,13 +167,71 @@ class StudentAttendance(Base, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(
         String(30), default="present", nullable=False
-    )  # present|absent|late|excused
+    )  # present|absent|late|excused|leave_approved|od_duty
     marked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     session: Mapped["Session"] = relationship("Session")
     student: Mapped["Student"] = relationship("Student")
-    marked_by_user: Mapped[Optional["User"]] = relationship("User")
+    marked_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[marked_by])
+
+
+class AttendanceCorrectionRequest(Base, TimestampMixin):
+    __tablename__ = "attendance_correction_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    attendance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student_attendances.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    requested_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    current_status: Mapped[str] = mapped_column(String(30), nullable=False)  # original attendance status e.g. absent
+    requested_status: Mapped[str] = mapped_column(String(30), nullable=False)  # present|excused|leave_approved|od_duty|late
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    document_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(50), default="pending_faculty_approval", nullable=False, index=True
+    )  # pending_faculty_approval|pending_admin_approval|approved|rejected
+
+    # Faculty Tier
+    faculty_approver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    faculty_action: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # approved|rejected
+    faculty_acted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    faculty_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Admin Tier
+    admin_approver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    admin_action: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # approved|rejected
+    admin_acted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    admin_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    audit_trail: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    attendance: Mapped["StudentAttendance"] = relationship("StudentAttendance")
+    session: Mapped["Session"] = relationship("Session")
+    student: Mapped["Student"] = relationship("Student")
+    requested_by: Mapped["User"] = relationship("User", foreign_keys=[requested_by_id])
+    faculty_approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty_approver_id])
+    admin_approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[admin_approver_id])
 

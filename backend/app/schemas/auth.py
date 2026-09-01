@@ -25,6 +25,7 @@ class UserSummary(BaseModel):
     email: str
     full_name: str
     phone: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: bool
     roles: List[str]
 

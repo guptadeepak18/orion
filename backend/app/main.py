@@ -13,13 +13,16 @@ from app.schemas.common import ErrorEnvelope, ErrorDetails
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB tables for dev/testing if not created by Alembic
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    # Seed initial roles and admin
-    async with AsyncSessionLocal() as db:
-        await seed_initial_data(db)
+    try:
+        # Initialize DB tables for dev/testing if not created by Alembic
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        
+        # Seed initial roles and admin
+        async with AsyncSessionLocal() as db:
+            await seed_initial_data(db)
+    except Exception as e:
+        print(f"Startup DB initialization notice: {e}")
 
     yield
 
@@ -55,6 +58,21 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-@app.get("/")
+@app.get("/", tags=["Health"])
 async def root():
-    return {"message": "CRC One API is running. Access docs at /docs"}
+    return {
+        "app": settings.PROJECT_NAME,
+        "status": "online",
+        "docs": "/docs",
+        "api_v1": settings.API_V1_STR,
+    }
+
+
+@app.get(f"{settings.API_V1_STR}", tags=["Health"])
+@app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
+async def api_health():
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "docs": "/docs",
+    }

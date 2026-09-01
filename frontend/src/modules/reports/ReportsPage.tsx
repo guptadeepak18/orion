@@ -54,7 +54,7 @@ export const ReportsPage: React.FC = () => {
   });
 
   const handleExport = (type: string) => {
-    window.open(`http://localhost:8000/api/v1/reports/export?report_type=${type}`, '_blank');
+    window.open(`/api/v1/reports/export?report_type=${type}`, '_blank');
   };
 
   const remColumns: Column<any>[] = [
@@ -168,7 +168,7 @@ export const ReportsPage: React.FC = () => {
             }`}
           >
             <ShieldCheck className="h-4 w-4" />
-            <span>Agent Audit Trail</span>
+            <span>Activity & Audit Trail</span>
           </button>
         )}
       </div>
@@ -204,11 +204,11 @@ export const ReportsPage: React.FC = () => {
       )}
 
       {reportType === 'audit' && (
-        <Card title="AI Sentinel Agent Audit Trail">
+        <Card title="System Activity & Automated Action Log">
           {auditLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading audit trail...</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Loading activity log...</p>
           ) : (
-            <DataTable columns={auditColumns} data={auditData || []} keyExtractor={(r) => r.id} emptyMessage="No AI agent execution runs recorded." />
+            <DataTable columns={auditColumns} data={auditData || []} keyExtractor={(r) => r.id} emptyMessage="No automated system activity recorded." />
           )}
         </Card>
       )}

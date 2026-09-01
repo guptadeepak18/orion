@@ -14,7 +14,6 @@ import { SessionsPage } from './modules/sessions/SessionsPage';
 import { FacultyPage } from './modules/faculty/FacultyPage';
 import { FinancePage } from './modules/finance/FinancePage';
 import { ApprovalsPage } from './modules/approvals/ApprovalsPage';
-import { CalendarPage } from './modules/calendar/CalendarPage';
 import { FeedbackPage } from './modules/feedback/FeedbackPage';
 import { ReportsPage } from './modules/reports/ReportsPage';
 import { SystemSettingsPage } from './modules/system/SystemSettingsPage';
@@ -22,6 +21,13 @@ import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PendingApprovalPage } from './pages/PendingApprovalPage';
 import { StudentProfilePage } from './pages/StudentProfilePage';
+import { UsersPage } from './modules/users/UsersPage';
+import { LMSPage } from './modules/lms/LMSPage';
+import { SubjectLMSHub } from './modules/lms/SubjectLMSHub';
+import { CaseStudyBankPage } from './modules/case-studies/CaseStudyBankPage';
+import { CaseStudyDetailPage } from './modules/case-studies/CaseStudyDetailPage';
+import { AttendancePage } from './modules/attendance/AttendancePage';
+import { ProactiveIntelligenceHub } from './modules/ai/ProactiveIntelligenceHub';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
   children,
@@ -80,6 +86,70 @@ export const App: React.FC = () => {
           />
 
           <Route
+            path="/ai-intelligence"
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  'crc_admin',
+                  'crc_coordinator',
+                  'faculty_internal',
+                  'faculty_external',
+                  'finance',
+                  'approver',
+                  'reporting_readonly',
+                ]}
+              >
+                <ProactiveIntelligenceHub />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/lms"
+            element={
+              <ProtectedRoute>
+                <LMSPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/lms/subjects/:subjectCode"
+            element={
+              <ProtectedRoute>
+                <SubjectLMSHub />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/lms/subjects/:subjectCode/:section"
+            element={
+              <ProtectedRoute>
+                <SubjectLMSHub />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/lms/:subjectCode"
+            element={
+              <ProtectedRoute>
+                <SubjectLMSHub />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/lms/:subjectCode/:section"
+            element={
+              <ProtectedRoute>
+                <SubjectLMSHub />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/academic"
             element={
               <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator']}>
@@ -98,6 +168,40 @@ export const App: React.FC = () => {
           />
 
           <Route
+            path="/subjects/faculty-allocation"
+            element={
+              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external', 'approver', 'reporting_readonly']}>
+                <SubjectsPage initialTab="allocations" />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/faculty-allocation"
+            element={
+              <Navigate to="/subjects/faculty-allocation" replace />
+            }
+          />
+
+          <Route
+            path="/case-studies"
+            element={
+              <ProtectedRoute>
+                <CaseStudyBankPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/case-studies/:caseStudyId"
+            element={
+              <ProtectedRoute>
+                <CaseStudyDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/students"
             element={
               <ProtectedRoute
@@ -108,7 +212,6 @@ export const App: React.FC = () => {
                   'finance',
                   'approver',
                   'reporting_readonly',
-                  'student',
                 ]}
               >
                 <StudentsPage />
@@ -137,7 +240,7 @@ export const App: React.FC = () => {
           />
 
           <Route
-            path="/calendar"
+            path="/attendance"
             element={
               <ProtectedRoute
                 allowedRoles={[
@@ -145,13 +248,40 @@ export const App: React.FC = () => {
                   'crc_coordinator',
                   'faculty_internal',
                   'faculty_external',
-                  'finance',
                   'approver',
                   'reporting_readonly',
                   'student',
                 ]}
               >
-                <CalendarPage />
+                <AttendancePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/attendance/:tab"
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  'crc_admin',
+                  'crc_coordinator',
+                  'faculty_internal',
+                  'faculty_external',
+                  'approver',
+                  'reporting_readonly',
+                  'student',
+                ]}
+              >
+                <AttendancePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/calendar"
+            element={
+              <ProtectedRoute>
+                <Navigate to="/sessions?view=calendar" replace />
               </ProtectedRoute>
             }
           />
@@ -180,6 +310,15 @@ export const App: React.FC = () => {
                 ]}
               >
                 <FacultyPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute allowedRoles={['crc_admin']}>
+                <UsersPage />
               </ProtectedRoute>
             }
           />

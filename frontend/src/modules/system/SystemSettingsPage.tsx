@@ -56,9 +56,9 @@ export const SystemSettingsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">System Administration & AI Settings</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">System Administration & Settings</h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Configure institutional branding, LLM provider selection, SLA turnaround rules, and AI Sentinel agent overrides.
+            Configure institutional branding, AI model options, turnaround thresholds, and automated validation tasks.
           </p>
         </div>
       </div>
@@ -138,14 +138,14 @@ export const SystemSettingsPage: React.FC = () => {
           </Card>
         </div>
 
-        {/* AI Sentinel Override Panel */}
+        {/* Automated Background Tasks Panel */}
         <div className="space-y-6">
-          <Card title="AI Sentinel Agent Console">
+          <Card title="Automated System Checks & Background Tasks">
             <div className="space-y-3">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Scheduler Sentinel</p>
-                  <p className="text-[10px] text-slate-500">Conflict Guard</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Timetable Conflict Checker</p>
+                  <p className="text-[10px] text-slate-500">Detect room and faculty overlaps</p>
                 </div>
                 <button
                   onClick={() => triggerAgentMutation.mutate('scheduler_sentinel')}
@@ -158,8 +158,8 @@ export const SystemSettingsPage: React.FC = () => {
 
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Faculty Compliance Agent</p>
-                  <p className="text-[10px] text-slate-500">Document Expiry Scan</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Faculty Documentation Check</p>
+                  <p className="text-[10px] text-slate-500">Verify profile completeness</p>
                 </div>
                 <button
                   onClick={() => triggerAgentMutation.mutate('faculty_compliance_agent')}
@@ -172,8 +172,8 @@ export const SystemSettingsPage: React.FC = () => {
 
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Approval Watchdog</p>
-                  <p className="text-[10px] text-slate-500">SLA Audit & Escalation</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Pending Approvals Check</p>
+                  <p className="text-[10px] text-slate-500">Monitor turnaround times</p>
                 </div>
                 <button
                   onClick={() => triggerAgentMutation.mutate('approval_watchdog')}

@@ -26,6 +26,8 @@ build/
 logs/
 tmp/
 scratch/
+backend/uploads/
+~$*
 
 # OS files
 .DS_Store

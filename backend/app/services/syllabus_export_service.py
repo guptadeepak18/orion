@@ -13,9 +13,9 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-NAVY_HEX = "1B3A6B"
-NAVY_COLOR = RGBColor(0x1B, 0x3A, 0x6B)
-REPORTLAB_NAVY = colors.HexColor("#1B3A6B")
+NAVY_HEX = "1B365D"
+NAVY_COLOR = RGBColor(0x1B, 0x36, 0x5D)
+REPORTLAB_NAVY = colors.HexColor("#1B365D")
 
 PROGRAM_OUTCOMES_REF = [
     {"po": "PO 1", "desc": "Apply knowledge of management theories and practices to solve business problems."},
@@ -40,18 +40,18 @@ def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
 
 def add_docx_heading(doc: docx.Document, text: str, level: int = 1):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.space_before = Pt(12)
     p.paragraph_format.space_after = Pt(4)
     p.paragraph_format.keep_with_next = True
     r = p.add_run(text)
-    r.font.name = "Calibri"
+    r.font.name = "Aptos Display" if level == 1 else "Aptos"
     r.font.bold = True
     if level == 1:
-        r.font.size = Pt(13)
+        r.font.size = Pt(14)
         r.font.color.rgb = NAVY_COLOR
     else:
-        r.font.size = Pt(11)
-        r.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+        r.font.size = Pt(11.5)
+        r.font.color.rgb = RGBColor(0x1B, 0x36, 0x5D)
 
 
 def format_table_header(row, col_titles: List[str]):
@@ -62,19 +62,19 @@ def format_table_header(row, col_titles: List[str]):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.text = col_titles[i] if i < len(col_titles) else ""
         for r in p.runs:
-            r.font.name = "Calibri"
-            r.font.size = Pt(10)
+            r.font.name = "Aptos"
+            r.font.size = Pt(10.5)
             r.font.bold = True
             r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
 
-def style_data_cell(cell, text: str, font_size: float = 9.5, bold: bool = False, align=WD_ALIGN_PARAGRAPH.LEFT):
+def style_data_cell(cell, text: str, font_size: float = 10.5, bold: bool = False, align=WD_ALIGN_PARAGRAPH.LEFT):
     set_cell_margins(cell, top=100, bottom=100, left=120, right=120)
     p = cell.paragraphs[0]
     p.alignment = align
     p.text = text
     for r in p.runs:
-        r.font.name = "Calibri"
+        r.font.name = "Aptos"
         r.font.size = Pt(font_size)
         r.font.bold = bold
 
@@ -86,7 +86,7 @@ def generate_syllabus_docx(subject_name: str, subject_code: str, credits_info: s
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     r = p.add_run(f"{subject_name} ({subject_code}) — Course Syllabus")
-    r.font.name = "Calibri"
+    r.font.name = "Aptos Display"
     r.font.size = Pt(16)
     r.font.bold = True
     r.font.color.rgb = NAVY_COLOR
@@ -107,7 +107,7 @@ def generate_syllabus_docx(subject_name: str, subject_code: str, credits_info: s
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(6)
             r = p.add_run(para.strip())
-            r.font.name = "Calibri"
+            r.font.name = "Aptos"
             r.font.size = Pt(10.5)
 
     # 3. Section 2: Course Outcomes & PO Matrix
@@ -191,7 +191,7 @@ def generate_syllabus_docx(subject_name: str, subject_code: str, credits_info: s
                 p = doc.add_paragraph()
                 p.paragraph_format.space_after = Pt(3)
                 r = p.add_run(line.strip())
-                r.font.name = "Calibri"
+                r.font.name = "Aptos"
                 r.font.size = Pt(10)
 
     # 6. Section 5 & 6: Scheme of Assessment & CCE Components
@@ -227,7 +227,7 @@ def generate_syllabus_docx(subject_name: str, subject_code: str, credits_info: s
             p.paragraph_format.space_after = Pt(3)
             citation = f"{b.get('author', '')} ({b.get('year', '2024')}). {b.get('name', '')}. {b.get('publisher', '')}."
             r = p.add_run(citation)
-            r.font.name = "Calibri"
+            r.font.name = "Aptos"
             r.font.size = Pt(10)
 
     ref_books = syllabus_data.get("reference_books", [])
@@ -238,7 +238,7 @@ def generate_syllabus_docx(subject_name: str, subject_code: str, credits_info: s
             p.paragraph_format.space_after = Pt(3)
             citation = f"{b.get('author', '')} ({b.get('year', '2024')}). {b.get('name', '')}. {b.get('publisher', '')}."
             r = p.add_run(citation)
-            r.font.name = "Calibri"
+            r.font.name = "Aptos"
             r.font.size = Pt(10)
 
     # 8. Section 9: Program Outcomes Reference Table

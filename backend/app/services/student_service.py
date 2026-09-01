@@ -218,7 +218,7 @@ async def to_student_response_enriched(db: AsyncSession, student: Student) -> St
                 .where(
                     StudentAttendance.student_id == student.id,
                     StudentAttendance.session_id.in_(marked_ids),
-                    StudentAttendance.status.in_(["present", "late"])
+                    StudentAttendance.status.in_(["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"])
                 )
             )
             a_res = await db.execute(att_stmt)

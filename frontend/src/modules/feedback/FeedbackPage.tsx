@@ -4,8 +4,12 @@ import { QrCode, Sparkles, CheckCircle2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
+import { useAuthStore } from '../../lib/store';
 
 export const FeedbackPage: React.FC = () => {
+  const userRoles = useAuthStore((state) => state.user?.roles || []);
+  const isStudent = userRoles.includes('student') && !userRoles.includes('crc_admin');
+
   const [openText, setOpenText] = useState('Excellent and highly engaging lecture! Great real-world case studies.');
   const [submittedScore, setSubmittedScore] = useState<number | null>(null);
 
@@ -29,28 +33,34 @@ export const FeedbackPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight gradient-text">Feedback Forms & Sentiment Intelligence</h1>
+          <h1 className="text-2xl font-bold tracking-tight gradient-text">
+            {isStudent ? 'Session & Faculty Feedback' : 'Feedback Forms & Evaluations'}
+          </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Auto-triggered QR feedback forms on session completion with LLM sentiment analysis and trend flags.
+            {isStudent
+              ? 'Submit your feedback and ratings for conducted academic sessions to help improve teaching quality.'
+              : 'View session feedback forms, QR codes, and response sentiment summaries.'}
           </p>
         </div>
       </div>
 
-      {/* Intelligence Agent Status Banner */}
-      <div className="p-4 rounded-2xl glass-card border border-cyan-200 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="h-10 w-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
-            <Sparkles className="h-5 w-5" />
+      {/* Status Banner (Staff & Faculty Only) */}
+      {!isStudent && (
+        <div className="p-4 rounded-2xl glass-card border border-cyan-200 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="h-10 w-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Automated Feedback Processing Active</h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Automatically generates feedback forms and QR codes on session completion and processes response sentiment.
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Feedback Intelligence Agent Active</h4>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              Auto-generates feedback forms & QR codes on session completion and scores response sentiment.
-            </p>
-          </div>
+          <StatusBadge status="active" label="Active" />
         </div>
-        <StatusBadge status="active" label="Sentiment AI Active" />
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sample Form Builder & QR Preview */}

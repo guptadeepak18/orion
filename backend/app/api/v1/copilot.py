@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Body, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.permissions import require_permission, get_current_token_payload
+from app.core.permissions import get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.agents.copilot_agent import copilot_agent
 
@@ -13,7 +13,6 @@ router = APIRouter(prefix="/copilot", tags=["Copilot"])
 @router.post(
     "/query",
     response_model=ResponseEnvelope[dict],
-    dependencies=[Depends(require_permission("copilot", "query"))],
 )
 async def query_copilot(
     prompt: str = Body(..., embed=True),

@@ -22,6 +22,7 @@ export const ThemeSwitcher: React.FC = () => {
         const isActive = theme === opt.mode;
         return (
           <button
+            type="button"
             key={opt.mode}
             onClick={() => setTheme(opt.mode)}
             title={`Switch to ${opt.label} theme`}

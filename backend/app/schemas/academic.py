@@ -146,9 +146,13 @@ class SubjectProgramSummary(BaseModel):
 class SubjectCreate(BaseModel):
     name: str
     code: str
+    course_code: Optional[str] = None
     trimester: int = 1
     is_non_credit: bool = False
     credits: int = 3
+    total_hours: Optional[int] = 30
+    course_category: Optional[str] = "core"
+    elective_domain: Optional[str] = None
     syllabus: Optional[str] = None
     session_plan: Optional[str] = None
     hyperbuild_activities: Optional[str] = None
@@ -165,9 +169,13 @@ class SubjectCurriculumUpdate(BaseModel):
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
+    course_code: Optional[str] = None
     trimester: Optional[int] = None
     is_non_credit: Optional[bool] = None
     credits: Optional[int] = None
+    total_hours: Optional[int] = None
+    course_category: Optional[str] = None
+    elective_domain: Optional[str] = None
     is_archived: Optional[bool] = None
     syllabus: Optional[str] = None
     session_plan: Optional[str] = None
@@ -180,9 +188,13 @@ class SubjectResponse(BaseModel):
     id: UUID
     name: str
     code: str
+    course_code: Optional[str] = None
     trimester: int = 1
     is_non_credit: bool = False
     credits: int = 3
+    total_hours: Optional[int] = 30
+    course_category: str = "core"
+    elective_domain: Optional[str] = None
     is_archived: bool = False
     syllabus: Optional[str] = None
     session_plan: Optional[str] = None
@@ -246,4 +258,66 @@ class DivisionResponse(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Faculty-Subject Allocation
+class FacultySubjectAllocationCreate(BaseModel):
+    subject_id: UUID
+    batch_id: UUID
+    faculty_type: Optional[str] = "internal"  # internal | external
+    faculty_internal_id: Optional[UUID] = None
+    faculty_external_id: Optional[UUID] = None
+    term_type: Optional[str] = "trimester"
+    term_number: Optional[int] = 1
+    term_label: Optional[str] = "Trimester 1"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: Optional[str] = "active"
+
+
+class FacultySubjectAllocationUpdate(BaseModel):
+    subject_id: Optional[UUID] = None
+    batch_id: Optional[UUID] = None
+    faculty_type: Optional[str] = None
+    faculty_internal_id: Optional[UUID] = None
+    faculty_external_id: Optional[UUID] = None
+    term_type: Optional[str] = None
+    term_number: Optional[int] = None
+    term_label: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: Optional[str] = None
+
+
+class FacultySubjectAllocationResponse(BaseModel):
+    id: UUID
+    subject_id: UUID
+    subject_name: str
+    subject_code: str
+    course_code: Optional[str] = None
+    course_category: Optional[str] = "core"
+    credits: Optional[int] = 3
+    total_hours: Optional[int] = 30
+    batch_id: UUID
+    batch_name: str
+    batch_code: Optional[str] = None
+    program_id: Optional[UUID] = None
+    program_name: Optional[str] = None
+    program_code: Optional[str] = None
+    faculty_type: Optional[str] = "internal"
+    faculty_internal_id: Optional[UUID] = None
+    faculty_external_id: Optional[UUID] = None
+    faculty_name: Optional[str] = None
+    faculty_email: Optional[str] = None
+    faculty_organization: Optional[str] = None
+    faculty_designation: Optional[str] = None
+    term_type: str = "trimester"
+    term_number: int = 1
+    term_label: Optional[str] = "Trimester 1"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: str = "active"
+
+    model_config = ConfigDict(from_attributes=True)
+
 

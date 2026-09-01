@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
@@ -66,7 +67,27 @@ interface StudentBrief {
 
 export const AcademicPage: React.FC = () => {
   const { canManageCurriculum } = useRoleAccess();
-  const [activeTab, setActiveTab] = useState<'programs' | 'batches' | 'divisions'>('programs');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const queryTab = searchParams.get('tab') as 'programs' | 'batches' | 'divisions' | null;
+  const [activeTab, setActiveTab] = useState<'programs' | 'batches' | 'divisions'>(queryTab || 'programs');
+
+  useEffect(() => {
+    if (queryTab) setActiveTab(queryTab);
+  }, [queryTab]);
+
+  const handleTabChange = (tab: 'programs' | 'batches' | 'divisions') => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    next.delete('modal');
+    next.delete('id');
+    next.delete('batchId');
+    next.delete('divId');
+    next.delete('studentId');
+    next.delete('modalTab');
+    setSearchParams(next);
+  };
 
   // Modal States
   const [modalType, setModalType] = useState<
@@ -102,6 +123,25 @@ export const AcademicPage: React.FC = () => {
     students: StudentBrief[];
     filenamePrefix: string;
   } | null>(null);
+
+  const updateUrlModal = (m: string | null, params: Record<string, string | undefined> = {}) => {
+    const next = new URLSearchParams(searchParams);
+    if (!m) {
+      next.delete('modal');
+      next.delete('id');
+      next.delete('batchId');
+      next.delete('divId');
+      next.delete('studentId');
+      next.delete('modalTab');
+    } else {
+      next.set('modal', m);
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      });
+    }
+    setSearchParams(next);
+  };
 
   const queryClient = useQueryClient();
 
@@ -354,7 +394,8 @@ export const AcademicPage: React.FC = () => {
   });
 
   // Handlers
-  const closeModal = () => {
+  const closeModal = (syncUrl = true) => {
+    if (syncUrl) updateUrlModal(null);
     setModalType(null);
     setSelectedId(null);
     setNameInput('');
@@ -364,70 +405,92 @@ export const AcademicPage: React.FC = () => {
     setErrorMsg(null);
   };
 
-  const openCreateProgram = () => {
-    closeModal();
+  const openCreateProgram = (syncUrl = true) => {
+    closeModal(false);
     setModalType('createProgram');
+    if (syncUrl) updateUrlModal('createProgram');
   };
 
-  const openEditProgram = (prog: Program) => {
-    closeModal();
+  const openEditProgram = (prog: Program, syncUrl = true) => {
+    closeModal(false);
     setSelectedId(prog.id);
     setNameInput(prog.name);
     setCodeInput(prog.code);
     setDescInput(prog.description || '');
     setModalType('editProgram');
+    if (syncUrl) updateUrlModal('editProgram', { id: prog.id });
   };
 
-  const openCreateBatch = () => {
-    closeModal();
+  const openCreateBatch = (syncUrl = true) => {
+    closeModal(false);
     if (programsData && programsData.length > 0) {
       setProgramIdInput(programsData[0].id);
     }
     setModalType('createBatch');
+    if (syncUrl) updateUrlModal('createBatch');
   };
 
-  const openEditBatch = (batch: Batch) => {
-    closeModal();
+  const openEditBatch = (batch: Batch, syncUrl = true) => {
+    closeModal(false);
     setSelectedId(batch.id);
     setNameInput(batch.name);
     setCodeInput(batch.code);
     setProgramIdInput(batch.program_id || '');
     setModalType('editBatch');
+    if (syncUrl) updateUrlModal('editBatch', { id: batch.id });
   };
 
-  const openCreateDivision = () => {
-    closeModal();
+  const openCreateDivision = (syncUrl = true) => {
+    closeModal(false);
     if (programsData && programsData.length > 0) {
       setProgramIdInput(programsData[0].id);
     }
     setModalType('createDivision');
+    if (syncUrl) updateUrlModal('createDivision');
   };
 
-  const openEditDivision = (div: Division) => {
-    closeModal();
+  const openEditDivision = (div: Division, syncUrl = true) => {
+    closeModal(false);
     setSelectedId(div.id);
     setNameInput(div.name);
     setCodeInput(div.code);
     setProgramIdInput(div.program_id || '');
     setDescInput(div.description || '');
     setModalType('editDivision');
+    if (syncUrl) updateUrlModal('editDivision', { id: div.id });
   };
 
-  const openBatchStudentsModal = (batch: Batch) => {
+  const openBatchStudentsModal = (batch: Batch, syncUrl = true, tab: 'enrolled' | 'unassigned' = 'enrolled') => {
     setSelectedBatchForStudents(batch);
-    setBatchModalTab('enrolled');
+    setBatchModalTab(tab);
+    setAssignSearch('');
+    setSelectedStudentIds(new Set());
+    if (syncUrl) updateUrlModal('batchStudents', { batchId: batch.id, modalTab: tab });
+  };
+
+  const closeBatchStudentsModal = (syncUrl = true) => {
+    if (syncUrl) updateUrlModal(null);
+    setSelectedBatchForStudents(null);
     setAssignSearch('');
     setSelectedStudentIds(new Set());
   };
 
-  const openDivisionStudentsModal = (div: Division) => {
+  const openDivisionStudentsModal = (div: Division, syncUrl = true, tab: 'enrolled' | 'unassigned' = 'enrolled') => {
     setSelectedDivisionForStudents(div);
-    setDivModalTab('enrolled');
+    setDivModalTab(tab);
+    setDivAssignSearch('');
+    setSelectedDivStudentIds(new Set());
+    if (syncUrl) updateUrlModal('divisionStudents', { divId: div.id, modalTab: tab });
+  };
+
+  const closeDivisionStudentsModal = (syncUrl = true) => {
+    if (syncUrl) updateUrlModal(null);
+    setSelectedDivisionForStudents(null);
     setDivAssignSearch('');
     setSelectedDivStudentIds(new Set());
   };
 
-  const openReassignModal = (student: StudentBrief) => {
+  const openReassignModal = (student: StudentBrief, syncUrl = true) => {
     setReassigningStudent(student);
     const availableBatches = (batchesData || []).filter((b) => b.id !== selectedBatchForStudents?.id);
     if (availableBatches.length > 0) {
@@ -435,7 +498,70 @@ export const AcademicPage: React.FC = () => {
     } else {
       setTargetBatchId('');
     }
+    if (syncUrl) updateUrlModal('reassignBatch', { studentId: student.id });
   };
+
+  const closeReassignModal = (syncUrl = true) => {
+    if (syncUrl) {
+      if (selectedBatchForStudents) {
+        updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: batchModalTab });
+      } else {
+        updateUrlModal(null);
+      }
+    }
+    setReassigningStudent(null);
+  };
+
+  // Synchronize modal state with URL parameters
+  const urlModal = searchParams.get('modal');
+  const urlId = searchParams.get('id');
+  const urlBatchId = searchParams.get('batchId');
+  const urlDivId = searchParams.get('divId');
+  const urlStudentId = searchParams.get('studentId');
+  const urlModalTab = (searchParams.get('modalTab') as 'enrolled' | 'unassigned') || 'enrolled';
+
+  useEffect(() => {
+    if (!urlModal) {
+      if (modalType) closeModal(false);
+      if (selectedBatchForStudents) closeBatchStudentsModal(false);
+      if (selectedDivisionForStudents) closeDivisionStudentsModal(false);
+      if (reassigningStudent) closeReassignModal(false);
+      return;
+    }
+
+    if (urlModal === 'createProgram' && modalType !== 'createProgram') openCreateProgram(false);
+    if (urlModal === 'createBatch' && modalType !== 'createBatch') openCreateBatch(false);
+    if (urlModal === 'createDivision' && modalType !== 'createDivision') openCreateDivision(false);
+
+    if (urlId) {
+      if (urlModal === 'editProgram' && programsData) {
+        const p = programsData.find((x) => x.id === urlId);
+        if (p && modalType !== 'editProgram') openEditProgram(p, false);
+      }
+      if (urlModal === 'editBatch' && batchesData) {
+        const b = batchesData.find((x) => x.id === urlId);
+        if (b && modalType !== 'editBatch') openEditBatch(b, false);
+      }
+      if (urlModal === 'editDivision' && divisionsData) {
+        const d = divisionsData.find((x) => x.id === urlId);
+        if (d && modalType !== 'editDivision') openEditDivision(d, false);
+      }
+    }
+
+    if (urlModal === 'batchStudents' && urlBatchId && batchesData) {
+      const b = batchesData.find((x) => x.id === urlBatchId);
+      if (b && selectedBatchForStudents?.id !== b.id) {
+        openBatchStudentsModal(b, false, urlModalTab);
+      }
+    }
+
+    if (urlModal === 'divisionStudents' && urlDivId && divisionsData) {
+      const d = divisionsData.find((x) => x.id === urlDivId);
+      if (d && selectedDivisionForStudents?.id !== d.id) {
+        openDivisionStudentsModal(d, false, urlModalTab);
+      }
+    }
+  }, [urlModal, urlId, urlBatchId, urlDivId, urlStudentId, urlModalTab, programsData, batchesData, divisionsData]);
 
   const handleConfirmReassign = (e: React.FormEvent) => {
     e.preventDefault();
@@ -673,7 +799,7 @@ export const AcademicPage: React.FC = () => {
           <div>
             {activeTab === 'programs' && (
               <button
-                onClick={openCreateProgram}
+                onClick={() => openCreateProgram()}
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
@@ -683,7 +809,7 @@ export const AcademicPage: React.FC = () => {
 
             {activeTab === 'batches' && (
               <button
-                onClick={openCreateBatch}
+                onClick={() => openCreateBatch()}
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
@@ -693,7 +819,7 @@ export const AcademicPage: React.FC = () => {
 
             {activeTab === 'divisions' && (
               <button
-                onClick={openCreateDivision}
+                onClick={() => openCreateDivision()}
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
@@ -707,7 +833,7 @@ export const AcademicPage: React.FC = () => {
       {/* Navigation Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
         <button
-          onClick={() => setActiveTab('programs')}
+          onClick={() => handleTabChange('programs')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
             activeTab === 'programs'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
@@ -718,7 +844,7 @@ export const AcademicPage: React.FC = () => {
           <span>Programs ({programsData?.length || 0})</span>
         </button>
         <button
-          onClick={() => setActiveTab('batches')}
+          onClick={() => handleTabChange('batches')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
             activeTab === 'batches'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
@@ -729,7 +855,7 @@ export const AcademicPage: React.FC = () => {
           <span>Batches ({batchesData?.length || 0})</span>
         </button>
         <button
-          onClick={() => setActiveTab('divisions')}
+          onClick={() => handleTabChange('divisions')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
             activeTab === 'divisions'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
@@ -818,7 +944,7 @@ export const AcademicPage: React.FC = () => {
                   <span>Export XLSX</span>
                 </button>
                 <button
-                  onClick={() => setSelectedBatchForStudents(null)}
+                  onClick={() => closeBatchStudentsModal()}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                 >
                   <X className="h-5 w-5" />
@@ -829,7 +955,10 @@ export const AcademicPage: React.FC = () => {
             {/* Tab navigation within Modal */}
             <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
               <button
-                onClick={() => setBatchModalTab('enrolled')}
+                onClick={() => {
+                  setBatchModalTab('enrolled');
+                  updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'enrolled' });
+                }}
                 className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
                   batchModalTab === 'enrolled'
                     ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
@@ -840,7 +969,10 @@ export const AcademicPage: React.FC = () => {
                 <span>Enrolled Students ({batchStudentsData?.length || 0})</span>
               </button>
               <button
-                onClick={() => setBatchModalTab('unassigned')}
+                onClick={() => {
+                  setBatchModalTab('unassigned');
+                  updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'unassigned' });
+                }}
                 className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
                   batchModalTab === 'unassigned'
                     ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
@@ -1064,7 +1196,7 @@ export const AcademicPage: React.FC = () => {
                   <span>Export XLSX</span>
                 </button>
                 <button
-                  onClick={() => setSelectedDivisionForStudents(null)}
+                  onClick={() => closeDivisionStudentsModal()}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                 >
                   <X className="h-5 w-5" />
@@ -1075,7 +1207,10 @@ export const AcademicPage: React.FC = () => {
             {/* Tab navigation within Modal */}
             <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
               <button
-                onClick={() => setDivModalTab('enrolled')}
+                onClick={() => {
+                  setDivModalTab('enrolled');
+                  updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'enrolled' });
+                }}
                 className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
                   divModalTab === 'enrolled'
                     ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
@@ -1086,7 +1221,10 @@ export const AcademicPage: React.FC = () => {
                 <span>Assigned Students ({divStudentsData?.length || 0})</span>
               </button>
               <button
-                onClick={() => setDivModalTab('unassigned')}
+                onClick={() => {
+                  setDivModalTab('unassigned');
+                  updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'unassigned' });
+                }}
                 className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
                   divModalTab === 'unassigned'
                     ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
@@ -1318,7 +1456,7 @@ export const AcademicPage: React.FC = () => {
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setReassigningStudent(null)}
+                  onClick={() => closeReassignModal()}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel
@@ -1429,7 +1567,7 @@ export const AcademicPage: React.FC = () => {
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={closeModal}
+                  onClick={() => closeModal()}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel

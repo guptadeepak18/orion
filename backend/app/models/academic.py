@@ -136,9 +136,19 @@ class SubjectBatch(Base, TimestampMixin):
     term_label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    faculty_type: Mapped[Optional[str]] = mapped_column(String(50), default="internal", nullable=True)
+    faculty_internal_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("faculty_internal.id", ondelete="SET NULL"), nullable=True
+    )
+    faculty_external_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("faculty_external.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
     subject: Mapped["Subject"] = relationship("Subject", back_populates="batch_allocations")
-    batch: Mapped["Batch"] = relationship("Batch")
+    batch: Mapped["Batch"] = relationship("Batch", lazy="selectin")
+    faculty_internal: Mapped[Optional["FacultyInternal"]] = relationship("FacultyInternal", lazy="selectin")
+    faculty_external: Mapped[Optional["FacultyExternal"]] = relationship("FacultyExternal", lazy="selectin")
 
 
 class Subject(Base, TimestampMixin, SoftDeleteMixin):
@@ -149,9 +159,13 @@ class Subject(Base, TimestampMixin, SoftDeleteMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    course_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     trimester: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_non_credit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     credits: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    total_hours: Mapped[Optional[int]] = mapped_column(Integer, default=30, nullable=True)
+    course_category: Mapped[str] = mapped_column(String(50), default="core", nullable=False)
+    elective_domain: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     syllabus: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -171,6 +185,9 @@ class Subject(Base, TimestampMixin, SoftDeleteMixin):
         "SubjectBatch", back_populates="subject", cascade="all, delete-orphan", lazy="selectin"
     )
     topics: Mapped[List["Topic"]] = relationship("Topic", back_populates="subject")
+    activities: Mapped[List["SubjectActivity"]] = relationship(
+        "SubjectActivity", back_populates="subject", cascade="all, delete-orphan", lazy="selectin"
+    )
 
 
 class Topic(Base, TimestampMixin, SoftDeleteMixin):

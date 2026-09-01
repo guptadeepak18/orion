@@ -3,7 +3,7 @@ from app.api.v1 import (
     auth, users, health, academic, sessions, timetable,
     faculty, engagements, remuneration, approvals, invoices, payments,
     calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard,
-    students, student_registrations
+    students, student_registrations, activities, lms, case_studies, attendance, ai_intelligence, academic_operations
 )
 
 api_router = APIRouter()
@@ -13,9 +13,15 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(academic.router)
+api_router.include_router(academic_operations.router)
+api_router.include_router(case_studies.router)
+api_router.include_router(activities.router)
+api_router.include_router(lms.router)
 api_router.include_router(students.router)
 api_router.include_router(student_registrations.router)
 api_router.include_router(sessions.router)
+api_router.include_router(attendance.router)
+api_router.include_router(ai_intelligence.router)
 
 api_router.include_router(timetable.router)
 api_router.include_router(faculty.router)

@@ -73,6 +73,15 @@ export const StudentExportModal: React.FC<StudentExportModalProps> = ({
     EXPORT_STUDENT_FIELDS.filter((f) => f.defaultSelected).map((f) => f.key)
   );
 
+  React.useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const toggleField = (key: string) => {

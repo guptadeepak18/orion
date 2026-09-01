@@ -1,6 +1,6 @@
-# CRC One — Career Readiness Cell Management System
+# Orion — Academic Operations & Career Readiness Platform
 
-CRC One is the single source of truth for the Career Readiness Cell (CRC) at Lexicon MILE.
+Orion is the single source of truth for Academic Operations and Career Readiness at Lexicon MILE.
 
 ## Tech Stack
 - **Backend:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic

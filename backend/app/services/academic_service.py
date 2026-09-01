@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -198,9 +198,13 @@ async def create_subject(db: AsyncSession, sub_in: SubjectCreate) -> Subject:
     subject = Subject(
         name=sub_in.name,
         code=sub_in.code,
+        course_code=getattr(sub_in, "course_code", None),
         trimester=sub_in.trimester,
         is_non_credit=sub_in.is_non_credit,
         credits=0 if sub_in.is_non_credit else sub_in.credits,
+        total_hours=sub_in.total_hours if sub_in.total_hours is not None else 30,
+        course_category=sub_in.course_category or "core",
+        elective_domain=sub_in.elective_domain if (sub_in.course_category == "elective") else None,
         syllabus=sub_in.syllabus,
         session_plan=sub_in.session_plan,
         hyperbuild_activities=sub_in.hyperbuild_activities,
@@ -316,9 +320,12 @@ async def update_subject(db: AsyncSession, subject_id: UUID, sub_in: SubjectUpda
 
     data = sub_in.model_dump(exclude_unset=True)
 
-    for field in ["name", "code", "trimester", "is_non_credit", "credits", "is_archived", "syllabus", "session_plan", "hyperbuild_activities"]:
+    for field in ["name", "code", "course_code", "trimester", "is_non_credit", "credits", "total_hours", "course_category", "elective_domain", "is_archived", "syllabus", "session_plan", "hyperbuild_activities"]:
         if field in data and data[field] is not None:
             setattr(subject, field, data[field])
+
+    if subject.course_category != "elective":
+        subject.elective_domain = None
 
     if subject.is_non_credit:
         subject.credits = 0
@@ -594,5 +601,193 @@ async def list_students_for_division(db: AsyncSession, division_id: UUID):
     )
     res = await db.execute(stmt)
     return list(res.scalars().all())
+
+
+# Faculty-Subject Allocations
+async def list_faculty_subject_allocations(
+    db: AsyncSession,
+    program_id: Optional[UUID] = None,
+    batch_id: Optional[UUID] = None,
+    subject_id: Optional[UUID] = None,
+    faculty_id: Optional[UUID] = None,
+) -> List[Dict[str, Any]]:
+    from app.models.academic import SubjectBatch, Subject, Batch, Program
+    from app.models.faculty import FacultyInternal, FacultyExternal
+    from sqlalchemy import or_
+
+    stmt = (
+        select(SubjectBatch)
+        .options(
+            selectinload(SubjectBatch.subject),
+            selectinload(SubjectBatch.batch).selectinload(Batch.program),
+            selectinload(SubjectBatch.faculty_internal),
+            selectinload(SubjectBatch.faculty_external),
+        )
+    )
+
+    if batch_id:
+        stmt = stmt.where(SubjectBatch.batch_id == batch_id)
+    if subject_id:
+        stmt = stmt.where(SubjectBatch.subject_id == subject_id)
+    if faculty_id:
+        stmt = stmt.where(
+            or_(
+                SubjectBatch.faculty_internal_id == faculty_id,
+                SubjectBatch.faculty_external_id == faculty_id,
+            )
+        )
+
+    res = await db.execute(stmt)
+    allocations = res.scalars().all()
+
+    results = []
+    for a in allocations:
+        if not a.subject or not a.batch:
+            continue
+        if a.subject.is_deleted or a.subject.is_archived:
+            continue
+
+        prog = a.batch.program if a.batch else None
+        if program_id and (not prog or prog.id != program_id):
+            continue
+
+        fac_name = None
+        fac_email = None
+        fac_org = None
+        fac_desig = None
+        if a.faculty_internal:
+            fac_name = a.faculty_internal.full_name
+            fac_email = a.faculty_internal.email
+            fac_org = "Lexicon MILE (Internal)"
+            fac_desig = a.faculty_internal.designation
+        elif a.faculty_external:
+            fac_name = a.faculty_external.name
+            fac_email = a.faculty_external.email
+            fac_org = a.faculty_external.organization or "Visiting Expert"
+            fac_desig = a.faculty_external.designation or "Visiting Faculty"
+
+        results.append({
+            "id": a.id,
+            "subject_id": a.subject_id,
+            "subject_name": a.subject.name,
+            "subject_code": a.subject.code,
+            "course_code": a.subject.course_code,
+            "course_category": a.subject.course_category or "core",
+            "credits": a.subject.credits,
+            "total_hours": a.subject.total_hours,
+            "batch_id": a.batch_id,
+            "batch_name": a.batch.name if a.batch else "",
+            "batch_code": a.batch.code if a.batch else "",
+            "program_id": prog.id if prog else None,
+            "program_name": prog.name if prog else None,
+            "program_code": prog.code if prog else None,
+            "faculty_type": a.faculty_type or "internal",
+            "faculty_internal_id": a.faculty_internal_id,
+            "faculty_external_id": a.faculty_external_id,
+            "faculty_name": fac_name,
+            "faculty_email": fac_email,
+            "faculty_organization": fac_org,
+            "faculty_designation": fac_desig,
+            "term_type": a.term_type or "trimester",
+            "term_number": a.term_number or 1,
+            "term_label": a.term_label or f"Trimester {a.term_number or 1}",
+            "start_date": a.start_date,
+            "end_date": a.end_date,
+            "status": a.status or "active",
+        })
+
+    return results
+
+
+async def create_faculty_subject_allocation(
+    db: AsyncSession, alloc_in: Any
+) -> Dict[str, Any]:
+    from app.models.academic import SubjectBatch, Subject, Batch
+
+    # Check existing allocation for same subject & batch
+    stmt = select(SubjectBatch).where(
+        SubjectBatch.subject_id == alloc_in.subject_id,
+        SubjectBatch.batch_id == alloc_in.batch_id,
+    )
+    existing = (await db.execute(stmt)).scalars().first()
+
+    if existing:
+        existing.faculty_type = alloc_in.faculty_type or "internal"
+        existing.faculty_internal_id = alloc_in.faculty_internal_id
+        existing.faculty_external_id = alloc_in.faculty_external_id
+        existing.term_type = alloc_in.term_type or "trimester"
+        existing.term_number = alloc_in.term_number or 1
+        existing.term_label = alloc_in.term_label or f"Trimester {alloc_in.term_number or 1}"
+        existing.start_date = alloc_in.start_date
+        existing.end_date = alloc_in.end_date
+        existing.status = alloc_in.status or "active"
+        target = existing
+    else:
+        target = SubjectBatch(
+            subject_id=alloc_in.subject_id,
+            batch_id=alloc_in.batch_id,
+            faculty_type=alloc_in.faculty_type or "internal",
+            faculty_internal_id=alloc_in.faculty_internal_id,
+            faculty_external_id=alloc_in.faculty_external_id,
+            term_type=alloc_in.term_type or "trimester",
+            term_number=alloc_in.term_number or 1,
+            term_label=alloc_in.term_label or f"Trimester {alloc_in.term_number or 1}",
+            start_date=alloc_in.start_date,
+            end_date=alloc_in.end_date,
+            status=alloc_in.status or "active",
+        )
+        db.add(target)
+
+    # Ensure SubjectProgram linkage exists if batch has program
+    batch_stmt = select(Batch).where(Batch.id == alloc_in.batch_id)
+    batch = (await db.execute(batch_stmt)).scalar_one_or_none()
+    if batch and batch.program_id:
+        sp_stmt = select(SubjectProgram).where(
+            SubjectProgram.subject_id == alloc_in.subject_id,
+            SubjectProgram.program_id == batch.program_id,
+        )
+        sp_exist = (await db.execute(sp_stmt)).scalar_one_or_none()
+        if not sp_exist:
+            db.add(SubjectProgram(subject_id=alloc_in.subject_id, program_id=batch.program_id))
+
+    await db.commit()
+    await db.refresh(target)
+
+    # Return formatted single record
+    all_list = await list_faculty_subject_allocations(db, subject_id=alloc_in.subject_id, batch_id=alloc_in.batch_id)
+    return all_list[0] if all_list else {"id": target.id, "subject_id": target.subject_id, "batch_id": target.batch_id}
+
+
+async def update_faculty_subject_allocation(
+    db: AsyncSession, alloc_id: UUID, alloc_in: Any
+) -> Optional[Dict[str, Any]]:
+    from app.models.academic import SubjectBatch
+
+    stmt = select(SubjectBatch).where(SubjectBatch.id == alloc_id)
+    target = (await db.execute(stmt)).scalars().first()
+    if not target:
+        return None
+
+    update_data = alloc_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(target, field, value)
+
+    await db.commit()
+    await db.refresh(target)
+
+    all_list = await list_faculty_subject_allocations(db, subject_id=target.subject_id, batch_id=target.batch_id)
+    return all_list[0] if all_list else {"id": target.id}
+
+
+async def delete_faculty_subject_allocation(db: AsyncSession, alloc_id: UUID) -> bool:
+    from app.models.academic import SubjectBatch
+    stmt = select(SubjectBatch).where(SubjectBatch.id == alloc_id)
+    target = (await db.execute(stmt)).scalars().first()
+    if not target:
+        return False
+    await db.delete(target)
+    await db.commit()
+    return True
+
 
 

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Users, UserCheck, Sparkles, Edit3, Eye, X, Search,
@@ -121,8 +122,41 @@ const initialExternalForm = {
 export const FacultyPage: React.FC = () => {
   const { canManageFaculty } = useRoleAccess();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'external' | 'internal'>('external');
+  const queryTab = searchParams.get('tab') as 'external' | 'internal' | null;
+  const [activeTab, setActiveTab] = useState<'external' | 'internal'>(queryTab || 'external');
+
+  useEffect(() => {
+    if (queryTab) setActiveTab(queryTab);
+  }, [queryTab]);
+
+  const handleTabChange = (tab: 'external' | 'internal') => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    next.delete('modal');
+    next.delete('id');
+    next.delete('section');
+    setSearchParams(next);
+  };
+
+  const updateUrlModal = (m: string | null, params: Record<string, string | undefined> = {}) => {
+    const next = new URLSearchParams(searchParams);
+    if (!m) {
+      next.delete('modal');
+      next.delete('id');
+      next.delete('section');
+    } else {
+      next.set('modal', m);
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      });
+    }
+    setSearchParams(next);
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
 
@@ -236,14 +270,15 @@ export const FacultyPage: React.FC = () => {
   });
 
   // Handlers for Opening Forms
-  const handleOpenAddInternal = () => {
+  const handleOpenAddInternal = (syncUrl = true) => {
     setEditingInternal(null);
     setInternalForm(initialInternalForm);
     setFormSection('personal');
     setShowInternalModal(true);
+    if (syncUrl) updateUrlModal('createInternal', { section: 'personal' });
   };
 
-  const handleOpenEditInternal = (fac: FacultyInternal) => {
+  const handleOpenEditInternal = (fac: FacultyInternal, syncUrl = true) => {
     setEditingInternal(fac);
     setInternalForm({
       employee_id: fac.employee_id || '',
@@ -268,16 +303,18 @@ export const FacultyPage: React.FC = () => {
     });
     setFormSection('personal');
     setShowInternalModal(true);
+    if (syncUrl) updateUrlModal('editInternal', { id: fac.id, section: 'personal' });
   };
 
-  const handleOpenAddExternal = () => {
+  const handleOpenAddExternal = (syncUrl = true) => {
     setEditingExternal(null);
     setExternalForm(initialExternalForm);
     setFormSection('personal');
     setShowExternalModal(true);
+    if (syncUrl) updateUrlModal('createExternal', { section: 'personal' });
   };
 
-  const handleOpenEditExternal = (fac: FacultyExternal) => {
+  const handleOpenEditExternal = (fac: FacultyExternal, syncUrl = true) => {
     setEditingExternal(fac);
     setExternalForm({
       name: fac.name || '',
@@ -307,7 +344,95 @@ export const FacultyPage: React.FC = () => {
     });
     setFormSection('personal');
     setShowExternalModal(true);
+    if (syncUrl) updateUrlModal('editExternal', { id: fac.id, section: 'personal' });
   };
+
+  const openViewInternal = (fac: FacultyInternal, syncUrl = true) => {
+    setViewInternal(fac);
+    if (syncUrl) updateUrlModal('internalDossier', { id: fac.id });
+  };
+
+  const closeViewInternal = (syncUrl = true) => {
+    setViewInternal(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  const openViewExternal = (fac: FacultyExternal, syncUrl = true) => {
+    setViewExternal(fac);
+    if (syncUrl) updateUrlModal('externalDossier', { id: fac.id });
+  };
+
+  const closeViewExternal = (syncUrl = true) => {
+    setViewExternal(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  const openDeleteConfirm = (target: { type: 'internal' | 'external', id: string, name: string }, syncUrl = true) => {
+    setDeleteConfirmTarget(target);
+    if (syncUrl) updateUrlModal('deleteConfirm', { id: target.id });
+  };
+
+  const closeDeleteConfirm = (syncUrl = true) => {
+    setDeleteConfirmTarget(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  const handleCloseInternalModal = (syncUrl = true) => {
+    setShowInternalModal(false);
+    setEditingInternal(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  const handleCloseExternalModal = (syncUrl = true) => {
+    setShowExternalModal(false);
+    setEditingExternal(null);
+    if (syncUrl) updateUrlModal(null);
+  };
+
+  // Synchronize modal state with URL query parameters
+  const urlModal = searchParams.get('modal');
+  const urlId = searchParams.get('id');
+  const urlSection = (searchParams.get('section') as any) || 'personal';
+
+  useEffect(() => {
+    if (!urlModal) {
+      if (showInternalModal || showExternalModal || viewInternal || viewExternal || deleteConfirmTarget) {
+        setShowInternalModal(false);
+        setShowExternalModal(false);
+        setViewInternal(null);
+        setViewExternal(null);
+        setDeleteConfirmTarget(null);
+      }
+      return;
+    }
+
+    if (urlModal === 'createInternal' && !showInternalModal) handleOpenAddInternal(false);
+    if (urlModal === 'createExternal' && !showExternalModal) handleOpenAddExternal(false);
+
+    if (urlId) {
+      if (urlModal === 'editInternal' && internalList.length > 0) {
+        const found = internalList.find((f) => f.id === urlId);
+        if (found && (!showInternalModal || editingInternal?.id !== found.id)) {
+          handleOpenEditInternal(found, false);
+        }
+      } else if (urlModal === 'editExternal' && externalList.length > 0) {
+        const found = externalList.find((f) => f.id === urlId);
+        if (found && (!showExternalModal || editingExternal?.id !== found.id)) {
+          handleOpenEditExternal(found, false);
+        }
+      } else if (urlModal === 'internalDossier' && internalList.length > 0) {
+        const found = internalList.find((f) => f.id === urlId);
+        if (found && viewInternal?.id !== found.id) {
+          setViewInternal(found);
+        }
+      } else if (urlModal === 'externalDossier' && externalList.length > 0) {
+        const found = externalList.find((f) => f.id === urlId);
+        if (found && viewExternal?.id !== found.id) {
+          setViewExternal(found);
+        }
+      }
+    }
+  }, [urlModal, urlId, urlSection, internalList, externalList]);
 
   // Submit handlers
   const handleSaveInternal = (e: React.FormEvent) => {
@@ -444,9 +569,9 @@ export const FacultyPage: React.FC = () => {
       accessor: (r) => (
         <div className="flex items-center space-x-1.5">
           <button
-            onClick={() => setViewExternal(r)}
+            onClick={() => openViewExternal(r)}
             className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="View Full Profile Dossier"
+            title="View Full Profile"
           >
             <Eye className="h-4 w-4" />
           </button>
@@ -471,7 +596,7 @@ export const FacultyPage: React.FC = () => {
                 {r.is_archived ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
               </button>
               <button
-                onClick={() => setDeleteConfirmTarget({ type: 'external', id: r.id, name: r.name })}
+                onClick={() => openDeleteConfirm({ type: 'external', id: r.id, name: r.name })}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                 title="Delete Faculty Profile"
               >
@@ -534,9 +659,9 @@ export const FacultyPage: React.FC = () => {
       accessor: (r) => (
         <div className="flex items-center space-x-1.5">
           <button
-            onClick={() => setViewInternal(r)}
+            onClick={() => openViewInternal(r)}
             className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="View Full Profile Dossier"
+            title="View Full Profile"
           >
             <Eye className="h-4 w-4" />
           </button>
@@ -561,7 +686,7 @@ export const FacultyPage: React.FC = () => {
                 {r.is_archived ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
               </button>
               <button
-                onClick={() => setDeleteConfirmTarget({ type: 'internal', id: r.id, name: r.full_name || r.email })}
+                onClick={() => openDeleteConfirm({ type: 'internal', id: r.id, name: r.full_name || r.email })}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                 title="Delete Faculty Profile"
               >
@@ -588,7 +713,7 @@ export const FacultyPage: React.FC = () => {
           <div className="flex items-center space-x-3">
             {activeTab === 'external' ? (
               <button
-                onClick={handleOpenAddExternal}
+                onClick={() => handleOpenAddExternal()}
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
@@ -596,7 +721,7 @@ export const FacultyPage: React.FC = () => {
               </button>
             ) : (
               <button
-                onClick={handleOpenAddInternal}
+                onClick={() => handleOpenAddInternal()}
                 className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/35 transition-all duration-200"
               >
                 <Plus className="h-4 w-4" />
@@ -614,20 +739,20 @@ export const FacultyPage: React.FC = () => {
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Compliance Vault Active</h4>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-200">Faculty Records & Compliance</h4>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              Validates rate agreements, document compliance, research areas, and workload history across academic sessions.
+              Maintains fee agreements, KYC documentation, specializations, and teaching workload history.
             </p>
           </div>
         </div>
-        <StatusBadge status="active" label="Compliance Vault Active" />
+        <StatusBadge status="active" label="Records Verified" />
       </div>
 
       {/* Tabs & Search & Status Filters Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 gap-4 pb-1">
         <div className="flex space-x-6 w-full sm:w-auto">
           <button
-            onClick={() => setActiveTab('external')}
+            onClick={() => handleTabChange('external')}
             className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
               activeTab === 'external'
                 ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400'
@@ -638,7 +763,7 @@ export const FacultyPage: React.FC = () => {
             <span>Visiting / External Experts ({externalList.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab('internal')}
+            onClick={() => handleTabChange('internal')}
             className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
               activeTab === 'internal'
                 ? 'border-indigo-500 text-indigo-700 dark:border-indigo-400 dark:text-indigo-400'
@@ -646,7 +771,7 @@ export const FacultyPage: React.FC = () => {
             }`}
           >
             <UserCheck className="h-4 w-4" />
-            <span>Internal Faculty ({internalList.length})</span>
+            <span>Internal & Adjunct Faculty ({internalList.length})</span>
           </button>
         </div>
 
@@ -748,7 +873,7 @@ export const FacultyPage: React.FC = () => {
             <div className="flex justify-end space-x-3 pt-2">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmTarget(null)}
+                onClick={() => closeDeleteConfirm()}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700"
               >
                 Cancel
@@ -783,7 +908,7 @@ export const FacultyPage: React.FC = () => {
                 </h3>
               </div>
               <button
-                onClick={() => setShowInternalModal(false)}
+                onClick={() => handleCloseInternalModal()}
                 className="p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
               >
                 <X className="h-5 w-5" />
@@ -1174,86 +1299,95 @@ export const FacultyPage: React.FC = () => {
 
               {/* SECTION 3: COMMERCIAL & BANKING */}
               {formSection === 'financial' && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                        Standard Rate (₹) <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        value={externalForm.standard_rate}
-                        onChange={(e) => setExternalForm({ ...externalForm, standard_rate: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                      />
+                <div className="space-y-4">
+                  {/* Commercial Agreement */}
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                      <Briefcase className="h-4 w-4 text-cyan-500" /> Commercial Engagement & Rate
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Rate Type</label>
+                        <select
+                          value={externalForm.standard_rate_type}
+                          onChange={(e) => setExternalForm({ ...externalForm, standard_rate_type: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+                        >
+                          <option value="per_hour">Per Hour</option>
+                          <option value="per_session">Per Session</option>
+                          <option value="fixed_course">Fixed Course Fee</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Rate Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={externalForm.standard_rate}
+                          onChange={(e) => setExternalForm({ ...externalForm, standard_rate: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                        Rate Structure <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        value={externalForm.standard_rate_type}
-                        onChange={(e) => setExternalForm({ ...externalForm, standard_rate_type: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                      >
-                        <option value="per_hour">Per Hour</option>
-                        <option value="per_session">Per Session</option>
-                        <option value="fixed">Fixed Project Fee</option>
-                      </select>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Agreement Start Date</label>
+                        <input
+                          type="date"
+                          value={externalForm.agreement_start}
+                          onChange={(e) => setExternalForm({ ...externalForm, agreement_start: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Agreement End Date</label>
+                        <input
+                          type="date"
+                          value={externalForm.agreement_end}
+                          onChange={(e) => setExternalForm({ ...externalForm, agreement_end: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  {/* GST & Tax Compliance */}
+                  <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-500/30 space-y-3">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                          GST Applicability & Tax Registration
-                        </p>
-                        <p className="text-[10px] text-slate-500">Toggle whether this faculty member charges GST on remuneration</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
+                      <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <CreditCard className="h-4 w-4 text-emerald-500" /> GST Compliance & Tax Vault
+                      </h4>
+                      <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={externalForm.is_gst_applicable}
                           onChange={(e) => setExternalForm({ ...externalForm, is_gst_applicable: e.target.checked })}
-                          className="sr-only peer"
+                          className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
                         />
-                        <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
-                        <span className="ml-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-                          {externalForm.is_gst_applicable ? 'GST Applicable' : 'GST Exempt / Non-GST'}
-                        </span>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">GST Applicable</span>
                       </label>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">PAN Number</label>
+                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Permanent Account Number (PAN) *</label>
                         <input
                           type="text"
-                          placeholder="PAN Card Number"
+                          placeholder="e.g. ABCDE1234F"
                           value={externalForm.pan}
                           onChange={(e) => setExternalForm({ ...externalForm, pan: e.target.value })}
                           className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">
-                          {externalForm.is_gst_applicable ? 'GSTIN Number *' : 'GST Status'}
-                        </label>
-                        {externalForm.is_gst_applicable ? (
-                          <input
-                            type="text"
-                            placeholder="e.g. 27ABCDE1234F1Z5"
-                            value={externalForm.gst_number}
-                            onChange={(e) => setExternalForm({ ...externalForm, gst_number: e.target.value })}
-                            className="w-full bg-white dark:bg-slate-900 border border-cyan-500 dark:border-cyan-400 rounded-lg px-3 py-1.5 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none"
-                          />
-                        ) : (
-                          <div className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-400 font-medium italic">
-                            Non-GST (No Tax Applied)
-                          </div>
-                        )}
+                        <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">GSTIN Number</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 27ABCDE1234F1Z5"
+                          value={externalForm.gst_number}
+                          onChange={(e) => setExternalForm({ ...externalForm, gst_number: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none"
+                        />
                       </div>
                     </div>
                   </div>
@@ -1263,7 +1397,7 @@ export const FacultyPage: React.FC = () => {
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowExternalModal(false)}
+                  onClick={() => handleCloseExternalModal()}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100"
                 >
                   Cancel
@@ -1297,7 +1431,7 @@ export const FacultyPage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setViewInternal(null)} className="p-1 text-slate-400 hover:text-slate-600">
+              <button onClick={() => closeViewInternal()} className="p-1 text-slate-400 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1351,10 +1485,10 @@ export const FacultyPage: React.FC = () => {
               ) : <div />}
 
               <button
-                onClick={() => setViewInternal(null)}
+                onClick={() => closeViewInternal()}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
               >
-                Close Dossier
+                Close Profile
               </button>
             </div>
           </div>
@@ -1377,7 +1511,7 @@ export const FacultyPage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setViewExternal(null)} className="p-1 text-slate-400 hover:text-slate-600">
+              <button onClick={() => closeViewExternal()} className="p-1 text-slate-400 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1428,10 +1562,10 @@ export const FacultyPage: React.FC = () => {
               ) : <div />}
 
               <button
-                onClick={() => setViewExternal(null)}
+                onClick={() => closeViewExternal()}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
               >
-                Close Dossier
+                Close Profile
               </button>
             </div>
           </div>
