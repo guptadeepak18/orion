@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost,http://127.0.0.1"
     FILE_STORAGE_PATH: str = "./uploads"
 
+    # Email settings (HTTP API takes precedence over SMTP on platforms like Render where SMTP ports are blocked)
+    RESEND_API_KEY: str = ""
+    BREVO_API_KEY: str = ""
+    SENDGRID_API_KEY: str = ""
+
     # SMTP / Email settings (optional — falls back to console log in dev if unset)
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

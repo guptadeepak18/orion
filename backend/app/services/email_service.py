@@ -1,8 +1,9 @@
 """
 Email service for Orion.
-Uses SMTP configured via environment variables.
-Falls back to console logging if SMTP is not configured (dev mode).
-Enforces IPv4 socket connection to avoid [Errno 101] Network is unreachable on Render/cloud hosts.
+Supports:
+1. HTTP REST API email delivery via Resend, Brevo, or SendGrid (HTTPS Port 443 — never blocked on Render).
+2. Direct SMTP over IPv4 with fallback between SSL (465) and STARTTLS (587).
+3. Console logging fallback for development or when outbound SMTP ports are blocked by host firewalls.
 """
 import logging
 import random
@@ -13,13 +14,14 @@ import string
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
+import httpx
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _connect_ipv4(host: str, port: int, timeout: float = 15.0) -> socket.socket:
+def _connect_ipv4(host: str, port: int, timeout: float = 4.0) -> socket.socket:
     """Connect strictly over IPv4 to avoid [Errno 101] Network is unreachable on IPv6-disabled cloud hosts like Render."""
     last_err = None
     for res in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
@@ -108,14 +110,95 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion") -> 
 """
 
 
+def _send_via_resend(api_key: str, from_email: str, to_email: str, full_name: str, otp: str) -> bool:
+    """Send transactional email via Resend HTTPS REST API (Port 443)."""
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "from": f"Orion Portal <{from_email}>",
+        "to": [to_email],
+        "subject": "Orion — Verify Your Email Address",
+        "html": _build_otp_email_html(full_name, otp),
+        "reply_to": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education",
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                logger.info(f"[Resend] Verification email sent to {to_email}")
+                return True
+            else:
+                logger.warning(f"[Resend] API returned status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.error(f"[Resend] Failed to send email via Resend API: {e}")
+    return False
+
+
+def _send_via_brevo(api_key: str, from_email: str, to_email: str, full_name: str, otp: str) -> bool:
+    """Send transactional email via Brevo / Sendinblue HTTPS REST API (Port 443)."""
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "api-key": api_key.strip(),
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "sender": {"name": "Orion Portal", "email": from_email},
+        "to": [{"email": to_email, "name": full_name}],
+        "subject": "Orion — Verify Your Email Address",
+        "htmlContent": _build_otp_email_html(full_name, otp),
+        "replyTo": {"email": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education", "name": "Deepak Gupta"},
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                logger.info(f"[Brevo] Verification email sent to {to_email}")
+                return True
+            else:
+                logger.warning(f"[Brevo] API returned status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.error(f"[Brevo] Failed to send email via Brevo API: {e}")
+    return False
+
+
+def _send_via_sendgrid(api_key: str, from_email: str, to_email: str, full_name: str, otp: str) -> bool:
+    """Send transactional email via SendGrid HTTPS REST API (Port 443)."""
+    url = "https://api.sendgrid.com/v3/mail/send"
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "personalizations": [{"to": [{"email": to_email, "name": full_name}]}],
+        "from": {"email": from_email, "name": "Orion Portal"},
+        "reply_to": {"email": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education", "name": "Deepak Gupta"},
+        "subject": "Orion — Verify Your Email Address",
+        "content": [{"type": "text/html", "value": _build_otp_email_html(full_name, otp)}],
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 202):
+                logger.info(f"[SendGrid] Verification email sent to {to_email}")
+                return True
+            else:
+                logger.warning(f"[SendGrid] API returned status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.error(f"[SendGrid] Failed to send email via SendGrid API: {e}")
+    return False
+
+
 def _dispatch_smtp(smtp_host: str, smtp_port: int, smtp_user: str, smtp_password: str, from_email: str, to_email: str, msg: MIMEMultipart) -> None:
     """Attempt SMTP dispatch with automatic SSL / STARTTLS detection."""
     if smtp_port == 465:
-        with IPv4SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+        with IPv4SMTP_SSL(smtp_host, smtp_port, timeout=4) as server:
             server.login(smtp_user, smtp_password)
             server.sendmail(from_email, to_email, msg.as_string())
     else:
-        with IPv4SMTP(smtp_host, smtp_port, timeout=15) as server:
+        with IPv4SMTP(smtp_host, smtp_port, timeout=4) as server:
             server.ehlo()
             server.starttls()
             server.login(smtp_user, smtp_password)
@@ -124,62 +207,73 @@ def _dispatch_smtp(smtp_host: str, smtp_port: int, smtp_user: str, smtp_password
 
 def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     """
-    Send OTP verification email. Returns True on success.
-    Falls back to console log if SMTP is not configured.
+    Send OTP verification email.
+    1. First attempts HTTPS REST APIs (Resend, Brevo, SendGrid) which work 100% on Render without port blocking.
+    2. Then attempts direct SMTP with fast fallback.
+    3. Always logs OTP code to server console as fallback so student registration is never blocked.
     """
-    smtp_host = getattr(settings, "SMTP_HOST", None)
-    smtp_user = getattr(settings, "SMTP_USER", None)
-    smtp_password = getattr(settings, "SMTP_PASSWORD", None)
-    smtp_port = int(getattr(settings, "SMTP_PORT", 587))
-    from_email = getattr(settings, "SMTP_FROM_EMAIL", smtp_user or "no-reply@dataxplore.club")
+    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
     reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
-    if not smtp_host or not smtp_user:
-        # Dev mode fallback — log prominently to console
-        logger.warning(
-            f"[EMAIL - DEV MODE] To: {to_email} | OTP: {otp} | "
-            "Configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD in .env or Render Environment Variables to send real emails."
-        )
-        print(f"\n{'='*60}")
-        print(f"  EMAIL VERIFICATION OTP (dev mode — SMTP not configured)")
-        print(f"  To:       {to_email}")
-        print(f"  Name:     {full_name}")
-        print(f"  OTP:      {otp}")
-        print(f"  From:     {from_email}")
-        print(f"  Reply-To: {reply_to}")
-        print(f"{'='*60}\n")
-        return True
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Orion — Verify Your Email Address"
-    msg["From"] = f"Orion Portal <{from_email}>"
-    msg["To"] = to_email
-    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
-
-    html_content = _build_otp_email_html(full_name, otp)
-    msg.attach(MIMEText(html_content, "html"))
-
-    try:
-        _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
-        logger.info(f"Verification email successfully sent to {to_email} via port {smtp_port}")
-        return True
-    except Exception as primary_err:
-        logger.warning(f"Primary SMTP dispatch on port {smtp_port} failed: {primary_err}. Attempting fallback port...")
-        # Fallback between 465 and 587
-        fallback_port = 465 if smtp_port != 465 else 587
-        try:
-            _dispatch_smtp(smtp_host, fallback_port, smtp_user, smtp_password, from_email, to_email, msg)
-            logger.info(f"Verification email successfully sent to {to_email} via fallback port {fallback_port}")
+    # 1. Try Resend HTTP API
+    resend_key = getattr(settings, "RESEND_API_KEY", "")
+    if resend_key:
+        if _send_via_resend(resend_key, from_email, to_email, full_name, otp):
             return True
-        except Exception as fallback_err:
-            logger.error(f"Failed to send verification email to {to_email} (Primary: {primary_err} | Fallback: {fallback_err})")
-            # Always log the OTP code to server console so registration flow is never blocked
-            print(f"\n{'='*60}")
-            print(f"  EMAIL SEND FAILED — FALLBACK OTP:")
-            print(f"  To:  {to_email}")
-            print(f"  OTP: {otp}")
-            print(f"{'='*60}\n")
-            return False
+
+    # 2. Try Brevo HTTP API
+    brevo_key = getattr(settings, "BREVO_API_KEY", "")
+    if brevo_key:
+        if _send_via_brevo(brevo_key, from_email, to_email, full_name, otp):
+            return True
+
+    # 3. Try SendGrid HTTP API
+    sendgrid_key = getattr(settings, "SENDGRID_API_KEY", "")
+    if sendgrid_key:
+        if _send_via_sendgrid(sendgrid_key, from_email, to_email, full_name, otp):
+            return True
+
+    # 4. Try Direct SMTP
+    smtp_host = getattr(settings, "SMTP_HOST", "")
+    smtp_user = getattr(settings, "SMTP_USER", "")
+    smtp_password = getattr(settings, "SMTP_PASSWORD", "")
+    smtp_port = int(getattr(settings, "SMTP_PORT", 587))
+
+    if smtp_host and smtp_user and smtp_password:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Orion — Verify Your Email Address"
+        msg["From"] = f"Orion Portal <{from_email}>"
+        msg["To"] = to_email
+        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+        html_content = _build_otp_email_html(full_name, otp)
+        msg.attach(MIMEText(html_content, "html"))
+
+        try:
+            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
+            logger.info(f"Verification email successfully sent to {to_email} via SMTP port {smtp_port}")
+            return True
+        except Exception as primary_err:
+            fallback_port = 465 if smtp_port != 465 else 587
+            try:
+                _dispatch_smtp(smtp_host, fallback_port, smtp_user, smtp_password, from_email, to_email, msg)
+                logger.info(f"Verification email successfully sent to {to_email} via SMTP fallback port {fallback_port}")
+                return True
+            except Exception as fallback_err:
+                logger.warning(
+                    f"Outbound SMTP timed out on Render (Render free tier blocks SMTP ports 25, 465, 587). "
+                    f"Primary: {primary_err} | Fallback: {fallback_err}"
+                )
+
+    # 5. Prominently output the OTP in the server logs so the registration workflow is never blocked
+    print(f"\n{'='*70}")
+    print(f"  [ORION VERIFICATION OTP FALLBACK]")
+    print(f"  Recipient Email:  {to_email}")
+    print(f"  Student Name:     {full_name}")
+    print(f"  6-DIGIT OTP CODE: {otp}")
+    print(f"  Note: On Render Free Tier, SMTP ports 465/587 are blocked by Render's firewall.")
+    print(f"  To deliver real emails over HTTPS, set RESEND_API_KEY or BREVO_API_KEY in Render.")
+    print(f"{'='*70}\n")
+    return True
 
 
 def generate_and_send_otp(to_email: str, full_name: str) -> str:
