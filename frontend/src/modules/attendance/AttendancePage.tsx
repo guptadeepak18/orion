@@ -104,13 +104,9 @@ export const AttendancePage: React.FC = () => {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (sessionDateFilter) params.append('session_date', sessionDateFilter);
-      const token = localStorage.getItem('access_token');
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`/api/v1/attendance/sessions${qs}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get(`/attendance/sessions${qs}`);
+      return (res.data?.data || []) as any[];
     },
     enabled: !isStudent,
   });
@@ -131,12 +127,8 @@ export const AttendancePage: React.FC = () => {
     queryKey: ['session_attendance_sheet', selectedSessionId],
     queryFn: async () => {
       if (!selectedSessionId) return null;
-      const token = localStorage.getItem('access_token');
-      const res = await fetch(`/api/v1/sessions/${selectedSessionId}/attendance`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return json.data;
+      const res = await api.get(`/sessions/${selectedSessionId}/attendance`);
+      return res.data?.data;
     },
     enabled: !!selectedSessionId && !isStudent,
   });
@@ -324,16 +316,9 @@ export const AttendancePage: React.FC = () => {
       if (registerSubjectId) params.append('subject_id', registerSubjectId);
       if (registerStatusFilter) params.append('status', registerStatusFilter);
 
-      const token = localStorage.getItem('access_token');
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`/api/v1/attendance/register${qs}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get(`/attendance/register${qs}`);
+      return (res.data?.data || []) as any[];
     },
     enabled: activeTab === 'register',
   });
@@ -404,12 +389,8 @@ export const AttendancePage: React.FC = () => {
   const { data: subjectsListData = [] } = useQuery({
     queryKey: ['subjects_list_for_attendance'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token');
-      const res = await fetch('/api/v1/academic/subjects', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get('/academic/subjects');
+      return (res.data?.data || []) as any[];
     },
   });
 
@@ -434,12 +415,8 @@ export const AttendancePage: React.FC = () => {
     queryKey: ['subject_attendance_matrix', selectedSubjectId],
     queryFn: async () => {
       if (!selectedSubjectId) return null;
-      const token = localStorage.getItem('access_token');
-      const res = await fetch(`/api/v1/attendance/subject-matrix?subject_id=${selectedSubjectId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return json.data;
+      const res = await api.get(`/attendance/subject-matrix?subject_id=${selectedSubjectId}`);
+      return res.data?.data;
     },
     enabled: activeTab === 'matrix' && !!selectedSubjectId,
   });
@@ -498,12 +475,8 @@ export const AttendancePage: React.FC = () => {
   const { data: studentsListData = [] } = useQuery({
     queryKey: ['students_list_for_attendance'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token');
-      const res = await fetch('/api/v1/students', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get('/students');
+      return (res.data?.data || []) as any[];
     },
     enabled: !isStudent,
   });
@@ -531,12 +504,8 @@ export const AttendancePage: React.FC = () => {
     queryKey: ['student_attendance_dossier', selectedStudentId],
     queryFn: async () => {
       if (!selectedStudentId) return null;
-      const token = localStorage.getItem('access_token');
-      const res = await fetch(`/api/v1/attendance/student-dossier/${selectedStudentId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return json.data;
+      const res = await api.get(`/attendance/student-dossier/${selectedStudentId}`);
+      return res.data?.data;
     },
     enabled: !!selectedStudentId && (activeTab === 'students' || isStudent),
   });
@@ -555,13 +524,9 @@ export const AttendancePage: React.FC = () => {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (correctionStatusFilter !== 'all') params.append('status', correctionStatusFilter);
-      const token = localStorage.getItem('access_token');
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`/api/v1/attendance/corrections${qs}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get(`/attendance/corrections${qs}`);
+      return (res.data?.data || []) as any[];
     },
   });
 
@@ -607,12 +572,8 @@ export const AttendancePage: React.FC = () => {
   const { data: debarredStudentsData = [], isPending: debarmentLoading } = useQuery({
     queryKey: ['debarment_risk', debarmentThreshold],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token');
-      const res = await fetch(`/api/v1/attendance/debarment-risk?threshold=${debarmentThreshold}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return (json.data || []) as any[];
+      const res = await api.get(`/attendance/debarment-risk?threshold=${debarmentThreshold}`);
+      return (res.data?.data || []) as any[];
     },
     enabled: !isStudent && activeTab === 'compliance',
   });

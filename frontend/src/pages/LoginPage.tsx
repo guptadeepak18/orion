@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Mail, AlertCircle, Shield, User, GraduationCap, Users } from 'lucide-react';
+import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { Logo } from '../components/Logo';
@@ -29,31 +30,26 @@ export const LoginPage: React.FC = () => {
 
     try {
       queryClient.clear();
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: loginEmail.trim().toLowerCase(),
-          password: loginPass,
-        }),
+      const res = await api.post('/auth/login', {
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPass,
       });
 
-      const data = await res.json();
-
-      if (res.ok && data?.data) {
-        const { access_token, refresh_token, user } = data.data;
+      if (res.data?.data) {
+        const { access_token, refresh_token, user } = res.data.data;
         setAuth(user, access_token, refresh_token);
         window.location.href = '/dashboard';
       } else {
-        const detail =
-          data?.detail ||
-          data?.message ||
-          'Invalid email or password. Please check your credentials.';
-        setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        setError('Invalid response from server. Please try again.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.message || 'Login failed. Network error.');
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Login failed. Network error.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }

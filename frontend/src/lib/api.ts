@@ -25,8 +25,34 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Detect if a static host served index.html instead of a JSON API response
+    if (
+      typeof response.data === 'string' &&
+      (response.data.trim().startsWith('<!doctype') ||
+        response.data.trim().startsWith('<!DOCTYPE') ||
+        response.data.trim().startsWith('<html'))
+    ) {
+      const err: any = new Error(
+        'Backend API endpoint not found (received HTML instead of JSON). Please verify your backend server is running and VITE_API_BASE_URL is configured.'
+      );
+      err.isHtmlResponse = true;
+      return Promise.reject(err);
+    }
+    return response;
+  },
   async (error) => {
+    // If error response body is HTML
+    if (
+      typeof error.response?.data === 'string' &&
+      (error.response.data.trim().startsWith('<!doctype') ||
+        error.response.data.trim().startsWith('<!DOCTYPE') ||
+        error.response.data.trim().startsWith('<html'))
+    ) {
+      error.message =
+        'Backend API server unreachable or returned HTML. Please verify that your backend service is running and VITE_API_BASE_URL is configured.';
+    }
+
     const originalRequest = error.config;
     const isAuthRoute =
       originalRequest?.url?.includes('/auth/login') ||
