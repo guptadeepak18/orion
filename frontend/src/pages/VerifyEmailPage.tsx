@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { Logo } from '../components/Logo';
+import { CosmicBackground } from '../components/CosmicBackground';
 import { Mail, AlertCircle, CheckCircle2, RotateCcw } from 'lucide-react';
 
 const OTP_LENGTH = 6;
@@ -85,12 +86,9 @@ export const VerifyEmailPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 transition-colors duration-200 relative">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden px-4 text-slate-900 dark:text-slate-100">
+      <CosmicBackground />
       <div className="absolute top-6 right-6 z-20"><ThemeSwitcher /></div>
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
-      </div>
 
       <div className="w-full max-w-md z-10">
         <div className="flex justify-center mb-6"><Logo size="md" /></div>

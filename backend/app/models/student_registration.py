@@ -52,6 +52,10 @@ class StudentRegistration(Base, TimestampMixin):
     ug_score_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     ug_score: Mapped[Optional[float]] = mapped_column(nullable=True)
 
+    # --- Specializations (chosen at registration) ---
+    specialization_major: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    specialization_minor: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+
     # --- Email verification ---
     verification_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     verification_code_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

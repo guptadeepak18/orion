@@ -1,0 +1,36 @@
+{
+    "files.watcherExclude": {
+        "**/.git/**": true,
+        "**/node_modules/**": true,
+        "**/.venv/**": true,
+        "**/venv/**": true,
+        "**/__pycache__/**": true,
+        "**/.pytest_cache/**": true,
+        "**/.mypy_cache/**": true,
+        "**/.cache/**": true,
+        "**/dist/**": true,
+        "**/build/**": true,
+        "**/coverage/**": true,
+        "**/logs/**": true,
+        "**/tmp/**": true,
+        "**/temp/**": true,
+        "**/backend/uploads/**": true,
+        "**/*.log": true,
+        "**/*.tmp": true,
+        "**/*.bak": true
+    },
+
+    "search.exclude": {
+        "**/.git": true,
+        "**/node_modules": true,
+        "**/.venv": true,
+        "**/venv": true,
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/dist": true,
+        "**/build": true,
+        "**/coverage": true,
+        "**/backend/uploads": true
+    }
+}

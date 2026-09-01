@@ -2,10 +2,13 @@
 Email service for Orion.
 Uses SMTP configured via environment variables.
 Falls back to console logging if SMTP is not configured (dev mode).
+Enforces IPv4 socket connection to avoid [Errno 101] Network is unreachable on Render/cloud hosts.
 """
 import logging
-import smtplib
 import random
+import smtplib
+import socket
+import ssl
 import string
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -16,11 +19,47 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _connect_ipv4(host: str, port: int, timeout: float = 15.0) -> socket.socket:
+    """Connect strictly over IPv4 to avoid [Errno 101] Network is unreachable on IPv6-disabled cloud hosts like Render."""
+    last_err = None
+    for res in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
+        af, socktype, proto, canonname, sa = res
+        sock = None
+        try:
+            sock = socket.socket(af, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sa)
+            return sock
+        except Exception as err:
+            last_err = err
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+    raise OSError(f"Could not connect to {host}:{port} over IPv4: {last_err}")
+
+
+class IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL subclass that forces IPv4 routing."""
+    def _get_socket(self, host, port, timeout):
+        raw_sock = _connect_ipv4(host, port, timeout)
+        if self.context is None:
+            self.context = ssl.create_default_context()
+        return self.context.wrap_socket(raw_sock, server_hostname=host)
+
+
+class IPv4SMTP(smtplib.SMTP):
+    """SMTP subclass that forces IPv4 routing."""
+    def _get_socket(self, host, port, timeout):
+        return _connect_ipv4(host, port, timeout)
+
+
 def _generate_otp(length: int = 6) -> str:
     return "".join(random.choices(string.digits, k=length))
 
 
-def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion by HyperBuild") -> str:
+def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion") -> str:
     return f"""
 <!DOCTYPE html>
 <html>
@@ -69,6 +108,20 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion by Hy
 """
 
 
+def _dispatch_smtp(smtp_host: str, smtp_port: int, smtp_user: str, smtp_password: str, from_email: str, to_email: str, msg: MIMEMultipart) -> None:
+    """Attempt SMTP dispatch with automatic SSL / STARTTLS detection."""
+    if smtp_port == 465:
+        with IPv4SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+            server.login(smtp_user, smtp_password)
+            server.sendmail(from_email, to_email, msg.as_string())
+    else:
+        with IPv4SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(from_email, to_email, msg.as_string())
+
+
 def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     """
     Send OTP verification email. Returns True on success.
@@ -97,39 +150,36 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
         print(f"{'='*60}\n")
         return True
 
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Orion — Verify Your Email Address"
+    msg["From"] = f"Orion Portal <{from_email}>"
+    msg["To"] = to_email
+    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+
+    html_content = _build_otp_email_html(full_name, otp)
+    msg.attach(MIMEText(html_content, "html"))
+
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Orion — Verify Your Email Address"
-        msg["From"] = f"Orion Portal <{from_email}>"
-        msg["To"] = to_email
-        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
-
-        html_content = _build_otp_email_html(full_name, otp)
-        msg.attach(MIMEText(html_content, "html"))
-
-        if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
-                server.login(smtp_user, smtp_password)
-                server.sendmail(from_email, to_email, msg.as_string())
-        else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-                server.ehlo()
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(from_email, to_email, msg.as_string())
-
-        logger.info(f"Verification email sent to {to_email}")
+        _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
+        logger.info(f"Verification email successfully sent to {to_email} via port {smtp_port}")
         return True
-
-    except Exception as e:
-        logger.error(f"Failed to send verification email to {to_email}: {e}")
-        # Always log the OTP code to server console so registration flow is never blocked
-        print(f"\n{'='*60}")
-        print(f"  EMAIL SEND FAILED ({e}) — FALLBACK OTP:")
-        print(f"  To:  {to_email}")
-        print(f"  OTP: {otp}")
-        print(f"{'='*60}\n")
-        return False
+    except Exception as primary_err:
+        logger.warning(f"Primary SMTP dispatch on port {smtp_port} failed: {primary_err}. Attempting fallback port...")
+        # Fallback between 465 and 587
+        fallback_port = 465 if smtp_port != 465 else 587
+        try:
+            _dispatch_smtp(smtp_host, fallback_port, smtp_user, smtp_password, from_email, to_email, msg)
+            logger.info(f"Verification email successfully sent to {to_email} via fallback port {fallback_port}")
+            return True
+        except Exception as fallback_err:
+            logger.error(f"Failed to send verification email to {to_email} (Primary: {primary_err} | Fallback: {fallback_err})")
+            # Always log the OTP code to server console so registration flow is never blocked
+            print(f"\n{'='*60}")
+            print(f"  EMAIL SEND FAILED — FALLBACK OTP:")
+            print(f"  To:  {to_email}")
+            print(f"  OTP: {otp}")
+            print(f"{'='*60}\n")
+            return False
 
 
 def generate_and_send_otp(to_email: str, full_name: str) -> str:

@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.permissions import get_current_token_payload, require_permission
 from app.schemas.student_registration import (
     StudentRegistrationResponse,
+    ApproveStudentRegistrationRequest,
 )
 from app.schemas.common import ResponseEnvelope
 from app.services import student_registration_service
@@ -47,12 +48,15 @@ async def get_registration(reg_id: UUID, db: AsyncSession = Depends(get_db)):
 )
 async def approve_registration(
     reg_id: UUID,
+    body: Optional[ApproveStudentRegistrationRequest] = None,
     payload: dict = Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
     reviewer_id = UUID(payload["sub"])
     try:
-        reg = await student_registration_service.approve_registration(db, reg_id, reviewer_id)
+        reg = await student_registration_service.approve_registration(
+            db, reg_id, reviewer_id, profile_data=body
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ResponseEnvelope(data=StudentRegistrationResponse.model_validate(reg))

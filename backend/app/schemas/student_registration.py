@@ -43,6 +43,10 @@ class StudentRegisterRequest(BaseModel):
     ug_score_type: Optional[str] = None
     ug_score: Optional[float] = None
 
+    # Specializations (student-selected)
+    specialization_major: Optional[str] = None
+    specialization_minor: Optional[str] = None
+
     @field_validator("email")
     @classmethod
     def validate_email_domain(cls, v: str) -> str:
@@ -97,6 +101,8 @@ class StudentRegistrationResponse(BaseModel):
     ug_degree: Optional[str] = None
     ug_score_type: Optional[str] = None
     ug_score: Optional[float] = None
+    specialization_major: Optional[str] = None
+    specialization_minor: Optional[str] = None
     is_email_verified: bool
     status: str
     rejection_reason: Optional[str] = None
@@ -112,3 +118,14 @@ class StudentRegistrationStatusResponse(BaseModel):
     email: str
     is_email_verified: bool
     submitted_at: datetime
+
+
+class ApproveStudentRegistrationRequest(BaseModel):
+    program_id: Optional[UUID] = None
+    batch_id: Optional[UUID] = None
+    division_id: Optional[UUID] = None
+    trimester: Optional[int] = 1
+    roll_no: Optional[str] = None
+    enrollment_no: Optional[str] = None
+    specialization_major: Optional[str] = None
+    specialization_minor: Optional[str] = None

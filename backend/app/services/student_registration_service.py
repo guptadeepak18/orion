@@ -95,6 +95,8 @@ async def create_registration(
         ug_degree=data.ug_degree,
         ug_score_type=data.ug_score_type,
         ug_score=data.ug_score,
+        specialization_major=data.specialization_major,
+        specialization_minor=data.specialization_minor,
         verification_code=otp,
         verification_code_expires_at=expires_at,
         is_email_verified=False,
@@ -184,12 +186,22 @@ async def get_registration(
     return res.scalar_one_or_none()
 
 
+from app.schemas.student_registration import (
+    StudentRegisterRequest,
+    ApproveStudentRegistrationRequest,
+)
+from app.models.academic import Program, Batch
+
+
 async def approve_registration(
-    db: AsyncSession, reg_id: UUID, reviewed_by_user_id: UUID
+    db: AsyncSession,
+    reg_id: UUID,
+    reviewed_by_user_id: UUID,
+    profile_data: Optional[ApproveStudentRegistrationRequest] = None,
 ) -> StudentRegistration:
     """
     Admin approves a registration.
-    Creates User record, creates Student record, assigns 'student' role, marks approved.
+    Creates User record, creates Student record with full academic profile, assigns 'student' role, marks approved.
     """
     reg = await get_registration(db, reg_id)
     if not reg:
@@ -202,6 +214,26 @@ async def approve_registration(
     student_role = role_res.scalar_one_or_none()
     if not student_role:
         raise ValueError("'student' role not found in the system. Please create it first.")
+
+    # Resolve Program (default to PGDM if not provided)
+    selected_program_id = profile_data.program_id if (profile_data and profile_data.program_id) else None
+    if not selected_program_id:
+        prog_res = await db.execute(select(Program).where(Program.code == "PGDM"))
+        prog = prog_res.scalar_one_or_none()
+        if not prog:
+            prog_res = await db.execute(select(Program).where(Program.name.ilike("%PGDM%")))
+            prog = prog_res.scalar_one_or_none()
+        selected_program_id = prog.id if prog else None
+
+    # Resolve Batch (default to Batch 26-28 if not provided)
+    selected_batch_id = profile_data.batch_id if (profile_data and profile_data.batch_id) else None
+    if not selected_batch_id:
+        batch_res = await db.execute(select(Batch).where(Batch.name.ilike("%26-28%")))
+        batch = batch_res.scalar_one_or_none()
+        if not batch:
+            batch_res = await db.execute(select(Batch).where(Batch.name.ilike("%2026-2028%")))
+            batch = batch_res.scalar_one_or_none()
+        selected_batch_id = batch.id if batch else None
 
     # Create User
     user = User(
@@ -238,14 +270,21 @@ async def approve_registration(
         ug_degree=reg.ug_degree or "",
         ug_score_type=reg.ug_score_type or "cgpa",
         ug_score=reg.ug_score or 0.0,
-        # Academic fields left as defaults — admin sets these via Student Directory
-        roll_no="",
-        enrollment_no="",
+        program_id=selected_program_id,
+        batch_id=selected_batch_id,
+        trimester=profile_data.trimester if (profile_data and profile_data.trimester) else 1,
+        roll_no=(profile_data.roll_no or "") if profile_data else "",
+        enrollment_no=(profile_data.enrollment_no or "") if profile_data else "",
+        specialization_major=(profile_data.specialization_major if (profile_data and profile_data.specialization_major) else (reg.specialization_major or "")),
+        specialization_minor=(profile_data.specialization_minor if (profile_data and profile_data.specialization_minor) else (reg.specialization_minor or "")),
         email=reg.email,
-        specialization_major="",
-        specialization_minor="",
     )
     db.add(student)
+    await db.flush()
+
+    # Assign division if specified
+    if profile_data and profile_data.division_id:
+        db.add(StudentDivision(student_id=student.id, division_id=profile_data.division_id))
 
     # Mark registration approved
     reg.status = "approved"
