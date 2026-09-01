@@ -3,7 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.permissions import get_current_token_payload
-from app.schemas.auth import LoginRequest, RefreshTokenRequest, TokenResponse, UserSummary
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshTokenRequest,
+    TokenResponse,
+    UserSummary,
+    ForgotPasswordRequest,
+    ForgotPasswordVerifyRequest,
+    ForgotPasswordResetRequest,
+    ChangePasswordConfirmRequest,
+)
 from app.schemas.user import UserUpdate
 from app.schemas.common import ResponseEnvelope
 from app.schemas.student_registration import (
@@ -13,7 +22,15 @@ from app.schemas.student_registration import (
     StudentRegistrationStatusResponse,
     StudentRegistrationResponse,
 )
-from app.services.auth_service import authenticate_user, refresh_access_token
+from app.services.auth_service import (
+    authenticate_user,
+    refresh_access_token,
+    request_password_reset,
+    verify_password_reset_otp,
+    reset_password_with_otp,
+    request_change_password_otp,
+    confirm_change_password,
+)
 from app.services.user_service import get_user_by_id
 from app.services import student_registration_service
 
@@ -205,3 +222,108 @@ async def get_registration_status(
         is_email_verified=reg.is_email_verified,
         submitted_at=reg.created_at,
     ))
+
+
+# ─── Password Reset & Profile Password Change ─────────────────────────────────
+
+@router.post("/forgot-password/request-otp", response_model=ResponseEnvelope[dict])
+async def forgot_password_request_otp(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public endpoint: User submits their registered email.
+    Generates a 6-digit OTP and sends it to their email via Hostinger Mail API.
+    """
+    try:
+        await request_password_reset(db, body.email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return ResponseEnvelope(data={
+        "message": f"A 6-digit password reset verification code has been sent to {body.email}.",
+        "email": body.email,
+    })
+
+
+@router.post("/forgot-password/verify-otp", response_model=ResponseEnvelope[dict])
+async def forgot_password_verify_otp(
+    body: ForgotPasswordVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public endpoint: Validates that the submitted OTP code is correct and unexpired.
+    """
+    try:
+        await verify_password_reset_otp(db, body.email, body.code)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return ResponseEnvelope(data={
+        "message": "Verification code is valid. You may now set your new password.",
+        "verified": True,
+    })
+
+
+@router.post("/forgot-password/reset", response_model=ResponseEnvelope[dict])
+async def forgot_password_reset(
+    body: ForgotPasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public endpoint: Verifies OTP code and updates the account password.
+    """
+    try:
+        await reset_password_with_otp(db, body.email, body.code, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return ResponseEnvelope(data={
+        "message": "Password updated successfully. You can now log in with your new credentials.",
+        "success": True,
+    })
+
+
+@router.post("/change-password/request-otp", response_model=ResponseEnvelope[dict])
+async def change_password_request_otp_endpoint(
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Authenticated endpoint: Logged-in user requests a verification OTP sent to their email
+    to authorize a password change from their profile.
+    """
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        await request_change_password_otp(db, user_id_str)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return ResponseEnvelope(data={
+        "message": "Verification code has been dispatched to your registered email address.",
+    })
+
+
+@router.post("/change-password/confirm", response_model=ResponseEnvelope[dict])
+async def change_password_confirm_endpoint(
+    body: ChangePasswordConfirmRequest,
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Authenticated endpoint: Logged-in user verifies OTP and updates password from profile.
+    """
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        await confirm_change_password(db, user_id_str, body.code, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return ResponseEnvelope(data={
+        "message": "Password updated successfully.",
+        "success": True,
+    })
+

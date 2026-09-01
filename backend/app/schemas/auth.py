@@ -37,3 +37,24 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: UserSummary
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ForgotPasswordResetRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+class ChangePasswordConfirmRequest(BaseModel):
+    code: str
+    new_password: str
+

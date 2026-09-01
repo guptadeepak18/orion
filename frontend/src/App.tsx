@@ -19,6 +19,7 @@ import { ReportsPage } from './modules/reports/ReportsPage';
 import { SystemSettingsPage } from './modules/system/SystemSettingsPage';
 import { EmailTemplatesPage } from './modules/system/EmailTemplatesPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PendingApprovalPage } from './pages/PendingApprovalPage';
 import { StudentProfilePage } from './pages/StudentProfilePage';
@@ -59,6 +60,7 @@ export const App: React.FC = () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/pending-approval" element={<PendingApprovalPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />

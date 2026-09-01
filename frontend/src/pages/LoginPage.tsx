@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   KeyRound,
   Mail,
   AlertCircle,
+  CheckCircle2,
   Shield,
   CalendarDays,
   UserCheck,
@@ -26,6 +27,8 @@ export const LoginPage: React.FC = () => {
   const { setAuth, accessToken, user: currentUser } = useAuthStore();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const isResetSuccess = searchParams.get('reset') === 'success';
 
   // Auto redirect if already logged in
   useEffect(() => {
@@ -196,6 +199,13 @@ export const LoginPage: React.FC = () => {
             </div>
 
             {/* Error Notification */}
+            {isResetSuccess && (
+              <div className="mb-5 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs flex items-center space-x-2.5 animate-fadeIn">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Password updated successfully! Please sign in with your new password.</span>
+              </div>
+            )}
+
             {error && (
               <div className="mb-5 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs flex items-center space-x-2.5 animate-fadeIn">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -224,9 +234,17 @@ export const LoginPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Password
+                  </label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs font-semibold text-cyan-600 hover:text-cyan-500 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <KeyRound className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   <input

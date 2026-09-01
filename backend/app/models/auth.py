@@ -1,6 +1,7 @@
 import uuid
 from typing import List, Optional
-from sqlalchemy import String, Boolean, ForeignKey, Table, Column
+from datetime import datetime
+from sqlalchemy import String, Boolean, ForeignKey, Table, Column, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -44,6 +45,10 @@ class User(Base, TimestampMixin):
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Password reset / change OTP verification
+    password_reset_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    password_reset_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     roles: Mapped[List["Role"]] = relationship(
         "Role", secondary="user_roles", back_populates="users", lazy="joined"
