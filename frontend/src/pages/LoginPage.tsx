@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Mail, AlertCircle, Shield, User, GraduationCap, Users } from 'lucide-react';
+import { KeyRound, Mail, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { Logo } from '../components/Logo';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('admin@mile.education');
-  const [password, setPassword] = useState('Admin@123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -60,12 +60,6 @@ export const LoginPage: React.FC = () => {
     await doLogin(email, password);
   };
 
-  const quickFill = (quickEmail: string, quickPass: string) => {
-    setEmail(quickEmail);
-    setPassword(quickPass);
-    doLogin(quickEmail, quickPass);
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 transition-colors duration-200 relative">
       {/* Theme Switcher in Top Right */}
@@ -109,7 +103,8 @@ export const LoginPage: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all duration-200"
-                  placeholder="admin@mile.education"
+                  placeholder="name@mile.education"
+                  autoComplete="email"
                 />
               </div>
             </div>
@@ -127,6 +122,7 @@ export const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all duration-200"
                   placeholder="••••••••"
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -140,44 +136,7 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Role Login Selector */}
-          <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800/80 space-y-2">
-            <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 text-center">
-              Quick Role Selector (Evaluation Access)
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => quickFill('admin@mile.education', 'Admin@123456')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Shield className="h-3.5 w-3.5 text-indigo-600" /> Administrator
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill('coordinator@lexiconmile.com', 'password123')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Users className="h-3.5 w-3.5 text-purple-600" /> Coordinator
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill('deepak.gupta@mile.education', 'password123')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <User className="h-3.5 w-3.5 text-emerald-600" /> Faculty Member
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill('sourav@mile.education', 'password123')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <GraduationCap className="h-3.5 w-3.5 text-cyan-600" /> Enrolled Student
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-5 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800/80 text-center">
             <p className="text-xs text-slate-600 dark:text-slate-400">
               New student?{' '}
               <Link to="/register" className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">
