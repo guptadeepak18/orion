@@ -2632,9 +2632,6 @@ export const SessionsPage: React.FC = () => {
                     onChange={(e) => {
                       const bId = e.target.value;
                       setField('batch_id', bId);
-                      if (bId && form.subject_id && form.session_type !== 'hyperbuild' && !editingSession) {
-                        fetchNextLectureNumber(bId, form.subject_id);
-                      }
                     }}
                     className={selectClass}
                     disabled={!form.program_id}

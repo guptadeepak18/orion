@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, CheckCircle2, AlertCircle,
-  X, Lock, HelpCircle
+  X, Lock
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
