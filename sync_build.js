@@ -4,7 +4,8 @@ const path = require('path');
 const src = path.join(__dirname, 'frontend', 'dist');
 const targets = [
   path.join(__dirname, 'dist'),
-  path.join(__dirname, 'public_html')
+  path.join(__dirname, 'public_html'),
+  path.join(__dirname, 'backend', 'static')
 ];
 
 if (fs.existsSync(src)) {

@@ -1,9 +1,11 @@
+import os
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 import logging
@@ -109,16 +111,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-@app.get("/", tags=["Health"])
-async def root():
-    return {
-        "app": settings.PROJECT_NAME,
-        "status": "online",
-        "docs": "/docs",
-        "api_v1": settings.API_V1_STR,
-    }
-
-
 @app.get(f"{settings.API_V1_STR}", tags=["Health"])
 @app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
 async def api_health():
@@ -127,3 +119,47 @@ async def api_health():
         "version": "1.0.0",
         "docs": "/docs",
     }
+
+
+# Static Frontend Files Mount & React SPA Router
+STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
+if not os.path.exists(STATIC_DIR):
+    STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+
+if os.path.exists(STATIC_DIR):
+    assets_dir = os.path.join(STATIC_DIR, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        index_file = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return JSONResponse(status_code=404, content={"detail": "Frontend index.html not found"})
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend_spa(full_path: str):
+        # Allow API, docs, openapi requests to fall through or return 404
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+            return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
+
+        # Check if direct static file requested (e.g. /logo-light.png, /favicon.ico)
+        target_file = os.path.join(STATIC_DIR, full_path)
+        if full_path and os.path.exists(target_file) and os.path.isfile(target_file):
+            return FileResponse(target_file)
+
+        # Serve index.html for all client-side routes (/dashboard, /login, /academic, etc.)
+        index_file = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return JSONResponse(status_code=404, content={"detail": "Frontend index.html not found"})
+else:
+    @app.get("/", tags=["Health"])
+    async def root():
+        return {
+            "app": settings.PROJECT_NAME,
+            "status": "online",
+            "docs": "/docs",
+            "api_v1": settings.API_V1_STR,
+        }
