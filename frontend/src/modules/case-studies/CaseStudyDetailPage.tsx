@@ -231,10 +231,11 @@ export const CaseStudyDetailPage: React.FC = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const initialTabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<'brief' | 'ai_analyzer' | 'ai_case_note'>(
-    searchParams.get('tab') === 'ai_case_note'
+    initialTabParam === 'ai_case_note' && isFacultyOrAdmin
       ? 'ai_case_note'
-      : searchParams.get('tab') === 'ai_analyzer'
+      : initialTabParam === 'ai_analyzer'
       ? 'ai_analyzer'
       : 'brief'
   );
@@ -242,15 +243,22 @@ export const CaseStudyDetailPage: React.FC = () => {
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'ai_case_note' && activeTab !== 'ai_case_note') {
-      setActiveTab('ai_case_note');
+      if (isFacultyOrAdmin) {
+        setActiveTab('ai_case_note');
+      } else {
+        switchTab('brief');
+      }
     } else if (tabParam === 'ai_analyzer' && activeTab !== 'ai_analyzer') {
       setActiveTab('ai_analyzer');
     } else if (!tabParam && activeTab !== 'brief') {
       setActiveTab('brief');
     }
-  }, [searchParams]);
+  }, [searchParams, isFacultyOrAdmin]);
 
   const switchTab = (newTab: 'brief' | 'ai_analyzer' | 'ai_case_note') => {
+    if (newTab === 'ai_case_note' && !isFacultyOrAdmin) {
+      return;
+    }
     setActiveTab(newTab);
     const next = new URLSearchParams(searchParams);
     if (newTab === 'ai_case_note') {
@@ -600,26 +608,28 @@ export const CaseStudyDetailPage: React.FC = () => {
           </span>
         </button>
 
-        <button
-          onClick={() => switchTab('ai_case_note')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'ai_case_note'
-              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
-        >
-          <Sparkles className="h-4 w-4 text-amber-500" />
-          <span className="flex items-center gap-1.5">
-            AI Case Note (Teaching Note)
-            <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-black">
-              BETA
+        {isFacultyOrAdmin && (
+          <button
+            onClick={() => switchTab('ai_case_note')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === 'ai_case_note'
+                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Sparkles className="h-4 w-4 text-amber-500" />
+            <span className="flex items-center gap-1.5">
+              AI Case Note (Teaching Note)
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                BETA
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        )}
       </div>
 
       {/* Main Workspace Display based on activeTab */}
-      {activeTab === 'ai_case_note' ? (
+      {activeTab === 'ai_case_note' && isFacultyOrAdmin ? (
         <AICaseNoteViewer
           caseStudyId={caseStudy.id}
           caseTitle={caseStudy.title}

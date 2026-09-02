@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, time, datetime
 from typing import Optional, List
-from sqlalchemy import String, Text, Integer, Numeric, Date, Time, DateTime, Boolean, ForeignKey, JSON
+from sqlalchemy import String, Text, Integer, Numeric, Float, Date, Time, DateTime, Boolean, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -69,8 +69,8 @@ class Session(Base, TimestampMixin, SoftDeleteMixin):
     semester_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("semesters.id", ondelete="RESTRICT"), nullable=False
     )
-    subject_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False
+    subject_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
     )
     topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True
@@ -93,19 +93,50 @@ class Session(Base, TimestampMixin, SoftDeleteMixin):
         String(50), default="scheduled", nullable=False
     )  # scheduled|in_progress|completed|cancelled
     hyperbuild_activity_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    lecture_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     attendance_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     feedback_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ── Timetable Real-Time Variance & Baseline Preservation ──────────────
+    variance_status: Mapped[str] = mapped_column(
+        String(50), default="as_planned", nullable=False
+    )  # as_planned | faculty_substituted | subject_swapped | cancelled | rescheduled | special_replacement
+    variance_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    variance_recorded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    variance_recorded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    original_subject_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
+    )
+    original_faculty_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    original_faculty_internal_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("faculty_internal.id", ondelete="SET NULL"), nullable=True
+    )
+    original_faculty_external_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("faculty_external.id", ondelete="SET NULL"), nullable=True
+    )
+    original_venue: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    rescheduled_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    variance_history: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     timetable: Mapped[Optional["Timetable"]] = relationship("Timetable", back_populates="sessions")
     program: Mapped["Program"] = relationship("Program")
     batch: Mapped["Batch"] = relationship("Batch")
     semester: Mapped["Semester"] = relationship("Semester")
-    subject: Mapped["Subject"] = relationship("Subject")
+    subject: Mapped["Subject"] = relationship("Subject", foreign_keys=[subject_id])
     topic: Mapped[Optional["Topic"]] = relationship("Topic")
-    faculty_internal: Mapped[Optional["FacultyInternal"]] = relationship("FacultyInternal")
-    faculty_external: Mapped[Optional["FacultyExternal"]] = relationship("FacultyExternal")
+    faculty_internal: Mapped[Optional["FacultyInternal"]] = relationship("FacultyInternal", foreign_keys=[faculty_internal_id])
+    faculty_external: Mapped[Optional["FacultyExternal"]] = relationship("FacultyExternal", foreign_keys=[faculty_external_id])
+    original_subject: Mapped[Optional["Subject"]] = relationship("Subject", foreign_keys=[original_subject_id])
+    original_faculty_internal: Mapped[Optional["FacultyInternal"]] = relationship("FacultyInternal", foreign_keys=[original_faculty_internal_id])
+    original_faculty_external: Mapped[Optional["FacultyExternal"]] = relationship("FacultyExternal", foreign_keys=[original_faculty_external_id])
+    variance_recorder: Mapped[Optional["User"]] = relationship("User", foreign_keys=[variance_recorded_by_id])
     engagements: Mapped[List["Engagement"]] = relationship("Engagement", back_populates="session")
+    hyperbuild_activities: Mapped[List["HyperbuildActivity"]] = relationship("HyperbuildActivity", back_populates="session", cascade="all, delete-orphan", order_by="HyperbuildActivity.activity_no")
 
 
 class Engagement(Base, TimestampMixin, SoftDeleteMixin):
@@ -234,4 +265,117 @@ class AttendanceCorrectionRequest(Base, TimestampMixin):
     requested_by: Mapped["User"] = relationship("User", foreign_keys=[requested_by_id])
     faculty_approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty_approver_id])
     admin_approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[admin_approver_id])
+
+
+class HyperbuildActivity(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "hyperbuild_activities"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    activity_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_time: Mapped[time] = mapped_column(Time, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    challenge_key: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    challenge_key_active_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    submission_type: Mapped[str] = mapped_column(String(50), default="link_or_text", nullable=False)
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)  # pending | active | closed
+
+    # Dynamic Window Management & Lock Controls
+    auto_lock_at_end_time: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_submission_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    extended_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_reopened_indefinite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lock_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    session: Mapped["Session"] = relationship("Session", back_populates="hyperbuild_activities")
+    subject: Mapped["Subject"] = relationship("Subject")
+    verifications: Mapped[List["HyperbuildActivityVerification"]] = relationship(
+        "HyperbuildActivityVerification", back_populates="activity", cascade="all, delete-orphan"
+    )
+    audit_logs: Mapped[List["HyperbuildActivityAuditLog"]] = relationship(
+        "HyperbuildActivityAuditLog", back_populates="activity", cascade="all, delete-orphan"
+    )
+
+
+class HyperbuildActivityVerification(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "hyperbuild_activity_verifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hyperbuild_activities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    challenge_key_entered: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    is_key_valid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    accuracy_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    distance_from_campus_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    is_geofence_valid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    submission_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    submission_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str] = mapped_column(
+        String(50), default="verified_present", nullable=False
+    )  # verified_present | late_submission | unverified_absent
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    activity: Mapped["HyperbuildActivity"] = relationship("HyperbuildActivity", back_populates="verifications")
+    session: Mapped["Session"] = relationship("Session")
+    student: Mapped["Student"] = relationship("Student")
+    subject: Mapped["Subject"] = relationship("Subject")
+
+
+class HyperbuildActivityAuditLog(Base, TimestampMixin):
+    __tablename__ = "hyperbuild_activity_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hyperbuild_activities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    faculty_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    faculty_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # window_extended | window_locked | window_reopened_timed | window_reopened_indefinite | key_triggered | auto_locked
+    extension_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reopened_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    previous_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    new_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    window_open_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    activity: Mapped["HyperbuildActivity"] = relationship("HyperbuildActivity", back_populates="audit_logs")
+    session: Mapped["Session"] = relationship("Session")
+    faculty_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty_id])
+
+
 

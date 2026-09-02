@@ -973,7 +973,7 @@ export const CaseStudyBankPage: React.FC = () => {
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline">
-                      View Details & Note <ArrowRight className="h-3 w-3" />
+                      {isFacultyOrAdmin ? 'View Details & Note' : 'View Case Details'} <ArrowRight className="h-3 w-3" />
                     </span>
                   </div>
 

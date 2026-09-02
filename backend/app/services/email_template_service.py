@@ -7,10 +7,11 @@ from sqlalchemy import select
 
 from app.models.email_template import EmailTemplate
 from app.schemas.email_template import EmailTemplateCreate, EmailTemplateUpdate
+from app.services.email_service import send_custom_html_email
 
 logger = logging.getLogger(__name__)
 
-# Pre-defined System Default Templates
+# Pre-defined System Default Templates for All Platform Activities
 DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
     {
         "event_key": "student_registration_otp",
@@ -65,6 +66,58 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 </html>""",
     },
     {
+        "event_key": "password_reset_otp",
+        "name": "Password Reset & Security Verification Code",
+        "category": "Authentication & Onboarding",
+        "description": "Sent to users when requesting a password reset from the login page or updating password in profile.",
+        "subject": "Orion — Password Reset Verification Code ({{otp}})",
+        "variables": ["full_name", "otp", "expiry_minutes", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%); padding: 32px 36px; text-align: left; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #e0f2fe; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .otp-wrapper { background: #f0f9ff; border: 2px dashed #0284c7; border-radius: 14px; padding: 24px; text-align: center; margin: 28px 0; }
+    .otp-code { font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0369a1; font-family: 'Courier New', monospace; }
+    .otp-note { font-size: 12px; color: #64748b; margin-top: 8px; font-weight: 500; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Password Reset Request 🔐</h1>
+      <p>{{app_name}} — Account Security</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{full_name}}</strong>,</p>
+      <p>We received a request to update your <strong>{{app_name}}</strong> account password. Please enter the 6-digit verification code below to authorize this change:</p>
+      
+      <div class="otp-wrapper">
+        <div class="otp-code">{{otp}}</div>
+        <div class="otp-note">Valid for {{expiry_minutes}} minutes. Never share this code with anyone.</div>
+      </div>
+      
+      <p>If you did not request a password change, please disregard this email or report to <a href="mailto:{{support_email}}" style="color: #0284c7;">{{support_email}}</a> immediately.</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>IT & Security Cell</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
         "event_key": "student_registration_approved",
         "name": "Student Registration Approved & Enrolled",
         "category": "Student Lifecycle",
@@ -86,7 +139,6 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .badge-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; margin: 20px 0; }
-    .badge-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
     .btn { display: inline-block; background: #059669; color: #ffffff !important; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0; }
     .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
   </style>
@@ -174,12 +226,12 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 </html>""",
     },
     {
-        "event_key": "faculty_session_reminder",
-        "name": "Faculty Lecture & Session Schedule Reminder",
-        "category": "Faculty & Sessions",
-        "description": "Sent to faculty members 24h/2h before their scheduled lecture or classroom engagement.",
-        "subject": "Reminder: Upcoming Lecture on {{subject_name}} ({{session_date}} at {{session_time}})",
-        "variables": ["faculty_name", "subject_name", "session_date", "session_time", "room_no", "batch_name", "app_name"],
+        "event_key": "class_session_scheduled",
+        "name": "New Lecture & Class Timetable Scheduled",
+        "category": "Academic & Schedule",
+        "description": "Sent to enrolled students and faculty when a new class or session is scheduled.",
+        "subject": "Class Scheduled: {{subject_name}} on {{session_date}} at {{session_time}} (Venue: {{venue}})",
+        "variables": ["recipient_name", "subject_name", "faculty_name", "session_date", "session_time", "venue", "batch_name", "division_name", "app_name"],
         "is_active": True,
         "is_system": True,
         "html_content": """<!DOCTYPE html>
@@ -201,25 +253,130 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Lecture Schedule Reminder 📅</h1>
-      <p>{{app_name}} — Academic Operations</p>
+      <h1>Class Session Scheduled 📅</h1>
+      <p>{{app_name}} — Timetable Update</p>
     </div>
     <div class="content">
-      <p>Dear <strong>{{faculty_name}}</strong>,</p>
-      <p>This is a quick reminder regarding your upcoming scheduled lecture session:</p>
+      <p>Hello <strong>{{recipient_name}}</strong>,</p>
+      <p>A new academic lecture has been scheduled on your timetable:</p>
       
       <div class="session-card">
         <div style="font-size: 14px; line-height: 1.8; color: #312e81;">
           <div><strong>Subject:</strong> {{subject_name}}</div>
-          <div><strong>Batch:</strong> {{batch_name}}</div>
+          <div><strong>Faculty:</strong> {{faculty_name}}</div>
           <div><strong>Date:</strong> {{session_date}}</div>
           <div><strong>Time:</strong> {{session_time}}</div>
-          <div><strong>Classroom / Hall:</strong> {{room_no}}</div>
+          <div><strong>Venue / Hall:</strong> {{venue}}</div>
+          <div><strong>Batch / Div:</strong> {{batch_name}} {{division_name}}</div>
         </div>
       </div>
       
-      <p>Please remember to mark real-time student attendance in the portal following the lecture.</p>
-      <p style="margin-top: 24px;">Thank you,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+      <p>Please ensure you arrive at the designated venue on time. Attendance will be recorded digitally.</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "class_session_cancelled",
+        "name": "Class / Session Cancelled or Rescheduled",
+        "category": "Academic & Schedule",
+        "description": "Sent when a lecture session or exam slot is cancelled or rescheduled.",
+        "subject": "Notice: Class Cancelled / Rescheduled — {{subject_name}} ({{session_date}})",
+        "variables": ["recipient_name", "subject_name", "faculty_name", "session_date", "reason", "app_name"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); padding: 32px 36px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #fee2e2; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .alert-card { background: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; padding: 20px; margin: 20px 0; color: #991b1b; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Class Session Cancelled ⚠️</h1>
+      <p>{{app_name}} — Timetable Notification</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{recipient_name}}</strong>,</p>
+      <p>Please note that the following lecture session has been cancelled or rescheduled:</p>
+      
+      <div class="alert-card">
+        <div><strong>Subject:</strong> {{subject_name}}</div>
+        <div><strong>Faculty:</strong> {{faculty_name}}</div>
+        <div><strong>Date:</strong> {{session_date}}</div>
+        <div style="margin-top: 8px;"><strong>Reason / Notes:</strong> {{reason}}</div>
+      </div>
+      
+      <p>Please check your student portal timetable for the rescheduled makeup slot.</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "student_daily_attendance_absent",
+        "name": "Daily Lecture Absence Notification",
+        "category": "Academic & Attendance",
+        "description": "Sent to a student when they are marked absent for a lecture session.",
+        "subject": "Absence Notification: Marked Absent in {{subject_name}} on {{session_date}}",
+        "variables": ["student_name", "subject_name", "session_date", "session_time", "faculty_name", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #ea580c 0%, #f97316 100%); padding: 32px 36px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #ffedd5; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .absent-card { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 20px; margin: 20px 0; color: #9a3412; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Lecture Absence Notice</h1>
+      <p>{{app_name}} — Attendance Record</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>You have been recorded as <strong>Absent</strong> for the following class session:</p>
+      
+      <div class="absent-card">
+        <div><strong>Subject:</strong> {{subject_name}}</div>
+        <div><strong>Date:</strong> {{session_date}}</div>
+        <div><strong>Time:</strong> {{session_time}}</div>
+        <div><strong>Faculty:</strong> {{faculty_name}}</div>
+      </div>
+      
+      <p>If you were present or have an official approved on-duty/medical leave, please submit an Attendance Correction Request through your student portal within 48 hours.</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Attendance Cell</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
       © 2026 Lexicon MILE. Powered by HyperBuild.
@@ -230,9 +387,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
     },
     {
         "event_key": "student_attendance_warning",
-        "name": "Low Attendance Warning Alert",
+        "name": "Low Attendance Warning Alert (< 75%)",
         "category": "Academic & Attendance",
-        "description": "Triggered when a student's cumulative or subject attendance falls below the compliance threshold.",
+        "description": "Triggered when a student's cumulative subject attendance falls below the compliance threshold (75%).",
         "subject": "Attendance Alert: {{attendance_percentage}}% in {{subject_name}} (Below Threshold)",
         "variables": ["student_name", "subject_name", "attendance_percentage", "threshold_percentage", "sessions_attended", "total_sessions", "app_name", "support_email"],
         "is_active": True,
@@ -271,8 +428,178 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
         </div>
       </div>
       
-      <p>Consistent attendance is mandatory for academic eligibility and exam appearance. Please reach out to your faculty mentor or academic coordinator if you have any valid leave applications to regularize.</p>
+      <p>Consistent attendance is mandatory for examination eligibility. Please consult your faculty mentor immediately to regularize pending classes.</p>
       <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations & Attendance Cell</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "academic_material_uploaded",
+        "name": "New Study Material & Notes Uploaded",
+        "category": "Academic & LMS",
+        "description": "Sent to students when faculty or coordinators upload lecture presentations, unit notes, or reading cases.",
+        "subject": "New Material: {{material_title}} uploaded for {{subject_name}}",
+        "variables": ["student_name", "subject_name", "material_title", "faculty_name", "download_url", "app_name"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); padding: 32px 36px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #f3e8ff; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .material-card { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 14px; padding: 20px; margin: 20px 0; color: #581c87; }
+    .btn { display: inline-block; background: #7c3aed; color: #ffffff !important; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>New Study Material 📚</h1>
+      <p>{{app_name}} — Course LMS</p>
+    </div>
+    <div class="content">
+      <p>Hello <strong>{{student_name}}</strong>,</p>
+      <p>New academic study materials have been uploaded to your course LMS:</p>
+      
+      <div class="material-card">
+        <div><strong>Subject:</strong> {{subject_name}}</div>
+        <div><strong>Title / Unit:</strong> {{material_title}}</div>
+        <div><strong>Uploaded by:</strong> {{faculty_name}}</div>
+      </div>
+      
+      <div style="text-align: center;">
+        <a href="{{download_url}}" class="btn">View & Download Material →</a>
+      </div>
+      
+      <p style="margin-top: 24px;">Happy Learning,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "crc_placement_drive_announced",
+        "name": "Campus Placement & Internship Drive Announcement",
+        "category": "Corporate Relations & Placement",
+        "description": "Sent to eligible students when Corporate Relations publishes a new campus recruitment drive or internship opening.",
+        "subject": "Placement Alert: {{company_name}} is hiring for {{job_role}} (CTC: {{ctc_stipend}})",
+        "variables": ["student_name", "company_name", "job_role", "ctc_stipend", "eligibility_criteria", "deadline_date", "apply_url", "app_name"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); padding: 32px 36px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #ccfbf1; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .drive-card { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 14px; padding: 20px; margin: 20px 0; color: #115e59; }
+    .btn { display: inline-block; background: #0d9488; color: #ffffff !important; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Recruitment Drive Announcement 💼</h1>
+      <p>{{app_name}} — Corporate Relations Cell (CRC)</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Corporate Relations is pleased to announce a new campus recruitment drive:</p>
+      
+      <div class="drive-card">
+        <div style="font-size: 14px; line-height: 1.8;">
+          <div><strong>Company:</strong> <span style="font-size: 16px; font-weight: 800;">{{company_name}}</span></div>
+          <div><strong>Role / Profile:</strong> {{job_role}}</div>
+          <div><strong>CTC / Compensation:</strong> {{ctc_stipend}}</div>
+          <div><strong>Eligibility:</strong> {{eligibility_criteria}}</div>
+          <div><strong>Application Deadline:</strong> <span style="color: #0f766e; font-weight: 700;">{{deadline_date}}</span></div>
+        </div>
+      </div>
+      
+      <p>Review the detailed job description and submit your updated resume before the deadline:</p>
+      <div style="text-align: center;">
+        <a href="{{apply_url}}" class="btn">Apply on Placement Portal →</a>
+      </div>
+      
+      <p style="margin-top: 24px;">Best wishes,<br /><strong>Corporate Relations & Placement Cell</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE. Powered by HyperBuild.
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "crc_application_shortlisted",
+        "name": "Candidate Shortlisted for Interview Round",
+        "category": "Corporate Relations & Placement",
+        "description": "Sent to a student when they are shortlisted by a visiting recruiter for an interview or test round.",
+        "subject": "Congratulations! Shortlisted for {{company_name}} (Round: {{round_name}})",
+        "variables": ["student_name", "company_name", "job_role", "round_name", "interview_date", "interview_venue", "app_name"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #15803d 0%, #22c55e 100%); padding: 32px 36px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
+    .header p { color: #dcfce7; margin: 6px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
+    .shortlist-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 20px; margin: 20px 0; color: #166534; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Shortlisted for Interview 🌟</h1>
+      <p>{{app_name}} — Corporate Relations Cell</p>
+    </div>
+    <div class="content">
+      <p>Congratulations <strong>{{student_name}}</strong>,</p>
+      <p>You have been shortlisted for the next round of selection with <strong>{{company_name}}</strong>:</p>
+      
+      <div class="shortlist-card">
+        <div style="font-size: 14px; line-height: 1.8;">
+          <div><strong>Company:</strong> {{company_name}}</div>
+          <div><strong>Role:</strong> {{job_role}}</div>
+          <div><strong>Selection Round:</strong> {{round_name}}</div>
+          <div><strong>Schedule:</strong> {{interview_date}}</div>
+          <div><strong>Venue / Link:</strong> {{interview_venue}}</div>
+        </div>
+      </div>
+      
+      <p>Please ensure you dress in formal corporate attire and carry printed copies of your resume and portfolio.</p>
+      <p style="margin-top: 24px;">All the best,<br /><strong>Corporate Relations Team</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
       © 2026 Lexicon MILE. Powered by HyperBuild.
@@ -369,6 +696,10 @@ async def seed_default_templates(db: AsyncSession) -> None:
                 is_system=item["is_system"],
             )
             db.add(tmpl)
+        else:
+            # Update description / variables if newly expanded
+            if not existing.variables:
+                existing.variables = item["variables"]
     await db.commit()
 
 
@@ -377,6 +708,8 @@ async def list_templates(
     category: Optional[str] = None,
     is_active: Optional[bool] = None,
 ) -> List[EmailTemplate]:
+    # Make sure defaults are synced
+    await seed_default_templates(db)
     stmt = select(EmailTemplate).order_by(EmailTemplate.category, EmailTemplate.name)
     if category:
         stmt = stmt.where(EmailTemplate.category == category)
@@ -492,3 +825,37 @@ async def render_email(
     rendered_subject = render_placeholders(fallback_subject, context)
     rendered_html = render_placeholders(fallback_html, context)
     return rendered_subject, rendered_html, True
+
+
+async def trigger_activity_email(
+    db: AsyncSession,
+    event_key: str,
+    recipient_email: str,
+    context: Dict[str, Any],
+    fallback_subject: str = "Orion Notification",
+    fallback_html: str = "<div>Orion Notification</div>",
+) -> bool:
+    """
+    High-level trigger helper: renders active database template for `event_key`
+    and dispatches via Hostinger Mail API.
+    """
+    try:
+        # Guarantee app_name and default support email exist in context
+        if "app_name" not in context:
+            context["app_name"] = "Orion Portal"
+        if "support_email" not in context:
+            context["support_email"] = "deepak.gupta@mile.education"
+
+        sub, html, active = await render_email(
+            db, event_key, context, fallback_subject, fallback_html
+        )
+        if not active or not html:
+            logger.info(f"Activity email '{event_key}' skipped because template is disabled.")
+            return False
+
+        logger.info(f"Dispatching activity email '{event_key}' to {recipient_email} (Subject: {sub})")
+        send_custom_html_email(recipient_email, sub, html)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to dispatch activity email '{event_key}' to {recipient_email}: {e}")
+        return False

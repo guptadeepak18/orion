@@ -13,8 +13,11 @@ from app.schemas.email_template import (
     EmailTemplateTestSendRequest,
     EmailTemplatePreviewRequest,
     EmailTemplatePreviewResponse,
+    EmailTemplateAIGenerateRequest,
+    EmailTemplateAIGenerateResponse,
 )
 from app.services import email_template_service
+from app.services.email_template_ai_service import generate_email_template_with_ai
 from app.services.email_service import _send_via_hostinger_mail_api, send_custom_html_email
 from app.core.config import settings
 
@@ -219,3 +222,20 @@ async def send_test_email(
             "subject": f"[TEST PREVIEW] {rendered_sub}",
         }
     )
+
+
+@router.post(
+    "/ai-generate",
+    response_model=ResponseEnvelope[EmailTemplateAIGenerateResponse],
+    dependencies=[Depends(require_permission("system_settings", "edit"))],
+)
+async def ai_generate_template(req: EmailTemplateAIGenerateRequest):
+    """
+    Synthesizes a modern, responsive HTML email template using AI prompt and attached files.
+    """
+    try:
+        generated = await generate_email_template_with_ai(req)
+        return ResponseEnvelope(data=generated)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI template generation failed: {str(e)}")
+

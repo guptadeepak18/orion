@@ -4,7 +4,7 @@ from app.api.v1 import (
     faculty, engagements, remuneration, approvals, invoices, payments,
     calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard,
     students, student_registrations, activities, lms, case_studies, attendance, ai_intelligence, academic_operations,
-    email_templates
+    email_templates, hyperbuild, academic_events
 )
 
 api_router = APIRouter()
@@ -22,6 +22,7 @@ api_router.include_router(lms.router)
 api_router.include_router(students.router)
 api_router.include_router(student_registrations.router)
 api_router.include_router(sessions.router)
+api_router.include_router(hyperbuild.router, prefix="/hyperbuild", tags=["HyperBuild"])
 api_router.include_router(attendance.router)
 api_router.include_router(ai_intelligence.router)
 
@@ -33,6 +34,7 @@ api_router.include_router(approvals.router)
 api_router.include_router(invoices.router)
 api_router.include_router(payments.router)
 api_router.include_router(calendar.router)
+api_router.include_router(academic_events.router)
 api_router.include_router(feedback.router)
 api_router.include_router(copilot.router)
 api_router.include_router(reports.router)

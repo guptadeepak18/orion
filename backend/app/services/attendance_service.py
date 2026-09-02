@@ -23,7 +23,12 @@ from app.schemas.attendance import (
     StudentSessionAttendanceRecordItem,
     DebarredStudentItemResponse,
 )
-from app.services.session_service import recalculate_batch_student_attendance, get_session_attendance_sheet
+from app.services.session_service import (
+    recalculate_batch_student_attendance,
+    get_session_attendance_sheet,
+    is_student_eligible_for_subject,
+)
+from app.services.email_template_service import trigger_activity_email
 
 
 PRESENT_STATUSES = ["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"]
@@ -259,6 +264,41 @@ async def mark_and_lock_session_attendance(
     # Recalculate automatic attendance percentage for all students in this batch
     await recalculate_batch_student_attendance(db, session.batch_id)
 
+    # Trigger student_daily_attendance_absent notifications for absent students
+    try:
+        absent_student_ids = [item.student_id for item in req.attendances if item.status == "absent"]
+        if absent_student_ids:
+            stud_stmt = select(Student).where(Student.id.in_(absent_student_ids), Student.is_deleted == False)
+            stud_res = await db.execute(stud_stmt)
+            absent_students = stud_res.scalars().all()
+
+            subj_name = session.subject.name if session.subject else "Academic Lecture"
+            fac_name = "Course Faculty"
+            if session.faculty_internal:
+                fac_name = session.faculty_internal.full_name or fac_name
+            elif session.faculty_external:
+                fac_name = session.faculty_external.name or fac_name
+
+            for st in absent_students:
+                recipient = st.email_official or st.email or st.email_personal
+                if recipient:
+                    await trigger_activity_email(
+                        db=db,
+                        event_key="student_daily_attendance_absent",
+                        recipient_email=recipient,
+                        context={
+                            "student_name": st.full_name,
+                            "subject_name": subj_name,
+                            "session_date": str(session.session_date),
+                            "session_time": f"{session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}" if (session.start_time and session.end_time) else "Class Slot",
+                            "faculty_name": fac_name,
+                            "app_name": "Orion Portal",
+                            "support_email": "deepak.gupta@mile.education",
+                        },
+                    )
+    except Exception as e:
+        logger.error(f"Error dispatching student_daily_attendance_absent emails: {e}")
+
     return await get_session_attendance_sheet(db, session_id)
 
 
@@ -313,7 +353,7 @@ async def get_subject_wise_attendance(
     if not relevant_batch_ids and subject.batch_allocations:
         relevant_batch_ids = [ba.batch_id for ba in subject.batch_allocations]
 
-    # Fetch students for these batches
+    # Fetch students for these batches and filter by elective domain eligibility
     students: List[Student] = []
     if relevant_batch_ids:
         st_stmt = (
@@ -322,7 +362,8 @@ async def get_subject_wise_attendance(
             .order_by(Student.roll_no, Student.prn_number, Student.full_name)
         )
         st_res = await db.execute(st_stmt)
-        students = list(st_res.scalars().all())
+        all_batch_students = list(st_res.scalars().all())
+        students = [st for st in all_batch_students if is_student_eligible_for_subject(subject, st)]
 
     # Preload all attendance records for conducted sessions of this subject
     conducted_session_ids = [s.id for s in conducted_sessions]
@@ -487,6 +528,8 @@ async def get_student_attendance_dossier(
 
     for r in records:
         if not r.session or not r.session.subject:
+            continue
+        if not is_student_eligible_for_subject(r.session.subject, student):
             continue
 
         sess = r.session

@@ -16,6 +16,7 @@ from app.models.student import Student, StudentDivision
 from app.models.academic import Division
 from app.schemas.student_registration import StudentRegisterRequest
 from app.services.email_service import generate_and_send_otp
+from app.services.email_template_service import trigger_activity_email
 
 logger = logging.getLogger(__name__)
 
@@ -26,41 +27,25 @@ async def create_registration(
     db: AsyncSession, data: StudentRegisterRequest
 ) -> StudentRegistration:
     """
-    Create a pending student registration.
-    - Validates email domain (already done by schema)
-    - Checks for duplicate email or PRN
-    - Hashes password
-    - Generates + sends OTP
-    - Saves record with status=pending_verification
+    Create or seamlessly refresh a pending student registration.
+    - Checks for active accounts in User or Student tables.
+    - If an unverified registration already exists for this email, it refreshes the details
+      and re-issues a fresh OTP without throwing duplicate constraint errors.
+    - If an unverified registration exists for the same PRN under a stale/abandoned attempt,
+      it frees the PRN so the current attempt can proceed cleanly.
+    - Hashes password, generates + sends fresh OTP, sets status=pending_verification.
     """
     email = data.email.strip().lower()
 
-    # Check duplicate email in registrations
-    existing = await db.execute(
-        select(StudentRegistration).where(StudentRegistration.email == email)
-    )
-    if existing.scalar_one_or_none():
-        raise ValueError("An account with this email address already exists or is pending review.")
-
-    # Check duplicate email in users
+    # 1. Check duplicate email in enrolled users
     existing_user = await db.execute(
         select(User).where(User.email == email)
     )
     if existing_user.scalar_one_or_none():
-        raise ValueError("An account with this email address already exists.")
+        raise ValueError("An active account with this email address already exists. Please sign in or reset your password.")
 
-    # Check duplicate PRN in registrations
+    # 2. Check duplicate PRN in enrolled students
     if data.prn_number:
-        existing_prn_reg = await db.execute(
-            select(StudentRegistration).where(
-                StudentRegistration.prn_number == data.prn_number,
-                StudentRegistration.status != "rejected"
-            )
-        )
-        if existing_prn_reg.scalar_one_or_none():
-            raise ValueError("A registration with this PRN number already exists.")
-
-        # Check PRN in students table
         from app.models.student import Student as StudentModel
         existing_prn_student = await db.execute(
             select(StudentModel).where(
@@ -69,9 +54,72 @@ async def create_registration(
             )
         )
         if existing_prn_student.scalar_one_or_none():
-            raise ValueError("A student with this PRN number already exists in the system.")
+            raise ValueError(f"A student with PRN '{data.prn_number}' is already enrolled in the institution.")
 
-    # Generate OTP
+    # 3. Check if PRN is tied to an unverified registration under another email address
+    if data.prn_number:
+        other_prn_regs = await db.execute(
+            select(StudentRegistration).where(
+                StudentRegistration.prn_number == data.prn_number,
+                StudentRegistration.email != email,
+            )
+        )
+        for other_r in other_prn_regs.scalars().all():
+            if other_r.status == "pending_verification":
+                # Stale abandoned registration with old email, purge it
+                await db.delete(other_r)
+            elif other_r.status in ("pending_review", "approved"):
+                raise ValueError(f"A registration with PRN '{data.prn_number}' is already under review or approved.")
+
+    # 4. Check existing registration for this email
+    existing_res = await db.execute(
+        select(StudentRegistration).where(StudentRegistration.email == email)
+    )
+    existing_reg = existing_res.scalar_one_or_none()
+
+    if existing_reg:
+        if existing_reg.status == "pending_review":
+            raise ValueError("Your registration application has already been submitted and is currently pending administrator review.")
+        elif existing_reg.status == "approved":
+            raise ValueError("Your registration has already been approved. Please sign in to the portal.")
+        
+        # If pending_verification or rejected: UPGRADE / REFRESH the existing registration
+        otp = generate_and_send_otp(email, f"{data.first_name} {data.last_name or ''}".strip())
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)
+
+        existing_reg.password_hash = get_password_hash(data.password)
+        existing_reg.first_name = data.first_name
+        existing_reg.last_name = data.last_name
+        existing_reg.full_name = f"{data.first_name} {data.last_name or ''}".strip()
+        existing_reg.gender = data.gender
+        existing_reg.prn_number = data.prn_number
+        existing_reg.program_code = data.program_code
+        existing_reg.program_name = data.program_name
+        existing_reg.father_name = data.father_name
+        existing_reg.mother_name = data.mother_name
+        existing_reg.mobile_number = data.mobile_number
+        existing_reg.email_personal = data.email_personal
+        existing_reg.alternate_contact_number = data.alternate_contact_number
+        existing_reg.emergency_contact_name = data.emergency_contact_name
+        existing_reg.emergency_contact_number = data.emergency_contact_number
+        existing_reg.emergency_contact_relation = data.emergency_contact_relation
+        existing_reg.blood_group = data.blood_group
+        existing_reg.ug_degree = data.ug_degree
+        existing_reg.ug_score_type = data.ug_score_type
+        existing_reg.ug_score = data.ug_score
+        existing_reg.specialization_major = data.specialization_major
+        existing_reg.specialization_minor = data.specialization_minor
+        existing_reg.verification_code = otp
+        existing_reg.verification_code_expires_at = expires_at
+        existing_reg.is_email_verified = False
+        existing_reg.status = "pending_verification"
+        existing_reg.rejection_reason = None
+
+        await db.commit()
+        await db.refresh(existing_reg)
+        return existing_reg
+
+    # 5. Create Brand New Registration
     otp = generate_and_send_otp(email, f"{data.first_name} {data.last_name or ''}".strip())
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)
 
@@ -294,6 +342,45 @@ async def approve_registration(
 
     await db.commit()
     await db.refresh(reg)
+
+    # Fetch program and batch names for email context
+    prog_name = "PGDM"
+    if selected_program_id:
+        p_obj = (await db.execute(select(Program).where(Program.id == selected_program_id))).scalar_one_or_none()
+        if p_obj:
+            prog_name = p_obj.name
+
+    batch_name = "Batch 2026-2028"
+    if selected_batch_id:
+        b_obj = (await db.execute(select(Batch).where(Batch.id == selected_batch_id))).scalar_one_or_none()
+        if b_obj:
+            batch_name = b_obj.name
+
+    div_name = "Division A"
+    if profile_data and profile_data.division_id:
+        d_obj = (await db.execute(select(Division).where(Division.id == profile_data.division_id))).scalar_one_or_none()
+        if d_obj:
+            div_name = d_obj.name
+
+    # Trigger student_registration_approved email
+    await trigger_activity_email(
+        db=db,
+        event_key="student_registration_approved",
+        recipient_email=reg.email,
+        context={
+            "full_name": reg.full_name,
+            "prn_number": reg.prn_number or "—",
+            "program_name": prog_name,
+            "batch_name": batch_name,
+            "division_name": div_name,
+            "login_url": "https://orion.dataxplore.club/login",
+            "app_name": "Orion Portal",
+            "support_email": "deepak.gupta@mile.education",
+        },
+        fallback_subject=f"Welcome to Orion — Your Registration has been Approved! (PRN: {reg.prn_number})",
+        fallback_html=f"<p>Dear {reg.full_name}, your student registration has been approved. You may now log in to the Orion portal.</p>",
+    )
+
     return reg
 
 
@@ -311,4 +398,99 @@ async def reject_registration(
     reg.reviewed_by = reviewed_by_user_id
     await db.commit()
     await db.refresh(reg)
+
+    # Trigger student_registration_rejected email
+    await trigger_activity_email(
+        db=db,
+        event_key="student_registration_rejected",
+        recipient_email=reg.email,
+        context={
+            "full_name": reg.full_name,
+            "prn_number": reg.prn_number or "—",
+            "rejection_reason": reason,
+            "support_email": "deepak.gupta@mile.education",
+            "app_name": "Orion Portal",
+        },
+        fallback_subject=f"Update on your Orion Registration Application (PRN: {reg.prn_number})",
+        fallback_html=f"<p>Dear {reg.full_name}, your application has been reviewed with remarks: {reason}</p>",
+    )
+
     return reg
+
+
+async def admin_resend_verification_otp(
+    db: AsyncSession, reg_id: UUID
+) -> StudentRegistration:
+    """Admin triggers a fresh OTP dispatch to an unverified student."""
+    reg = await get_registration(db, reg_id)
+    if not reg:
+        raise ValueError("Registration not found.")
+    if reg.is_email_verified or reg.status != "pending_verification":
+        raise ValueError("Email for this registration is already verified or not in pending verification state.")
+
+    otp = generate_and_send_otp(reg.email, reg.full_name)
+    reg.verification_code = otp
+    reg.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)
+    await db.commit()
+    await db.refresh(reg)
+    return reg
+
+
+async def admin_manual_verify_registration(
+    db: AsyncSession, reg_id: UUID, admin_user_id: Optional[UUID] = None
+) -> StudentRegistration:
+    """
+    Admin manually marks student's email as verified (bypasses OTP).
+    Moves registration to 'pending_review' state so it can be reviewed and approved.
+    """
+    reg = await get_registration(db, reg_id)
+    if not reg:
+        raise ValueError("Registration not found.")
+    if reg.status not in ("pending_verification", "rejected"):
+        raise ValueError(f"Cannot manually verify a registration with status '{reg.status}'.")
+
+    reg.is_email_verified = True
+    reg.status = "pending_review"
+    reg.verification_code = None
+    reg.verification_code_expires_at = None
+    if admin_user_id:
+        existing_admin = await db.execute(select(User).where(User.id == admin_user_id))
+        if existing_admin.scalar_one_or_none():
+            reg.reviewed_by = admin_user_id
+
+    await db.commit()
+    await db.refresh(reg)
+    return reg
+
+
+async def delete_registration(
+    db: AsyncSession, reg_id: UUID
+) -> None:
+    """Admin deletes an unverified or rejected registration to free up PRN / email."""
+    reg = await get_registration(db, reg_id)
+    if not reg:
+        raise ValueError("Registration not found.")
+    if reg.status == "approved":
+        raise ValueError("Approved registrations cannot be deleted directly from here. Deactivate the student record instead.")
+
+    await db.delete(reg)
+    await db.commit()
+
+
+async def purge_stale_unverified_registrations(
+    db: AsyncSession, older_than_hours: int = 24
+) -> int:
+    """Bulk purge of unverified registrations abandoned older than X hours."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
+    stmt = select(StudentRegistration).where(
+        StudentRegistration.status == "pending_verification",
+        StudentRegistration.created_at < cutoff,
+    )
+    res = await db.execute(stmt)
+    stale_regs = res.scalars().all()
+    count = len(stale_regs)
+    for r in stale_regs:
+        await db.delete(r)
+    await db.commit()
+    return count
+

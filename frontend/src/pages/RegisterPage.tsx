@@ -453,6 +453,15 @@ export const RegisterPage: React.FC = () => {
             </div>
           )}
 
+          {step === 1 && (
+            <div className="p-3 mb-5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/60 text-xs text-cyan-800 dark:text-cyan-300 flex items-center justify-between gap-2">
+              <span>Already started registration earlier?</span>
+              <Link to={`/verify-email?email=${encodeURIComponent(form.email)}`} className="font-bold underline text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 shrink-0">
+                Resume Verification →
+              </Link>
+            </div>
+          )}
+
           <form
             onSubmit={
               step < 3

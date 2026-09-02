@@ -13,6 +13,7 @@ from app.models.student_registration import StudentRegistration
 from app.models.email_template import EmailTemplate
 from app.models.case_study import CaseStudy, UserCaseAnalysis
 from app.models.activity import SubjectActivity
+from app.models.academic_event import AcademicEvent
 from app.models.lms import (
     SubjectResource, SubjectRecording, SubjectAssessment,
     AssessmentSubmission, ActivitySubmission

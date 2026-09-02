@@ -10,6 +10,10 @@ import {
   Eye,
   X,
   GraduationCap,
+  Mail,
+  Trash2,
+  ShieldCheck,
+  Check,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -79,6 +83,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [approvingReg, setApprovingReg] = useState<Registration | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Approval Form State
   const [approvalForm, setApprovalForm] = useState({
@@ -185,6 +190,8 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setApprovingReg(null);
       setSelectedReg(null);
       setActionError(null);
+      setSuccessToast('Student registration approved and enrolled successfully!');
+      setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
       setActionError(err.response?.data?.detail || 'Failed to approve registration.');
@@ -203,9 +210,76 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setRejectionReason('');
       setSelectedReg(null);
       setActionError(null);
+      setSuccessToast('Registration application marked as rejected.');
+      setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
       setActionError(err.response?.data?.detail || 'Failed to reject registration.');
+    },
+  });
+
+  // Admin Resend OTP mutation
+  const resendOtpMutation = useMutation({
+    mutationFn: async (regId: string) => {
+      const res = await api.post(`/student-registrations/${regId}/resend-otp`);
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      setSuccessToast(data.message || 'Verification OTP dispatched to student email.');
+      setTimeout(() => setSuccessToast(null), 4000);
+    },
+    onError: (err: any) => {
+      setActionError(err.response?.data?.detail || 'Failed to resend verification OTP.');
+    },
+  });
+
+  // Admin Manual Verify mutation
+  const manualVerifyMutation = useMutation({
+    mutationFn: async (regId: string) => {
+      const res = await api.post(`/student-registrations/${regId}/manual-verify`);
+      return res.data.data;
+    },
+    onSuccess: (reg) => {
+      queryClient.invalidateQueries({ queryKey: ['student-registrations'] });
+      setSuccessToast(`Email for ${reg.full_name} manually verified! Application moved to Pending Review.`);
+      setSelectedReg(null);
+      setTimeout(() => setSuccessToast(null), 4000);
+    },
+    onError: (err: any) => {
+      setActionError(err.response?.data?.detail || 'Failed to verify email manually.');
+    },
+  });
+
+  // Admin Delete Registration mutation
+  const deleteRegMutation = useMutation({
+    mutationFn: async (regId: string) => {
+      const res = await api.delete(`/student-registrations/${regId}`);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student-registrations'] });
+      setSuccessToast('Registration record deleted successfully. PRN and email are now freed.');
+      setSelectedReg(null);
+      setTimeout(() => setSuccessToast(null), 4000);
+    },
+    onError: (err: any) => {
+      setActionError(err.response?.data?.detail || 'Failed to delete registration.');
+    },
+  });
+
+  // Admin Bulk Purge Stale mutation
+  const purgeStaleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/student-registrations/purge-unverified?older_than_hours=24');
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['student-registrations'] });
+      setSuccessToast(data.message || 'Stale unverified registrations purged.');
+      setTimeout(() => setSuccessToast(null), 4000);
+    },
+    onError: (err: any) => {
+      setActionError(err.response?.data?.detail || 'Failed to purge stale registrations.');
     },
   });
 
@@ -286,6 +360,44 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
           </div>
           <button onClick={() => setActionError(null)} className="p-1 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-lg">
             <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Global Success Alert */}
+      {successToast && (
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-sm flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <Check className="h-5 w-5 shrink-0" />
+            <span>{successToast}</span>
+          </div>
+          <button onClick={() => setSuccessToast(null)} className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 rounded-lg">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Unverified Tab Helper Banner */}
+      {statusFilter === 'pending_verification' && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <Clock className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              These students initiated self-registration but dropped off before entering their email OTP. You can resend their OTP code, manually verify them, or delete stale registrations to free up their PRN.
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={purgeStaleMutation.isPending}
+            onClick={() => {
+              if (window.confirm('Are you sure you want to delete all unverified registrations older than 24 hours?')) {
+                purgeStaleMutation.mutate();
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {purgeStaleMutation.isPending ? 'Purging...' : 'Cleanup Stale (>24h)'}
           </button>
         </div>
       )}
@@ -431,6 +543,46 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
                             </button>
                           </>
                         )}
+
+                        {reg.status === 'pending_verification' && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={resendOtpMutation.isPending}
+                              onClick={() => resendOtpMutation.mutate(reg.id)}
+                              title="Resend verification OTP email"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/20 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 text-xs font-semibold transition-all cursor-pointer shrink-0"
+                            >
+                              <Mail className="h-3.5 w-3.5 text-cyan-500" /> Resend OTP
+                            </button>
+                            <button
+                              type="button"
+                              disabled={manualVerifyMutation.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Manually verify email for ${reg.full_name}? This will move the application to Pending Review.`)) {
+                                  manualVerifyMutation.mutate(reg.id);
+                                }
+                              }}
+                              title="Manually verify email and move to Pending Review"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" /> Manual Verify
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleteRegMutation.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Delete unverified registration for ${reg.full_name}? This will immediately free up PRN ${reg.prn_number} and email ${reg.email}.`)) {
+                                  deleteRegMutation.mutate(reg.id);
+                                }
+                              }}
+                              title="Delete abandoned unverified registration"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-xs font-semibold transition-all cursor-pointer shrink-0"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -511,29 +663,69 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
+                type="button"
                 onClick={() => setSelectedReg(null)}
-                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300"
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Close
               </button>
               {selectedReg.status === 'pending_review' && (
                 <>
                   <button
+                    type="button"
                     onClick={() => {
                       setRejectingReg(selectedReg);
                       setRejectionReason('');
                     }}
-                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm"
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs"
                   >
                     Reject
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleOpenApprove(selectedReg)}
-                    className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm"
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
                   >
                     Approve Student
+                  </button>
+                </>
+              )}
+
+              {selectedReg.status === 'pending_verification' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={deleteRegMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Delete unverified registration for ${selectedReg.full_name}? This will free up PRN and email.`)) {
+                        deleteRegMutation.mutate(selectedReg.id);
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 font-semibold text-xs hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                  >
+                    Delete Registration
+                  </button>
+                  <button
+                    type="button"
+                    disabled={resendOtpMutation.isPending}
+                    onClick={() => resendOtpMutation.mutate(selectedReg.id)}
+                    className="px-3.5 py-2 rounded-xl border border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 font-semibold text-xs hover:bg-cyan-50 dark:hover:bg-cyan-950/30"
+                  >
+                    Resend Verification Code
+                  </button>
+                  <button
+                    type="button"
+                    disabled={manualVerifyMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Manually verify email for ${selectedReg.full_name}? This will move the application to Pending Review.`)) {
+                        manualVerifyMutation.mutate(selectedReg.id);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+                  >
+                    Manually Verify Email
                   </button>
                 </>
               )}

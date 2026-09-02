@@ -11,19 +11,23 @@ const OTP_LENGTH = 6;
 export const VerifyEmailPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const email = searchParams.get('email') || '';
+  const initialEmail = searchParams.get('email') || '';
 
+  const [email, setEmail] = useState<string>(initialEmail);
+  const [isEditingEmail, setIsEditingEmail] = useState<boolean>(!initialEmail);
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(30);
+  const [resendCooldown, setResendCooldown] = useState(initialEmail ? 30 : 0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
+    if (initialEmail) {
+      inputRefs.current[0]?.focus();
+    }
+  }, [initialEmail]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -59,11 +63,12 @@ export const VerifyEmailPage: React.FC = () => {
 
   const handleVerify = async () => {
     const code = digits.join('');
+    if (!email.trim()) { setError('Please enter your registered email address.'); return; }
     if (code.length < OTP_LENGTH) { setError('Please enter the complete 6-digit code'); return; }
     setError(''); setLoading(true);
     try {
-      await api.post('/auth/verify-email', { email, code });
-      setSuccess('Email verified! Your account is pending admin approval.');
+      await api.post('/auth/verify-email', { email: email.trim(), code });
+      setSuccess('Email verified! Your account is now pending administrator review.');
       setTimeout(() => navigate('/login?verified=1'), 2000);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Invalid or expired code. Please try again.');
@@ -73,11 +78,13 @@ export const VerifyEmailPage: React.FC = () => {
   };
 
   const handleResend = async () => {
+    if (!email.trim()) { setError('Please enter your email address to resend code.'); return; }
     setResendLoading(true); setError(''); setSuccess('');
     try {
-      await api.post('/auth/resend-verification', { email });
-      setSuccess('A new code has been sent to your email.');
+      await api.post('/auth/resend-verification', { email: email.trim() });
+      setSuccess('A fresh verification code has been dispatched to your email.');
       setResendCooldown(60);
+      setIsEditingEmail(false);
       setDigits(Array(OTP_LENGTH).fill(''));
       setTimeout(() => inputRefs.current[0]?.focus(), 50);
     } catch (err: any) {
@@ -102,10 +109,40 @@ export const VerifyEmailPage: React.FC = () => {
           </div>
 
           <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Check Your Email</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
             We sent a 6-digit verification code to:
           </p>
-          <p className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 mb-6 break-all">{email || '(unknown email)'}</p>
+          
+          {isEditingEmail ? (
+            <div className="flex items-center gap-2 mb-6">
+              <input
+                type="email"
+                placeholder="student.name@mile.education"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
+              />
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendLoading || !email}
+                className="px-3 py-1.5 rounded-xl bg-cyan-600 text-white font-bold text-xs shrink-0 disabled:opacity-50"
+              >
+                Send Code
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <span className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 break-all">{email}</span>
+              <button
+                type="button"
+                onClick={() => setIsEditingEmail(true)}
+                className="text-[11px] text-slate-400 hover:text-cyan-600 underline font-medium"
+              >
+                Change
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-3 p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-sm text-left">

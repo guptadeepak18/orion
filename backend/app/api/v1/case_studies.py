@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.permissions import require_permission, get_current_user
+from app.core.permissions import require_permission, get_current_user, require_role
 from app.models.auth import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.case_study import CaseStudyCreate, CaseStudyUpdate, CaseStudyResponse
@@ -1009,8 +1009,8 @@ class CaseNoteGenerateRequest(BaseModel):
 @router.get(
     "/{case_study_id}/ai-case-note",
     response_model=ResponseEnvelope[Optional[Dict[str, Any]]],
-    dependencies=[Depends(require_permission("academic", "view_own"))],
-    summary="Get user-specific saved Harvard AI Case Note",
+    dependencies=[Depends(require_role(["super_admin", "admin", "crc_admin", "crc_coordinator", "faculty_internal", "faculty_external", "director"]))],
+    summary="Get user-specific saved Harvard AI Case Note (Faculty & Admin only)",
 )
 async def get_case_note(
     case_study_id: UUID,
@@ -1028,8 +1028,8 @@ async def get_case_note(
 @router.post(
     "/{case_study_id}/ai-case-note",
     response_model=ResponseEnvelope[Dict[str, Any]],
-    dependencies=[Depends(require_permission("academic", "view_own"))],
-    summary="Generate or customize Harvard AI Case Note with preferences",
+    dependencies=[Depends(require_role(["super_admin", "admin", "crc_admin", "crc_coordinator", "faculty_internal", "faculty_external", "director"]))],
+    summary="Generate or customize Harvard AI Case Note with preferences (Faculty & Admin only)",
 )
 async def generate_case_note(
     case_study_id: UUID,
@@ -1038,7 +1038,7 @@ async def generate_case_note(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        user_name = current_user.full_name or current_user.email or "Faculty / Student"
+        user_name = current_user.full_name or current_user.email or "Faculty / Instructor"
         result = await case_note_service.generate_and_save_case_note(
             db=db,
             case_study_id=case_study_id,
@@ -1055,8 +1055,8 @@ async def generate_case_note(
 
 @router.get(
     "/{case_study_id}/ai-case-note/export",
-    dependencies=[Depends(require_permission("academic", "view_own"))],
-    summary="Export Harvard AI Case Note as DOCX or Print-Ready PDF / HTML",
+    dependencies=[Depends(require_role(["super_admin", "admin", "crc_admin", "crc_coordinator", "faculty_internal", "faculty_external", "director"]))],
+    summary="Export Harvard AI Case Note as DOCX or Print-Ready PDF / HTML (Faculty & Admin only)",
 )
 async def export_case_note(
     case_study_id: UUID,

@@ -249,89 +249,46 @@ def _send_via_hostinger_mail_api(api_key: str, to_email: str, full_name: str, ot
     return False
 
 
-def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
+def resolve_email_recipient(intended_email: str, subject: str, html_content: str) -> tuple[str, str, str]:
     """
-    Send OTP verification email.
-    1. First attempts Hostinger Direct Mail API (HTTPS Port 443 — works directly on Render with 0 port blocking).
-    2. Then attempts other configured HTTPS REST APIs (Resend, Brevo, SendGrid).
-    3. Then attempts direct SMTP with fast fallback.
-    4. Always logs OTP code to server console as fallback so student registration is never blocked.
+    Environment-aware recipient resolver:
+    - If ENVIRONMENT != "production" (e.g., local server development):
+      Redirects ALL email traffic to settings.DEV_NOTIFICATION_OVERRIDE_EMAIL (deepak.gupta@mile.education)
+      with clear debug headers indicating the original intended audience. Real students/faculty never receive test emails.
+    - If ENVIRONMENT == "production" (e.g., live deployed on dataxplore.club):
+      Dispatches directly to the live intended recipient with zero alterations.
     """
+    env = (getattr(settings, "ENVIRONMENT", "local") or "local").strip().lower()
+    override_email = (getattr(settings, "DEV_NOTIFICATION_OVERRIDE_EMAIL", "deepak.gupta@mile.education") or "deepak.gupta@mile.education").strip()
+
+    if env != "production":
+        logger.info(
+            f"[LOCAL EMAIL INTERCEPT] Environment is '{env}'. "
+            f"Redirecting email intended for '{intended_email}' -> '{override_email}'."
+        )
+        intercept_banner = f"""
+        <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #92400e; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);">
+          <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">
+            ⚠️ [LOCAL SERVER TEST DISPATCH]
+          </div>
+          <div>This email notification was triggered from your <strong>Local Development Server</strong>.</div>
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #f59e0b;">
+            <strong>Intended Audience:</strong> <code style="background: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #78350f;">{intended_email}</code>
+          </div>
+        </div>
+        """
+        modified_subject = f"[LOCAL TEST -> {intended_email}] {subject}"
+        modified_html = intercept_banner + html_content
+        return override_email, modified_subject, modified_html
+
+    return intended_email, subject, html_content
+
+
+def _send_raw_custom_html(target_email: str, subject: str, html_content: str) -> bool:
+    """Internal dispatcher across Hostinger API, Resend, and SMTP."""
     from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
     reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
-    # 1. Try Hostinger Direct Mail API (Primary HTTPS)
-    hostinger_api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
-    if hostinger_api_key:
-        if _send_via_hostinger_mail_api(hostinger_api_key, to_email, full_name, otp):
-            return True
-
-    # 2. Try Resend HTTP API
-    resend_key = getattr(settings, "RESEND_API_KEY", "")
-    if resend_key:
-        if _send_via_resend(resend_key, from_email, to_email, full_name, otp):
-            return True
-
-    # 3. Try Brevo HTTP API
-    brevo_key = getattr(settings, "BREVO_API_KEY", "")
-    if brevo_key:
-        if _send_via_brevo(brevo_key, from_email, to_email, full_name, otp):
-            return True
-
-    # 4. Try SendGrid HTTP API
-    sendgrid_key = getattr(settings, "SENDGRID_API_KEY", "")
-    if sendgrid_key:
-        if _send_via_sendgrid(sendgrid_key, from_email, to_email, full_name, otp):
-            return True
-
-    # 4. Try Direct SMTP
-    smtp_host = getattr(settings, "SMTP_HOST", "")
-    smtp_user = getattr(settings, "SMTP_USER", "")
-    smtp_password = getattr(settings, "SMTP_PASSWORD", "")
-    smtp_port = int(getattr(settings, "SMTP_PORT", 587))
-
-    if smtp_host and smtp_user and smtp_password:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Orion — Verify Your Email Address"
-        msg["From"] = f"Orion Portal <{from_email}>"
-        msg["To"] = to_email
-        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
-        html_content = _build_otp_email_html(full_name, otp)
-        msg.attach(MIMEText(html_content, "html"))
-
-        try:
-            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
-            logger.info(f"Verification email successfully sent to {to_email} via SMTP port {smtp_port}")
-            return True
-        except Exception as primary_err:
-            fallback_port = 465 if smtp_port != 465 else 587
-            try:
-                _dispatch_smtp(smtp_host, fallback_port, smtp_user, smtp_password, from_email, to_email, msg)
-                logger.info(f"Verification email successfully sent to {to_email} via SMTP fallback port {fallback_port}")
-                return True
-            except Exception as fallback_err:
-                logger.warning(
-                    f"Outbound SMTP timed out on Render (Render free tier blocks SMTP ports 25, 465, 587). "
-                    f"Primary: {primary_err} | Fallback: {fallback_err}"
-                )
-
-    # 5. Prominently output the OTP in the server logs so the registration workflow is never blocked
-    print(f"\n{'='*70}")
-    print(f"  [ORION VERIFICATION OTP FALLBACK]")
-    print(f"  Recipient Email:  {to_email}")
-    print(f"  Student Name:     {full_name}")
-    print(f"  6-DIGIT OTP CODE: {otp}")
-    print(f"  Note: On Render Free Tier, SMTP ports 465/587 are blocked by Render's firewall.")
-    print(f"  To deliver real emails over HTTPS, set RESEND_API_KEY or BREVO_API_KEY in Render.")
-    print(f"{'='*70}\n")
-    return True
-
-
-def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bool:
-    """
-    Send any custom HTML email to a recipient.
-    Used for live previews, testing, and system activity triggers.
-    """
     # 1. Try Hostinger Direct Mail API
     hostinger_api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
     if hostinger_api_key:
@@ -342,7 +299,7 @@ def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bo
         mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
         url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
         payload = {
-            "to": [to_email],
+            "to": [target_email],
             "subject": subject,
             "html": html_content,
         }
@@ -350,12 +307,12 @@ def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bo
             with httpx.Client(timeout=10.0) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 if resp.status_code in (200, 201, 204):
-                    logger.info(f"[Hostinger Mail API] Custom email successfully sent to {to_email}")
+                    logger.info(f"[Hostinger Mail API] Email successfully delivered to {target_email}")
                     return True
                 else:
                     logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
         except Exception as e:
-            logger.error(f"[Hostinger Mail API] Custom email failed: {e}")
+            logger.error(f"[Hostinger Mail API] Request failed: {e}")
 
     # 2. Try Resend HTTP API
     resend_key = getattr(settings, "RESEND_API_KEY", "")
@@ -366,47 +323,102 @@ def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bo
             "Content-Type": "application/json",
         }
         payload = {
-            "from": f"Orion Portal <{settings.SMTP_FROM_EMAIL}>",
-            "to": [to_email],
+            "from": f"Orion Portal <{from_email}>",
+            "to": [target_email],
             "subject": subject,
             "html": html_content,
-            "reply_to": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education",
+            "reply_to": reply_to,
         }
         try:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 if resp.status_code in (200, 201):
+                    logger.info(f"[Resend] Email successfully delivered to {target_email}")
                     return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[Resend] Request failed: {e}")
 
-    # 3. Try SMTP fallback
+    # 3. Try Brevo HTTP API
+    brevo_key = getattr(settings, "BREVO_API_KEY", "")
+    if brevo_key:
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {
+            "api-key": brevo_key.strip(),
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "sender": {"name": "Orion Portal", "email": from_email},
+            "to": [{"email": target_email}],
+            "subject": subject,
+            "htmlContent": html_content,
+            "replyTo": {"email": reply_to, "name": "Deepak Gupta"},
+        }
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                if resp.status_code in (200, 201):
+                    logger.info(f"[Brevo] Email successfully delivered to {target_email}")
+                    return True
+        except Exception as e:
+            logger.error(f"[Brevo] Request failed: {e}")
+
+    # 4. Try SMTP fallback
     smtp_host = getattr(settings, "SMTP_HOST", "")
     smtp_user = getattr(settings, "SMTP_USER", "")
     smtp_password = getattr(settings, "SMTP_PASSWORD", "")
     smtp_port = int(getattr(settings, "SMTP_PORT", 587))
-    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
-    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
     if smtp_host and smtp_user and smtp_password:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"Orion Portal <{from_email}>"
-        msg["To"] = to_email
+        msg["To"] = target_email
         msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
         msg.attach(MIMEText(html_content, "html"))
         try:
-            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, to_email, msg)
+            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, target_email, msg)
+            logger.info(f"Email successfully sent to {target_email} via SMTP")
             return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"SMTP dispatch failed: {e}")
 
+    # 5. Console output fallback
     print(f"\n{'='*70}")
-    print(f"  [CUSTOM EMAIL DISPATCH LOG]")
-    print(f"  To:      {to_email}")
-    print(f"  Subject: {subject}")
+    print(f"  [ORION EMAIL DISPATCH LOG]")
+    print(f"  Target Recipient: {target_email}")
+    print(f"  Subject:          {subject}")
     print(f"{'='*70}\n")
     return True
+
+
+def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
+    """
+    Send OTP verification email.
+    Environment-aware:
+    - On local server: redirects to deepak.gupta@mile.education with [LOCAL TEST -> student] subject.
+    - On production: delivers directly to to_email.
+    """
+    target_email, subject, html_content = resolve_email_recipient(
+        intended_email=to_email,
+        subject="Orion — Verify Your Email Address",
+        html_content=_build_otp_email_html(full_name, otp),
+    )
+    return _send_raw_custom_html(target_email, subject, html_content)
+
+
+def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bool:
+    """
+    Send any custom HTML email.
+    Environment-aware:
+    - On local server: redirects to deepak.gupta@mile.education with [LOCAL TEST -> recipient] subject.
+    - On production: delivers directly to to_email.
+    """
+    target_email, target_subject, target_html = resolve_email_recipient(
+        intended_email=to_email,
+        subject=subject,
+        html_content=html_content,
+    )
+    return _send_raw_custom_html(target_email, target_subject, target_html)
 
 
 def generate_and_send_otp(to_email: str, full_name: str) -> str:

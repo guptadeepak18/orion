@@ -831,6 +831,15 @@ export const AttendancePage: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                         {activeSheetData.batch_name || 'Batch'}
                       </span>
+                      {activeSheetData.course_category === 'elective' || activeSheetData.elective_domain ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1">
+                          🟣 Elective: {activeSheetData.elective_domain || 'Specialization'} ({activeSheetData.total_students} Eligible)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800">
+                          🔷 Core Subject (All Students)
+                        </span>
+                      )}
                       {activeSheetData.venue && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                           {activeSheetData.venue}
@@ -982,6 +991,11 @@ export const AttendancePage: React.FC = () => {
                             </td>
                             <td className="p-3">
                               <p className="font-bold text-slate-900 dark:text-white">{st.student_name}</p>
+                              {st.specializations && (
+                                <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/40 inline-block mt-0.5">
+                                  {st.specializations}
+                                </span>
+                              )}
                             </td>
                             <td className="p-3">
                               <div className="flex items-center justify-center gap-1.5">
@@ -2017,6 +2031,11 @@ export const AttendancePage: React.FC = () => {
                     <p className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">
                       PRN: {st.student_prn || 'N/A'} {st.roll_no ? `• Roll No #${st.roll_no}` : ''}
                     </p>
+                    {st.specializations && (
+                      <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800/40 inline-block">
+                        {st.specializations}
+                      </span>
+                    )}
                   </div>
 
                   {/* Current Status Pill */}

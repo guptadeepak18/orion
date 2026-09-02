@@ -82,3 +82,65 @@ async def reject_registration(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ResponseEnvelope(data=StudentRegistrationResponse.model_validate(reg))
+
+
+@router.post(
+    "/{reg_id}/resend-otp",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("students", "edit"))],
+)
+async def admin_resend_otp(reg_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Admin triggers a fresh verification OTP email to an unverified student."""
+    try:
+        reg = await student_registration_service.admin_resend_verification_otp(db, reg_id)
+        return ResponseEnvelope(data={"message": f"A new verification OTP has been dispatched to {reg.email}."})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/{reg_id}/manual-verify",
+    response_model=ResponseEnvelope[StudentRegistrationResponse],
+    dependencies=[Depends(require_permission("students", "edit"))],
+)
+async def admin_manual_verify(
+    reg_id: UUID,
+    payload: dict = Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin manually verifies email OTP and moves registration to pending review."""
+    admin_id = UUID(payload["sub"])
+    try:
+        reg = await student_registration_service.admin_manual_verify_registration(db, reg_id, admin_id)
+        return ResponseEnvelope(data=StudentRegistrationResponse.model_validate(reg))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete(
+    "/{reg_id}",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("students", "edit"))],
+)
+async def delete_registration(reg_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Admin deletes an unverified or rejected registration to free up PRN / email."""
+    try:
+        await student_registration_service.delete_registration(db, reg_id)
+        return ResponseEnvelope(data={"message": "Registration record removed successfully."})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/purge-unverified",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("students", "edit"))],
+)
+async def purge_stale_unverified(
+    older_than_hours: int = Query(24, description="Purge unverified registrations older than this many hours"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk cleanup of unverified registrations abandoned older than specified hours."""
+    count = await student_registration_service.purge_stale_unverified_registrations(db, older_than_hours)
+    return ResponseEnvelope(data={"message": f"Successfully purged {count} stale unverified registration(s).", "count": count})
+

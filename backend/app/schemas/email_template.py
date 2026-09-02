@@ -56,3 +56,22 @@ class EmailTemplatePreviewRequest(BaseModel):
 class EmailTemplatePreviewResponse(BaseModel):
     rendered_subject: str
     rendered_html: str
+
+
+class EmailTemplateAIGenerateRequest(BaseModel):
+    prompt: str = Field(..., description="Natural language prompt describing the email template")
+    category: Optional[str] = Field("General", description="Email category")
+    style_theme: Optional[str] = Field("corporate", description="Theme style: corporate, modern_gradient, academic, alert, celebratory")
+    variables: Optional[List[str]] = Field(default_factory=list, description="Desired variables to include")
+    file_attachments: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Optional attached files with name, type, and text content")
+
+
+class EmailTemplateAIGenerateResponse(BaseModel):
+    name: str
+    category: str
+    event_key: str
+    subject: str
+    html_content: str
+    variables: List[str]
+    description: str
+
