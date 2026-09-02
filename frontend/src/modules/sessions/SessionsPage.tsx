@@ -138,13 +138,25 @@ const inputClass =
 const selectClass =
   'w-full px-3 py-2 rounded-xl text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 dark:focus:border-cyan-400 appearance-none cursor-pointer transition-all duration-150';
 
+// Date helpers
+const toLocalDateString = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getLocalIsoDate = (): string => {
+  return toLocalDateString(new Date());
+};
+
 const defaultForm = {
   program_id: '',
   batch_id: '',
   semester_id: '',
   subject_id: '',
   topic_id: '',
-  session_date: new Date().toISOString().split('T')[0],
+  session_date: getLocalIsoDate(),
   start_time: '10:00',
   end_time: '12:00',
   venue: '',
@@ -158,25 +170,30 @@ const defaultForm = {
   lecture_number: '' as number | string,
 };
 
-// Date helpers
-const getLocalIsoDate = () => {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  const localISOTime = (new Date(now.getTime() - offset)).toISOString().split('T')[0];
-  return localISOTime;
+const parseDateSafe = (dStr?: string | null): Date => {
+  if (!dStr) return new Date();
+  const [y, m, d] = dStr.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
+};
+
+const addDays = (dStr: string, days: number): string => {
+  const d = parseDateSafe(dStr);
+  d.setDate(d.getDate() + days);
+  return toLocalDateString(d);
 };
 
 const formatDisplayDate = (dStr: string) => {
   if (!dStr) return '';
-  const d = new Date(dStr + 'T00:00:00');
+  const d = parseDateSafe(dStr);
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const getMonday = (d: Date) => {
-  const date = new Date(d);
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = date.getDay();
   const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(date.setDate(diff));
+  return new Date(date.getFullYear(), date.getMonth(), diff);
 };
 
 const formatSessionType = (type?: string, hyperbuildNo?: string) => {
@@ -277,7 +294,7 @@ export const SessionsPage: React.FC = () => {
 
   // Weekly View Monday Date State
   const [selectedWeekMonday, setSelectedWeekMonday] = useState<Date>(() => {
-    const dateToUse = queryDate ? new Date(queryDate + 'T00:00:00') : new Date();
+    const dateToUse = queryDate ? parseDateSafe(queryDate) : new Date();
     return getMonday(dateToUse);
   });
 
@@ -296,7 +313,7 @@ export const SessionsPage: React.FC = () => {
   useEffect(() => {
     if (queryDate) {
       setSelectedDate(queryDate);
-      setSelectedWeekMonday(getMonday(new Date(queryDate + 'T00:00:00')));
+      setSelectedWeekMonday(getMonday(parseDateSafe(queryDate)));
     }
   }, [queryDate]);
 
@@ -319,8 +336,9 @@ export const SessionsPage: React.FC = () => {
   };
 
   const handleDateChange = (dStr: string) => {
+    if (!dStr) return;
     setSelectedDate(dStr);
-    setSelectedWeekMonday(getMonday(new Date(dStr + 'T00:00:00')));
+    setSelectedWeekMonday(getMonday(parseDateSafe(dStr)));
     const next = new URLSearchParams(searchParams);
     next.set('date', dStr);
     setSearchParams(next);
@@ -827,8 +845,8 @@ export const SessionsPage: React.FC = () => {
       subject_id: sess.subject_id || '',
       topic_id: sess.topic_id || '',
       session_date: sess.session_date,
-      start_time: sess.start_time,
-      end_time: sess.end_time,
+      start_time: typeof sess.start_time === 'string' && sess.start_time.length >= 5 ? sess.start_time.slice(0, 5) : '10:00',
+      end_time: typeof sess.end_time === 'string' && sess.end_time.length >= 5 ? sess.end_time.slice(0, 5) : '12:00',
       venue: sess.venue || '',
       mode: sess.mode || 'offline',
       session_type: sess.session_type || 'lecture',
@@ -840,25 +858,50 @@ export const SessionsPage: React.FC = () => {
       lecture_number: sess.lecture_number !== undefined && sess.lecture_number !== null ? sess.lecture_number : '',
     });
 
+    if (sess.batch_id) {
+      api.get(`/academic/subjects?batch_id=${sess.batch_id}`)
+        .then((res) => {
+          if (res.data?.data) setFilteredSubjects(res.data.data);
+        })
+        .catch(() => {});
+    }
+
     if (sess.session_type === 'hyperbuild') {
+      const initialActs = (sess.hyperbuild_activities as any[]) || [];
+      if (initialActs.length > 0) {
+        setHyperbuildActivities(initialActs.map((a: any) => ({
+          activity_no: a.activity_no,
+          title: a.title,
+          subject_id: a.subject_id || '',
+          start_time: typeof a.start_time === 'string' && a.start_time.length >= 5 ? a.start_time.slice(0, 5) : '10:00',
+          end_time: typeof a.end_time === 'string' && a.end_time.length >= 5 ? a.end_time.slice(0, 5) : '12:00',
+          duration_minutes: a.duration_minutes || 60,
+          submission_type: a.submission_type || 'link_or_text',
+          instructions: a.instructions || '',
+        })));
+      }
+
       try {
         const hbRes = await api.get(`/hyperbuild/sessions/${sess.id}/activities`);
-        if (hbRes.data?.activities?.length) {
-          setHyperbuildActivities(hbRes.data.activities.map((a: any) => ({
+        const acts = hbRes.data?.activities || hbRes.data?.data?.activities || [];
+        if (acts.length > 0) {
+          setHyperbuildActivities(acts.map((a: any) => ({
             activity_no: a.activity_no,
             title: a.title,
-            subject_id: a.subject_id,
-            start_time: a.start_time,
-            end_time: a.end_time,
-            duration_minutes: a.duration_minutes,
+            subject_id: a.subject_id || '',
+            start_time: typeof a.start_time === 'string' && a.start_time.length >= 5 ? a.start_time.slice(0, 5) : '10:00',
+            end_time: typeof a.end_time === 'string' && a.end_time.length >= 5 ? a.end_time.slice(0, 5) : '12:00',
+            duration_minutes: a.duration_minutes || 60,
             submission_type: a.submission_type || 'link_or_text',
             instructions: a.instructions || '',
           })));
-        } else {
+        } else if (initialActs.length === 0) {
           setHyperbuildActivities([]);
         }
       } catch {
-        setHyperbuildActivities([]);
+        if (initialActs.length === 0) {
+          setHyperbuildActivities([]);
+        }
       }
     } else {
       setHyperbuildActivities([]);
@@ -1436,16 +1479,15 @@ export const SessionsPage: React.FC = () => {
   const dailySessions = sessions.filter((s) => s.session_date === selectedDate);
 
   // Weekly View Dates (7 days: Monday through Sunday)
+  const todayIso = getLocalIsoDate();
   const weekDays = Array.from({ length: 7 }).map((_, idx) => {
-    const day = new Date(selectedWeekMonday);
-    day.setDate(day.getDate() + idx);
-    const dateStr = day.toISOString().split('T')[0];
-    const todayStr = new Date().toISOString().split('T')[0];
+    const day = new Date(selectedWeekMonday.getFullYear(), selectedWeekMonday.getMonth(), selectedWeekMonday.getDate() + idx);
+    const dateStr = toLocalDateString(day);
     return {
       dateStr,
       dayName: day.toLocaleDateString('en-US', { weekday: 'short' }),
       formattedDate: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      isToday: dateStr === todayStr,
+      isToday: dateStr === todayIso,
     };
   });
 
@@ -1562,12 +1604,9 @@ export const SessionsPage: React.FC = () => {
         {viewMode === 'daily' && (
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => {
-                const d = new Date(selectedDate + 'T00:00:00');
-                d.setDate(d.getDate() - 1);
-                handleDateChange(d.toISOString().split('T')[0]);
-              }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300"
+              onClick={() => handleDateChange(addDays(selectedDate, -1))}
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Previous Day"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -1578,18 +1617,15 @@ export const SessionsPage: React.FC = () => {
               className="px-3 py-1 text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-cyan-500 text-slate-900 dark:text-slate-100"
             />
             <button
-              onClick={() => handleDateChange(new Date().toISOString().split('T')[0])}
-              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30"
+              onClick={() => handleDateChange(getLocalIsoDate())}
+              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition-colors"
             >
               Today
             </button>
             <button
-              onClick={() => {
-                const d = new Date(selectedDate + 'T00:00:00');
-                d.setDate(d.getDate() + 1);
-                handleDateChange(d.toISOString().split('T')[0]);
-              }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300"
+              onClick={() => handleDateChange(addDays(selectedDate, 1))}
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Next Day"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -1600,12 +1636,12 @@ export const SessionsPage: React.FC = () => {
           <div className="flex items-center space-x-3">
             <button
               onClick={() => {
-                const m = new Date(selectedWeekMonday);
-                m.setDate(m.getDate() - 7);
-                setSelectedWeekMonday(m);
-                handleDateChange(m.toISOString().split('T')[0]);
+                const prevMon = new Date(selectedWeekMonday.getFullYear(), selectedWeekMonday.getMonth(), selectedWeekMonday.getDate() - 7);
+                setSelectedWeekMonday(prevMon);
+                handleDateChange(toLocalDateString(prevMon));
               }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300"
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Previous Week"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -1616,20 +1652,20 @@ export const SessionsPage: React.FC = () => {
               onClick={() => {
                 const todayMon = getMonday(new Date());
                 setSelectedWeekMonday(todayMon);
-                handleDateChange(todayMon.toISOString().split('T')[0]);
+                handleDateChange(toLocalDateString(todayMon));
               }}
-              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30"
+              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition-colors"
             >
               This Week
             </button>
             <button
               onClick={() => {
-                const m = new Date(selectedWeekMonday);
-                m.setDate(m.getDate() + 7);
-                setSelectedWeekMonday(m);
-                handleDateChange(m.toISOString().split('T')[0]);
+                const nextMon = new Date(selectedWeekMonday.getFullYear(), selectedWeekMonday.getMonth(), selectedWeekMonday.getDate() + 7);
+                setSelectedWeekMonday(nextMon);
+                handleDateChange(toLocalDateString(nextMon));
               }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300"
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Next Week"
             >
               <ChevronRight className="h-4 w-4" />
             </button>

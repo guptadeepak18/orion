@@ -40,7 +40,8 @@ async def create_session(request: Request, s_in: SessionCreate, db: AsyncSession
         pass
     try:
         session = await session_service.create_session(db, s_in)
-        return ResponseEnvelope(data=SessionResponse.model_validate(session))
+        resp = await session_service.format_single_session_response(db, session.id)
+        return ResponseEnvelope(data=resp)
     except FacultyComplianceException as fe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -117,7 +118,8 @@ async def update_session(
 ):
     try:
         session = await session_service.update_session(db, session_id, s_in)
-        return ResponseEnvelope(data=SessionResponse.model_validate(session))
+        resp = await session_service.format_single_session_response(db, session.id)
+        return ResponseEnvelope(data=resp)
     except SchedulerConflictException as ce:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

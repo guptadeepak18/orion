@@ -239,20 +239,21 @@ async def format_single_session_response(db: AsyncSession, session_id: UUID) -> 
     stmt = (
         select(Session)
         .options(
-            selectinload(Session.subject),
-            selectinload(Session.topic),
-            selectinload(Session.faculty_internal),
-            selectinload(Session.faculty_external),
-            selectinload(Session.original_subject),
-            selectinload(Session.original_faculty_internal),
-            selectinload(Session.original_faculty_external),
-            selectinload(Session.program),
-            selectinload(Session.batch),
+            joinedload(Session.subject),
+            joinedload(Session.topic),
+            joinedload(Session.faculty_internal),
+            joinedload(Session.faculty_external),
+            joinedload(Session.original_subject),
+            joinedload(Session.original_faculty_internal),
+            joinedload(Session.original_faculty_external),
+            joinedload(Session.program),
+            joinedload(Session.batch),
+            selectinload(Session.hyperbuild_activities).joinedload(HyperbuildActivity.subject),
         )
         .where(Session.id == session_id, Session.is_deleted == False)
     )
     res = await db.execute(stmt)
-    s = res.scalar_one_or_none()
+    s = res.unique().scalar_one_or_none()
     if not s:
         raise ValueError("Session not found")
 
@@ -797,14 +798,18 @@ async def get_session_by_id(db: AsyncSession, session_id: UUID) -> Optional[Sess
     stmt = (
         select(Session)
         .options(
-            selectinload(Session.batch),
-            selectinload(Session.subject),
-            selectinload(Session.program),
+            joinedload(Session.batch),
+            joinedload(Session.subject),
+            joinedload(Session.program),
+            joinedload(Session.topic),
+            joinedload(Session.faculty_internal),
+            joinedload(Session.faculty_external),
+            selectinload(Session.hyperbuild_activities).joinedload(HyperbuildActivity.subject),
         )
         .where(Session.id == session_id, Session.is_deleted == False)
     )
     res = await db.execute(stmt)
-    return res.scalar_one_or_none()
+    return res.unique().scalar_one_or_none()
 
 
 def normalize_specialization_domain(domain_str: Optional[str]) -> str:
