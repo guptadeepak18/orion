@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-1.5-flash"
     ANTHROPIC_API_KEY: str = ""
     
-    ENVIRONMENT: str = "local"
-    DEV_NOTIFICATION_OVERRIDE_EMAIL: str = "deepak.gupta@mile.education"
+    ENVIRONMENT: str = "production"
+    DEV_NOTIFICATION_OVERRIDE_EMAIL: str = ""
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost,http://127.0.0.1"
     FILE_STORAGE_PATH: str = "./uploads"
 

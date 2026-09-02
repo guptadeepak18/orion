@@ -267,37 +267,11 @@ def _send_via_hostinger_mail_api(api_key: str, to_email: str, full_name: str, ot
 
 def resolve_email_recipient(intended_email: str, subject: str, html_content: str) -> tuple[str, str, str]:
     """
-    Environment-aware recipient resolver:
-    - If ENVIRONMENT != "production" (e.g., local server development):
-      Redirects ALL email traffic to settings.DEV_NOTIFICATION_OVERRIDE_EMAIL (deepak.gupta@mile.education)
-      with clear debug headers indicating the original intended audience. Real students/faculty never receive test emails.
-    - If ENVIRONMENT == "production" (e.g., live deployed on dataxplore.club):
-      Dispatches directly to the live intended recipient with zero alterations.
+    Direct recipient delivery:
+    Delivers all email notifications directly to the user's registered profile email address.
     """
-    env = (getattr(settings, "ENVIRONMENT", "local") or "local").strip().lower()
-    override_email = (getattr(settings, "DEV_NOTIFICATION_OVERRIDE_EMAIL", "deepak.gupta@mile.education") or "deepak.gupta@mile.education").strip()
-
-    if env != "production":
-        logger.info(
-            f"[LOCAL EMAIL INTERCEPT] Environment is '{env}'. "
-            f"Redirecting email intended for '{intended_email}' -> '{override_email}'."
-        )
-        intercept_banner = f"""
-        <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #92400e; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);">
-          <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">
-            ⚠️ [LOCAL SERVER TEST DISPATCH]
-          </div>
-          <div>This email notification was triggered from your <strong>Local Development Server</strong>.</div>
-          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #f59e0b;">
-            <strong>Intended Audience:</strong> <code style="background: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #78350f;">{intended_email}</code>
-          </div>
-        </div>
-        """
-        modified_subject = f"[LOCAL TEST -> {intended_email}] {subject}"
-        modified_html = intercept_banner + html_content
-        return override_email, modified_subject, modified_html
-
-    return intended_email, subject, html_content
+    recipient = (intended_email or "").strip()
+    return recipient, subject, html_content
 
 
 def _send_raw_custom_html(target_email: str, subject: str, html_content: str) -> bool:
