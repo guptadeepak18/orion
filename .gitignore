@@ -33,6 +33,7 @@ backend/uploads/
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables & agent configs
 .env
 !.env.example
+.agents/
