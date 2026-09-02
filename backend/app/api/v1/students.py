@@ -38,11 +38,8 @@ async def list_students(
     q: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    students = await student_service.list_students(db, program_id=program_id, batch_id=batch_id, query=q)
-    result = []
-    for s in students:
-        result.append(await student_service.to_student_response_enriched(db, s))
-    return ResponseEnvelope(data=result)
+    results = await student_service.list_students_enriched_batch(db, program_id=program_id, batch_id=batch_id, query=q)
+    return ResponseEnvelope(data=results)
 
 
 @router.get(

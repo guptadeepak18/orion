@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.student import Student
 from app.models.academic import Program, Batch
@@ -195,34 +195,119 @@ def to_student_response(student: Student) -> StudentResponse:
     return resp
 
 
+async def list_students_enriched_batch(
+    db: AsyncSession,
+    program_id: Optional[UUID] = None,
+    batch_id: Optional[UUID] = None,
+    query: Optional[str] = None,
+) -> List[StudentResponse]:
+    from app.models.session import Session, StudentAttendance
+    from sqlalchemy import func
+
+    stmt = (
+        select(Student)
+        .options(
+            joinedload(Student.program),
+            joinedload(Student.batch),
+            selectinload(Student.divisions),
+        )
+        .where(Student.is_deleted == False)
+    )
+    if program_id:
+        stmt = stmt.where(Student.program_id == program_id)
+    if batch_id:
+        stmt = stmt.where(Student.batch_id == batch_id)
+    if query:
+        search_pattern = f"%{query}%"
+        stmt = stmt.where(
+            or_(
+                Student.full_name.ilike(search_pattern),
+                Student.first_name.ilike(search_pattern),
+                Student.last_name.ilike(search_pattern),
+                Student.prn_number.ilike(search_pattern),
+                Student.roll_no.ilike(search_pattern),
+                Student.email_official.ilike(search_pattern),
+                Student.email_personal.ilike(search_pattern),
+                Student.mobile_number.ilike(search_pattern),
+            )
+        )
+    stmt = stmt.order_by(Student.roll_no, Student.prn_number)
+    res = await db.execute(stmt)
+    students = list(res.unique().scalars().all())
+
+    if not students:
+        return []
+
+    # Batch aggregation in 2 single queries instead of 2 queries per student (N+1 eliminated)
+    batch_ids = list({s.batch_id for s in students if s.batch_id})
+    student_ids = [s.id for s in students]
+
+    batch_conducted_map = {}
+    if batch_ids:
+        sess_stmt = (
+            select(Session.batch_id, func.count(Session.id))
+            .where(
+                Session.batch_id.in_(batch_ids),
+                Session.is_deleted == False,
+                Session.attendance_status == "marked",
+            )
+            .group_by(Session.batch_id)
+        )
+        batch_conducted_map = dict((await db.execute(sess_stmt)).all())
+
+    student_attended_map = {}
+    if student_ids:
+        att_stmt = (
+            select(StudentAttendance.student_id, func.count(StudentAttendance.id))
+            .where(
+                StudentAttendance.student_id.in_(student_ids),
+                StudentAttendance.status.in_(["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"]),
+            )
+            .group_by(StudentAttendance.student_id)
+        )
+        student_attended_map = dict((await db.execute(att_stmt)).all())
+
+    results: List[StudentResponse] = []
+    for s in students:
+        resp = to_student_response(s)
+        conducted = batch_conducted_map.get(s.batch_id, 0) if s.batch_id else 0
+        attended = student_attended_map.get(s.id, 0)
+        resp.total_sessions_conducted = conducted
+        resp.total_sessions_attended = attended
+        if conducted > 0:
+            resp.attendance_percentage = round((attended / conducted) * 100.0, 2)
+        else:
+            resp.attendance_percentage = s.attendance_percentage or 100.0
+        results.append(resp)
+
+    return results
+
+
 async def to_student_response_enriched(db: AsyncSession, student: Student) -> StudentResponse:
     resp = to_student_response(student)
 
     if student.batch_id:
         from app.models.session import Session, StudentAttendance
+        from sqlalchemy import func
         sess_stmt = (
-            select(Session.id)
+            select(func.count(Session.id))
             .where(
                 Session.batch_id == student.batch_id,
                 Session.is_deleted == False,
                 Session.attendance_status == "marked"
             )
         )
-        s_res = await db.execute(sess_stmt)
-        marked_ids = list(s_res.scalars().all())
-        resp.total_sessions_conducted = len(marked_ids)
+        resp.total_sessions_conducted = (await db.execute(sess_stmt)).scalar() or 0
 
-        if marked_ids:
+        if resp.total_sessions_conducted > 0:
             att_stmt = (
-                select(StudentAttendance)
+                select(func.count(StudentAttendance.id))
                 .where(
                     StudentAttendance.student_id == student.id,
-                    StudentAttendance.session_id.in_(marked_ids),
                     StudentAttendance.status.in_(["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"])
                 )
             )
-            a_res = await db.execute(att_stmt)
-            resp.total_sessions_attended = len(list(a_res.scalars().all()))
+            resp.total_sessions_attended = (await db.execute(att_stmt)).scalar() or 0
             resp.attendance_percentage = round((resp.total_sessions_attended / resp.total_sessions_conducted) * 100.0, 2)
         else:
             resp.total_sessions_attended = 0

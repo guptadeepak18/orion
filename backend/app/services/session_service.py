@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.session import Session, Timetable, TimetableRevision, StudentAttendance, HyperbuildActivity
 from app.models.academic import Subject, Topic, Batch
@@ -289,16 +289,16 @@ async def list_sessions(
     stmt = (
         select(Session)
         .options(
-            selectinload(Session.subject),
-            selectinload(Session.topic),
-            selectinload(Session.faculty_internal),
-            selectinload(Session.faculty_external),
-            selectinload(Session.original_subject),
-            selectinload(Session.original_faculty_internal),
-            selectinload(Session.original_faculty_external),
-            selectinload(Session.program),
-            selectinload(Session.batch),
-            selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
+            joinedload(Session.subject),
+            joinedload(Session.topic),
+            joinedload(Session.faculty_internal),
+            joinedload(Session.faculty_external),
+            joinedload(Session.original_subject),
+            joinedload(Session.original_faculty_internal),
+            joinedload(Session.original_faculty_external),
+            joinedload(Session.program),
+            joinedload(Session.batch),
+            selectinload(Session.hyperbuild_activities).joinedload(HyperbuildActivity.subject),
         )
         .where(Session.is_deleted == False)
     )

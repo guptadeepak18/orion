@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
+from app.core.cache import memory_cache
 from app.models.academic import Program, AcademicYear, Semester, Batch, Subject, Topic, Division, SubjectProgram, SubjectBatch
 from app.schemas.academic import (
     ProgramCreate, ProgramUpdate,
@@ -23,6 +24,7 @@ async def create_program(db: AsyncSession, p_in: ProgramCreate) -> Program:
     db.add(program)
     await db.commit()
     await db.refresh(program)
+    memory_cache.invalidate_prefix("academic:programs")
     return program
 
 
@@ -33,9 +35,14 @@ async def get_program(db: AsyncSession, program_id: UUID) -> Optional[Program]:
 
 
 async def list_programs(db: AsyncSession) -> List[Program]:
+    cached = memory_cache.get("academic:programs")
+    if cached is not None:
+        return cached
     stmt = select(Program).order_by(Program.name)
     res = await db.execute(stmt)
-    return list(res.scalars().all())
+    result = list(res.scalars().all())
+    memory_cache.set("academic:programs", result, ttl_seconds=60)
+    return result
 
 
 async def update_program(db: AsyncSession, program_id: UUID, p_in: ProgramUpdate) -> Optional[Program]:
@@ -46,6 +53,7 @@ async def update_program(db: AsyncSession, program_id: UUID, p_in: ProgramUpdate
         setattr(program, field, value)
     await db.commit()
     await db.refresh(program)
+    memory_cache.invalidate_prefix("academic:programs")
     return program
 
 
@@ -55,6 +63,7 @@ async def delete_program(db: AsyncSession, program_id: UUID) -> bool:
         return False
     await db.delete(program)
     await db.commit()
+    memory_cache.invalidate_prefix("academic:programs")
     return True
 
 
@@ -130,6 +139,7 @@ async def create_batch(db: AsyncSession, b_in: BatchCreate) -> Batch:
     db.add(batch)
     await db.commit()
     await db.refresh(batch)
+    memory_cache.invalidate_prefix("academic:batches")
     return batch
 
 
@@ -140,6 +150,11 @@ async def get_batch(db: AsyncSession, batch_id: UUID) -> Optional[Batch]:
 
 
 async def list_batches(db: AsyncSession, program_id: Optional[UUID] = None) -> List[Batch]:
+    cache_key = f"academic:batches:{program_id}"
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     from app.models.student import Student
     from sqlalchemy import func
 
@@ -160,6 +175,7 @@ async def list_batches(db: AsyncSession, program_id: Optional[UUID] = None) -> L
     for b in batches:
         b.student_count = counts.get(b.id, 0)
 
+    memory_cache.set(cache_key, batches, ttl_seconds=60)
     return batches
 
 
@@ -171,6 +187,7 @@ async def update_batch(db: AsyncSession, batch_id: UUID, b_in: BatchUpdate) -> O
         setattr(batch, field, value)
     await db.commit()
     await db.refresh(batch)
+    memory_cache.invalidate_prefix("academic:batches")
     return batch
 
 
@@ -180,6 +197,7 @@ async def delete_batch(db: AsyncSession, batch_id: UUID) -> bool:
         return False
     batch.is_deleted = True
     await db.commit()
+    memory_cache.invalidate_prefix("academic:batches")
     return True
 
 
@@ -243,6 +261,7 @@ async def create_subject(db: AsyncSession, sub_in: SubjectCreate) -> Subject:
             subject.batch_id = b_id
 
     await db.commit()
+    memory_cache.invalidate_prefix("academic:subjects")
     return await get_subject(db, subject.id)
 
 
@@ -266,6 +285,11 @@ async def list_subjects(
     trimester: Optional[int] = None,
     is_archived: Optional[bool] = False,
 ) -> List[Subject]:
+    cache_key = f"academic:subjects:{batch_id}:{program_id}:{trimester}:{is_archived}"
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     stmt = (
         select(Subject)
         .options(
@@ -292,7 +316,9 @@ async def list_subjects(
 
     stmt = stmt.order_by(Subject.code)
     res = await db.execute(stmt)
-    return list(res.scalars().all())
+    results = list(res.scalars().all())
+    memory_cache.set(cache_key, results, ttl_seconds=60)
+    return results
 
 
 async def archive_subject(db: AsyncSession, subject_id: UUID) -> Optional[Subject]:
@@ -301,6 +327,7 @@ async def archive_subject(db: AsyncSession, subject_id: UUID) -> Optional[Subjec
         return None
     subject.is_archived = True
     await db.commit()
+    memory_cache.invalidate_prefix("academic:subjects")
     return await get_subject(db, subject_id)
 
 
@@ -310,6 +337,7 @@ async def unarchive_subject(db: AsyncSession, subject_id: UUID) -> Optional[Subj
         return None
     subject.is_archived = False
     await db.commit()
+    memory_cache.invalidate_prefix("academic:subjects")
     return await get_subject(db, subject_id)
 
 
