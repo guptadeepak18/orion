@@ -3,7 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.auth import User, Role, UserRole
 from app.schemas.user import UserCreate, UserUpdate
@@ -245,7 +245,7 @@ async def list_users(
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    stmt = select(User).options(selectinload(User.roles)).where(User.email == email.strip().lower())
+    stmt = select(User).options(joinedload(User.roles)).where(User.email == email.strip().lower())
     res = await db.execute(stmt)
     return res.unique().scalar_one_or_none()
 
@@ -253,7 +253,7 @@ async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
 async def get_user_by_id(db: AsyncSession, user_id: UUID | str) -> Optional[User]:
     if isinstance(user_id, str):
         user_id = UUID(user_id)
-    stmt = select(User).options(selectinload(User.roles)).where(User.id == user_id)
+    stmt = select(User).options(joinedload(User.roles)).where(User.id == user_id)
     res = await db.execute(stmt)
     return res.unique().scalar_one_or_none()
 

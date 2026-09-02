@@ -51,7 +51,7 @@ export const LoginPage: React.FC = () => {
       if (res.data?.data) {
         const { access_token, refresh_token, user } = res.data.data;
         setAuth(user, access_token, refresh_token);
-        window.location.href = '/dashboard';
+        navigate('/dashboard', { replace: true });
       } else {
         setError('Invalid response from server. Please try again.');
       }

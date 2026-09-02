@@ -35,18 +35,10 @@ async def _neon_keepalive_loop():
 async def lifespan(app: FastAPI):
     keepalive_task = None
     try:
-        # Initialize DB tables for dev/testing if not created by Alembic
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        
-        # Seed initial roles and admin
-        async with AsyncSessionLocal() as db:
-            await seed_initial_data(db)
-
-        # Start keepalive heartbeat task
+        # Start keepalive heartbeat task to keep connection warm
         keepalive_task = asyncio.create_task(_neon_keepalive_loop())
     except Exception as e:
-        print(f"Startup DB initialization notice: {e}")
+        print(f"Startup notice: {e}")
 
     yield
 
