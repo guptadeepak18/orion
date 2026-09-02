@@ -15,18 +15,33 @@ for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&s
         db_url = db_url.replace(ssl_param, "")
         connect_args["ssl"] = "require"
 
+# For asyncpg + Neon PgBouncer pooler, disable prepared statement cache and add command timeout
+if "asyncpg" in db_url:
+    connect_args["statement_cache_size"] = 0
+    connect_args["command_timeout"] = 15
+
 # Handle SQLite for testing if needed
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
-
-engine = create_async_engine(
-    db_url,
-    echo=False,
-    future=True,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    connect_args=connect_args
-)
+    engine = create_async_engine(
+        db_url,
+        echo=False,
+        future=True,
+        connect_args=connect_args,
+    )
+else:
+    # High-concurrency async connection pool for PostgreSQL (100+ concurrent users)
+    engine = create_async_engine(
+        db_url,
+        echo=False,
+        future=True,
+        pool_size=50,
+        max_overflow=100,
+        pool_timeout=10.0,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

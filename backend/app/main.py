@@ -1,8 +1,11 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy import text
 import logging
 
 import app.models  # Register all models on Base.metadata
@@ -15,8 +18,22 @@ from app.schemas.common import ErrorEnvelope, ErrorDetails
 logger = logging.getLogger("app.validation_debug")
 
 
+async def _neon_keepalive_loop():
+    """Lightweight background heartbeat ping every 3 minutes to prevent Neon serverless auto-suspension during daytime operations."""
+    while True:
+        try:
+            await asyncio.sleep(180)  # 3 minutes
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    keepalive_task = None
     try:
         # Initialize DB tables for dev/testing if not created by Alembic
         async with engine.begin() as conn:
@@ -25,10 +42,16 @@ async def lifespan(app: FastAPI):
         # Seed initial roles and admin
         async with AsyncSessionLocal() as db:
             await seed_initial_data(db)
+
+        # Start keepalive heartbeat task
+        keepalive_task = asyncio.create_task(_neon_keepalive_loop())
     except Exception as e:
         print(f"Startup DB initialization notice: {e}")
 
     yield
+
+    if keepalive_task:
+        keepalive_task.cancel()
 
 
 app = FastAPI(
@@ -36,6 +59,9 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan,
 )
+
+# GZip compression for responses > 1KB (reduces payload size by up to 80%)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Set CORS
 app.add_middleware(

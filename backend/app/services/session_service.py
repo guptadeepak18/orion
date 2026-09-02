@@ -311,7 +311,7 @@ async def list_sessions(
 
     stmt = stmt.order_by(Session.session_date, Session.start_time)
     res = await db.execute(stmt)
-    sessions = list(res.scalars().all())
+    sessions = list(res.unique().scalars().all())
 
     results: List[SessionResponse] = []
     running_counts: dict = {}

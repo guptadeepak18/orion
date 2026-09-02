@@ -138,7 +138,7 @@ class SessionResponse(BaseModel):
     faculty_name: Optional[str] = None
     program_name: Optional[str] = None
     batch_name: Optional[str] = None
-    hyperbuild_activities: Optional[List[Dict[str, Any]]] = None
+    hyperbuild_activities: Optional[List[Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
