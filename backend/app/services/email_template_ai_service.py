@@ -160,9 +160,9 @@ def _synthesize_template_heuristic(
   <style>
     body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }}
     .card {{ max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.25); }}
-    .header {{ background: linear-gradient(135deg, {palette['primary']} 0%, {palette['accent']} 100%); padding: 36px 36px; text-align: left; }}
-    .header h1 {{ color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }}
-    .header p {{ color: rgba(255,255,255,0.85); margin: 6px 0 0; font-size: 13px; font-weight: 500; }}
+    .header {{ background: linear-gradient(135deg, {palette['primary']} 0%, {palette['accent']} 100%); padding: 28px 32px; text-align: left; }}
+    .header h1 {{ color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }}
+    .header p {{ color: rgba(255,255,255,0.85); margin: 4px 0 0; font-size: 13px; font-weight: 500; }}
     .content {{ padding: 36px; }}
     .content p {{ font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }}
     .callout-box {{ background: {palette['light']}; border: 1px solid {palette['border']}; border-radius: 14px; padding: 22px; margin: 24px 0; }}
@@ -173,8 +173,24 @@ def _synthesize_template_heuristic(
 <body>
   <div class="card">
     <div class="header">
-      <h1>{title}</h1>
-      <p>{{{{app_name}}}} — Campus Notification</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>{title}</h1>
+            <p>{{{{app_name}}}} — Campus Notification</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{{{{variables[0]}}}}}</strong>,</p>
@@ -192,10 +208,10 @@ def _synthesize_template_heuristic(
         <a href="{{{{action_url}}}}" class="btn">View on Orion Portal →</a>
       </div>
       
-      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations & CRC Team</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.<br />
+      © 2026 Lexicon MILE · Orion Academic Portal<br />
       If you have questions, please reach out to <a href="mailto:{{{{support_email}}}}" style="color: {palette['accent']}; text-decoration: none;">{{{{support_email}}}}</a>.
     </div>
   </div>

@@ -29,9 +29,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #0e7490 0%, #06b6d4 100%); padding: 32px 36px; text-align: left; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-    .header p { color: #cffafe; margin: 6px 0 0; font-size: 13px; font-weight: 500; }
+    .header { background: linear-gradient(135deg, #0e7490 0%, #06b6d4 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+    .header p { color: #cffafe; margin: 4px 0 0; font-size: 13px; font-weight: 500; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .otp-wrapper { background: #f0fdfa; border: 2px dashed #0d9488; border-radius: 14px; padding: 24px; text-align: center; margin: 28px 0; }
@@ -43,8 +43,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>{{app_name}}</h1>
-      <p>Student Portal Verification</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Student Portal Verification</h1>
+            <p>{{app_name}} — Account Onboarding</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{full_name}}</strong>,</p>
@@ -56,10 +72,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       </div>
       
       <p>If you did not submit this request, please disregard this email or contact support at <a href="mailto:{{support_email}}" style="color: #0891b2;">{{support_email}}</a>.</p>
-      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations & CRC Team</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -81,9 +97,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%); padding: 32px 36px; text-align: left; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #e0f2fe; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #e0f2fe; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .otp-wrapper { background: #f0f9ff; border: 2px dashed #0284c7; border-radius: 14px; padding: 24px; text-align: center; margin: 28px 0; }
@@ -95,8 +111,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Password Reset Request 🔐</h1>
-      <p>{{app_name}} — Account Security</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Password Reset Request 🔐</h1>
+            <p>{{app_name}} — Account Security</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{full_name}}</strong>,</p>
@@ -108,10 +140,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       </div>
       
       <p>If you did not request a password change, please disregard this email or report to <a href="mailto:{{support_email}}" style="color: #0284c7;">{{support_email}}</a> immediately.</p>
-      <p style="margin-top: 24px;">Warm regards,<br /><strong>IT & Security Cell</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -133,9 +165,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 32px 36px; text-align: left; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #d1fae5; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #d1fae5; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .badge-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; margin: 20px 0; }
@@ -146,8 +178,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Application Approved 🎉</h1>
-      <p>{{app_name}} — Student Portal</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Application Approved 🎉</h1>
+            <p>{{app_name}} — Student Portal</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Congratulations <strong>{{full_name}}</strong>,</p>
@@ -166,10 +214,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <div style="text-align: center;">
         <a href="{{login_url}}" class="btn">Sign In to Orion Portal →</a>
       </div>
-      <p style="margin-top: 24px;">Welcome aboard,<br /><strong>Academic Operations & CRC Team</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Welcome aboard,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -191,9 +239,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%); padding: 32px 36px; text-align: left; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #ffe4e6; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ffe4e6; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .reason-box { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 18px; margin: 20px 0; color: #9f1239; font-size: 14px; line-height: 1.5; }
@@ -203,8 +251,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Application Status Update</h1>
-      <p>{{app_name}} — Student Portal</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Application Status Update</h1>
+            <p>{{app_name}} — Student Portal</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{full_name}}</strong>,</p>
@@ -219,7 +283,7 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -241,9 +305,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #e0e7ff; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #e0e7ff; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .session-card { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 14px; padding: 20px; margin: 20px 0; }
@@ -253,8 +317,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Class Session Scheduled 📅</h1>
-      <p>{{app_name}} — Timetable Update</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Class Session Scheduled 📅</h1>
+            <p>{{app_name}} — Timetable Update</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Hello <strong>{{recipient_name}}</strong>,</p>
@@ -275,7 +355,7 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -297,9 +377,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #fee2e2; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #fee2e2; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .alert-card { background: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; padding: 20px; margin: 20px 0; color: #991b1b; }
@@ -309,8 +389,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Class Session Cancelled ⚠️</h1>
-      <p>{{app_name}} — Timetable Notification</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Class Session Cancelled ⚠️</h1>
+            <p>{{app_name}} — Timetable Notification</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{recipient_name}}</strong>,</p>
@@ -327,7 +423,7 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -349,9 +445,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #ea580c 0%, #f97316 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #ffedd5; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #ea580c 0%, #f97316 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ffedd5; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .absent-card { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 20px; margin: 20px 0; color: #9a3412; }
@@ -361,8 +457,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Lecture Absence Notice</h1>
-      <p>{{app_name}} — Attendance Record</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Lecture Absence Notice</h1>
+            <p>{{app_name}} — Attendance Record</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{student_name}}</strong>,</p>
@@ -376,10 +488,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       </div>
       
       <p>If you were present or have an official approved on-duty/medical leave, please submit an Attendance Correction Request through your student portal within 48 hours.</p>
-      <p style="margin-top: 24px;">Sincerely,<br /><strong>Attendance Cell</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -401,9 +513,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #fef3c7; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #fef3c7; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .alert-card { background: #fffbeb; border: 1px solid #fde68a; border-radius: 14px; padding: 20px; margin: 20px 0; }
@@ -413,8 +525,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Attendance Compliance Alert ⚠️</h1>
-      <p>{{app_name}} — Academic Operations</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Attendance Compliance Alert ⚠️</h1>
+            <p>{{app_name}} — Academic Operations</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{student_name}}</strong>,</p>
@@ -429,10 +557,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       </div>
       
       <p>Consistent attendance is mandatory for examination eligibility. Please consult your faculty mentor immediately to regularize pending classes.</p>
-      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations & Attendance Cell</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -454,9 +582,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #f3e8ff; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #f3e8ff; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .material-card { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 14px; padding: 20px; margin: 20px 0; color: #581c87; }
@@ -467,8 +595,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>New Study Material 📚</h1>
-      <p>{{app_name}} — Course LMS</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>New Study Material 📚</h1>
+            <p>{{app_name}} — Course LMS</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Hello <strong>{{student_name}}</strong>,</p>
@@ -487,7 +631,7 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <p style="margin-top: 24px;">Happy Learning,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -509,9 +653,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #ccfbf1; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ccfbf1; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .drive-card { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 14px; padding: 20px; margin: 20px 0; color: #115e59; }
@@ -522,8 +666,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Recruitment Drive Announcement 💼</h1>
-      <p>{{app_name}} — Corporate Relations Cell (CRC)</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Recruitment Drive Announcement 💼</h1>
+            <p>{{app_name}} — Corporate Relations</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Dear <strong>{{student_name}}</strong>,</p>
@@ -544,10 +704,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
         <a href="{{apply_url}}" class="btn">Apply on Placement Portal →</a>
       </div>
       
-      <p style="margin-top: 24px;">Best wishes,<br /><strong>Corporate Relations & Placement Cell</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Best wishes,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -569,9 +729,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #15803d 0%, #22c55e 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #dcfce7; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #15803d 0%, #22c55e 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #dcfce7; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .shortlist-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 20px; margin: 20px 0; color: #166534; }
@@ -581,8 +741,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>Shortlisted for Interview 🌟</h1>
-      <p>{{app_name}} — Corporate Relations Cell</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>Shortlisted for Interview 🌟</h1>
+            <p>{{app_name}} — Corporate Relations</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Congratulations <strong>{{student_name}}</strong>,</p>
@@ -599,10 +775,10 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       </div>
       
       <p>Please ensure you dress in formal corporate attire and carry printed copies of your resume and portfolio.</p>
-      <p style="margin-top: 24px;">All the best,<br /><strong>Corporate Relations Team</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">All the best,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
@@ -624,9 +800,9 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-    .header { background: linear-gradient(135deg, #0e7490 0%, #0284c7 100%); padding: 32px 36px; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; }
-    .header p { color: #bae6fd; margin: 6px 0 0; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #0e7490 0%, #0284c7 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #bae6fd; margin: 4px 0 0; font-size: 13px; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .btn { display: inline-block; background: #0284c7; color: #ffffff !important; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0; }
@@ -636,8 +812,24 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 <body>
   <div class="card">
     <div class="header">
-      <h1>{{title}}</h1>
-      <p>{{app_name}} Announcement</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>{{title}}</h1>
+            <p>{{app_name}} Announcement</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>Hello <strong>{{recipient_name}}</strong>,</p>
@@ -649,17 +841,16 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
         <a href="{{action_url}}" class="btn">{{action_button_text}}</a>
       </div>
       
-      <p style="margin-top: 24px;">Best regards,<br /><strong>Administration</strong><br />Lexicon MILE</p>
+      <p style="margin-top: 24px;">Best regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>
 </html>""",
     },
 ]
-
 
 def render_placeholders(template_str: str, context: Dict[str, Any]) -> str:
     """Replaces {{variable_name}} placeholders with string values from context."""

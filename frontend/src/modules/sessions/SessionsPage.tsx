@@ -78,6 +78,19 @@ export interface Session {
   faculty_name?: string;
   program_name?: string;
   batch_name?: string;
+  hyperbuild_activities?: Array<{
+    id: string;
+    activity_no: number;
+    title: string;
+    start_time: string;
+    end_time: string;
+    subject_id?: string;
+    subject_name?: string;
+    subject_code?: string;
+    duration_minutes: number;
+    submission_type?: string;
+    status?: string;
+  }>;
 }
 
 interface StudentAttendanceRecord {
@@ -741,30 +754,58 @@ export const SessionsPage: React.FC = () => {
   const handleOpenAddClass = (syncUrl = true) => {
     document.body.style.overflow = 'hidden';
     setEditingSession(null);
+    const initialBatch = allBatches[0]?.id || '';
+    const initialProg = allBatches[0]?.program_id || programs[0]?.id || '';
     setForm({
       ...defaultForm,
+      program_id: initialProg,
+      batch_id: initialBatch,
       session_date: selectedDate,
       session_type: 'lecture',
+      lecture_number: '',
+    });
+    setHyperbuildActivities([]);
+    setCreateError(null);
+    setCreateSuccess(false);
+    setShowClassModal(true);
+    if (syncUrl) updateUrlModal('scheduleClass');
+  };
+
+  const handleOpenAddHyperbuild = (syncUrl = true) => {
+    document.body.style.overflow = 'hidden';
+    setEditingSession(null);
+    const initialBatch = allBatches[0]?.id || '';
+    const initialProg = allBatches[0]?.program_id || programs[0]?.id || '';
+    setForm({
+      ...defaultForm,
+      program_id: initialProg,
+      batch_id: initialBatch,
+      session_date: selectedDate,
+      session_type: 'hyperbuild',
+      start_time: '10:00',
+      end_time: '13:00',
+      subject_id: '',
+      topic_id: '',
       lecture_number: '',
     });
     setHyperbuildActivities([
       {
         activity_no: 1,
-        title: 'Activity 1',
+        title: 'Activity 1: Case Briefing & Context',
         subject_id: '',
         start_time: '10:00',
-        end_time: '10:45',
-        duration_minutes: 45,
+        end_time: '11:15',
+        duration_minutes: 75,
         submission_type: 'link_or_text',
         instructions: '',
       },
       {
         activity_no: 2,
-        title: 'Activity 2',
+        title: 'Activity 2: Execution Sprint & Deliverables',
         subject_id: '',
-        start_time: '10:45',
-        end_time: '11:45',
-        duration_minutes: 60,
+        start_time: '11:15',
+        end_time: '13:00',
+        duration_minutes: 105,
         submission_type: 'link_or_text',
         instructions: '',
       }
@@ -772,7 +813,7 @@ export const SessionsPage: React.FC = () => {
     setCreateError(null);
     setCreateSuccess(false);
     setShowClassModal(true);
-    if (syncUrl) updateUrlModal('scheduleClass');
+    if (syncUrl) updateUrlModal('scheduleHyperbuild');
   };
 
   // ── Open Edit Class Modal ─────────────────────────────────────────────────
@@ -1222,6 +1263,8 @@ export const SessionsPage: React.FC = () => {
 
     if (urlModal === 'scheduleClass' && !showClassModal) {
       handleOpenAddClass(false);
+    } else if (urlModal === 'scheduleHyperbuild' && !showClassModal) {
+      handleOpenAddHyperbuild(false);
     } else if (urlModal === 'importSessionsCsv' && !showUploadModal) {
       handleOpenUploadModal(false);
     } else if (urlId && sessions.length > 0) {
@@ -1275,8 +1318,9 @@ export const SessionsPage: React.FC = () => {
       accessor: (r) => (
         <div className="text-xs space-y-0.5">
           <p className="font-bold text-slate-900 dark:text-white">
-            {r.subject_code ? `${r.subject_code} · ` : ''}{r.subject_name || 'Academic Class'}
-            {(r.lecture_number || r.session_type === 'lecture') && r.session_type !== 'hyperbuild' ? ` (Lecture - ${r.lecture_number || 1})` : ''}
+            {r.session_type === 'hyperbuild'
+              ? 'HyperBuild Lab Session'
+              : `${r.subject_code ? `${r.subject_code} · ` : ''}${r.subject_name || 'Academic Class'}${(r.lecture_number || r.session_type === 'lecture') ? ` (Lecture - ${r.lecture_number || 1})` : ''}`}
           </p>
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-slate-500 dark:text-slate-400 font-medium">
@@ -1429,10 +1473,17 @@ export const SessionsPage: React.FC = () => {
             </button>
             <button
               onClick={() => handleOpenCreateEvent()}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors shadow-xs cursor-pointer"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors shadow-xs cursor-pointer"
             >
-              <Plus className="h-3.5 w-3.5 text-purple-600" />
+              <Calendar className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
               <span>Schedule Event</span>
+            </button>
+            <button
+              onClick={() => handleOpenAddHyperbuild()}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors shadow-xs cursor-pointer"
+            >
+              <Zap className="h-3.5 w-3.5 text-amber-500" />
+              <span>Schedule HyperBuild</span>
             </button>
             <button
               onClick={() => handleOpenAddClass()}
@@ -1629,52 +1680,99 @@ export const SessionsPage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {dailySessions.map((sess) => (
+              {dailySessions.map((sess) => {
+                const isHyper = sess.session_type === 'hyperbuild';
+                return (
                 <div
                   key={sess.id}
-                  className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-cyan-500/40"
+                  className={`p-4 rounded-2xl bg-white dark:bg-slate-900 border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                    isHyper
+                      ? 'border-amber-200 dark:border-amber-900/60 hover:border-amber-400 bg-amber-50/10 dark:bg-amber-950/10'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/40'
+                  }`}
                 >
                   <div className="flex items-start space-x-4">
-                    <div className="p-3 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-center min-w-[100px]">
-                      <Clock className="h-4 w-4 mx-auto mb-1" />
-                      <p className="font-mono text-xs font-bold">{sess.start_time} - {sess.end_time}</p>
+                    <div className={`p-3 rounded-xl border text-center min-w-[105px] ${
+                      isHyper
+                        ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-400'
+                        : 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
+                    }`}>
+                      {isHyper ? (
+                        <Zap className="h-4 w-4 mx-auto mb-1 fill-amber-500 text-amber-500" />
+                      ) : (
+                        <Clock className="h-4 w-4 mx-auto mb-1" />
+                      )}
+                      <p className="font-mono text-xs font-bold">{sess.start_time?.slice(0, 5)} - {sess.end_time?.slice(0, 5)}</p>
                       <p className="text-[10px] text-slate-500 font-medium">{sess.duration_minutes} mins</p>
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2 flex-wrap gap-1">
                         <span className="font-bold text-slate-900 dark:text-white text-base">
-                          {sess.subject_code ? `${sess.subject_code} · ` : ''}{sess.subject_name || 'Academic Class'}
-                          {(sess.lecture_number || sess.session_type === 'lecture') && sess.session_type !== 'hyperbuild' ? ` (Lecture - ${sess.lecture_number || 1})` : ''}
+                          {isHyper
+                            ? 'HyperBuild Lab Session'
+                            : `${sess.subject_code ? `${sess.subject_code} · ` : ''}${sess.subject_name || 'Academic Class'}${(sess.lecture_number || sess.session_type === 'lecture') ? ` (Lecture - ${sess.lecture_number || 1})` : ''}`}
                         </span>
                         <StatusBadge status={sess.status} />
                       </div>
 
-                      <p className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
-                        <span>Session Type:</span>
-                        <span className="inline-flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800 text-[11px]">
-                          <BookOpen className="h-3 w-3" />
-                          {formatSessionType(sess.session_type, sess.hyperbuild_activity_no)}
-                        </span>
-                        {sess.notes && (
-                          <span className="text-slate-400 dark:text-slate-500 font-normal truncate max-w-xs">
-                            · {sess.notes}
-                          </span>
+                      <div className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                        {isHyper ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {sess.hyperbuild_activities && sess.hyperbuild_activities.length > 0 ? (
+                              sess.hyperbuild_activities.map((act) => (
+                                <span
+                                  key={act.id || act.activity_no}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-semibold"
+                                >
+                                  <span>{act.subject_name || act.subject_code || 'Subject'} - Activity {act.activity_no}</span>
+                                  <span className="font-mono text-[11px] text-amber-700 dark:text-amber-400 font-normal">
+                                    ({act.start_time?.slice(0, 5)} - {act.end_time?.slice(0, 5)})
+                                  </span>
+                                </span>
+                              ))
+                            ) : (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800 text-[11px]">
+                                <Zap className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                HyperBuild Lab Session
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <span className="inline-flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800 text-[11px]">
+                              <BookOpen className="h-3 w-3" />
+                              {formatSessionType(sess.session_type, sess.hyperbuild_activity_no)}
+                            </span>
+                            {sess.topic_name && (
+                              <span className="text-slate-500 dark:text-slate-400 font-normal">
+                                · Topic: <strong className="text-slate-700 dark:text-slate-200">{sess.topic_name}</strong>
+                              </span>
+                            )}
+                          </>
                         )}
-                      </p>
+                      </div>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-500">
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs text-slate-500">
                         <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300">
                           <Users className="h-3.5 w-3.5 text-indigo-500" />
-                          {sess.faculty_name || (sess.faculty_type === 'internal' ? 'Internal Faculty' : 'Visiting Expert')}
-                          <span className="px-1.5 py-0.2 rounded text-[10px] uppercase font-bold bg-slate-100 dark:bg-slate-800 text-slate-600">
+                          <span>{sess.faculty_name || (sess.faculty_type === 'internal' ? 'Internal Faculty' : 'Visiting Expert')}</span>
+                          <span className="px-1.5 py-0.2 rounded text-[10px] uppercase font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                             {sess.faculty_type}
                           </span>
                         </span>
                         <span>•</span>
-                        <span className="font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
-                          Classroom: {sess.venue} ({sess.mode})
+                        <span className="font-medium text-cyan-700 dark:text-cyan-400 flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-cyan-500" />
+                          <span>{sess.venue}</span>
+                          <span className="text-slate-400 font-normal">({sess.mode})</span>
                         </span>
+                        {sess.notes && !isHyper && (
+                          <>
+                            <span>•</span>
+                            <span className="text-slate-400 dark:text-slate-500 italic truncate max-w-xs">{sess.notes}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1740,7 +1838,8 @@ export const SessionsPage: React.FC = () => {
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </Card>
@@ -1808,8 +1907,9 @@ export const SessionsPage: React.FC = () => {
                           {/* Subject Code & Name */}
                           <div>
                             <p className="font-bold text-xs text-slate-900 dark:text-white leading-snug">
-                              {s.subject_code ? `${s.subject_code} · ` : ''}{s.subject_name || s.notes || 'Class'}
-                              {(s.lecture_number || s.session_type === 'lecture') && s.session_type !== 'hyperbuild' ? ` (Lecture - ${s.lecture_number || 1})` : ''}
+                              {s.session_type === 'hyperbuild'
+                                ? 'HyperBuild Lab Session'
+                                : `${s.subject_code ? `${s.subject_code} · ` : ''}${s.subject_name || 'Academic Class'}${(s.lecture_number || s.session_type === 'lecture') ? ` (Lecture - ${s.lecture_number || 1})` : ''}`}
                             </p>
                           </div>
 
@@ -2420,10 +2520,27 @@ export const SessionsPage: React.FC = () => {
           <div className="glass-panel w-full max-w-2xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center space-x-2">
-                <BookOpen className="h-5 w-5 text-cyan-500" />
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  {editingSession ? 'Edit Scheduled Class' : 'Schedule New Class'}
-                </h3>
+                {form.session_type === 'hyperbuild' ? (
+                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
+                    <Zap className="h-5 w-5 fill-amber-500 text-amber-500" />
+                  </div>
+                ) : (
+                  <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-500">
+                    <BookOpen className="h-5 w-5 text-cyan-500" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    {form.session_type === 'hyperbuild'
+                      ? (editingSession ? 'Edit HyperBuild Lab' : 'Schedule HyperBuild Lab')
+                      : (editingSession ? 'Edit Academic Class' : 'Schedule Academic Class')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {form.session_type === 'hyperbuild'
+                      ? 'Configure master lab slot and sequential modular activities with multi-subject credit.'
+                      : 'Schedule standard lectures, tutorials, and practical labs with timetable conflict prevention.'}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowClassModal(false)}
@@ -2456,26 +2573,29 @@ export const SessionsPage: React.FC = () => {
             >
               {/* Session Type & Mode */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Session Type" required>
-                  <select
-                    value={form.session_type}
-                    onChange={(e) => {
-                      setField('session_type', e.target.value);
-                      if (e.target.value === 'hyperbuild' && hyperbuildActivities.length === 0) {
-                        handleAddHyperbuildActivity();
-                      }
-                    }}
-                    className={selectClass}
-                  >
-                    <option value="hyperbuild">HyperBuild Lab</option>
-                    <option value="lecture">Lecture</option>
-                    <option value="tutorial">Tutorial</option>
-                    <option value="lab">Practical Lab</option>
-                    <option value="seminar">Seminar</option>
-                    <option value="case_discussion">Case Discussion</option>
-                    <option value="assessment">Assessment</option>
-                  </select>
-                </Field>
+                {form.session_type === 'hyperbuild' ? (
+                  <Field label="Session Type">
+                    <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 h-[38px]">
+                      <Zap className="h-4 w-4 fill-amber-500 text-amber-500" />
+                      <span>HyperBuild Lab (Modular Activities)</span>
+                    </div>
+                  </Field>
+                ) : (
+                  <Field label="Session Type" required>
+                    <select
+                      value={form.session_type}
+                      onChange={(e) => setField('session_type', e.target.value)}
+                      className={selectClass}
+                    >
+                      <option value="lecture">Lecture</option>
+                      <option value="tutorial">Tutorial</option>
+                      <option value="lab">Practical Lab</option>
+                      <option value="seminar">Seminar</option>
+                      <option value="case_discussion">Case Discussion</option>
+                      <option value="assessment">Assessment</option>
+                    </select>
+                  </Field>
+                )}
 
                 <Field label="Delivery Mode">
                   <select

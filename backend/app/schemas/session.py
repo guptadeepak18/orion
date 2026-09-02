@@ -138,6 +138,7 @@ class SessionResponse(BaseModel):
     faculty_name: Optional[str] = None
     program_name: Optional[str] = None
     batch_name: Optional[str] = None
+    hyperbuild_activities: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -292,6 +293,7 @@ class SessionAttendanceSheetResponse(BaseModel):
     subject_code: Optional[str] = None
     course_category: Optional[str] = "core"
     elective_domain: Optional[str] = None
+    session_type: Optional[str] = "lecture"
     session_date: date
     start_time: time
     end_time: time

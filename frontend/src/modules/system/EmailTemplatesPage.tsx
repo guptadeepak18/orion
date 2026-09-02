@@ -109,7 +109,7 @@ const DEFAULT_VISUAL_STATE: VisualEmailState = {
   buttonUrl: '{{action_url}}',
   buttonColor: '#0891b2',
   footerSignOff: 'Warm regards,',
-  footerTeam: 'Academic Operations & CRC Team\nLexicon MILE',
+  footerTeam: 'Academic Operations\nLexicon MILE',
 };
 
 // Helper: Compiles visual state to responsive HTML email markup
@@ -193,9 +193,9 @@ function compileVisualToHtml(v: VisualEmailState): string {
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
     .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.22); }
-    .header { background: linear-gradient(135deg, ${themeObj.from} 0%, ${themeObj.to} 100%); padding: 34px 36px; text-align: left; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-    .header p { color: ${themeObj.text}; margin: 6px 0 0; font-size: 13px; font-weight: 500; }
+    .header { background: linear-gradient(135deg, ${themeObj.from} 0%, ${themeObj.to} 100%); padding: 28px 32px; text-align: left; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+    .header p { color: ${themeObj.text}; margin: 4px 0 0; font-size: 13px; font-weight: 500; }
     .content { padding: 36px; }
     .content p { font-size: 15px; line-height: 1.65; color: #334155; margin: 0 0 16px; }
     .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5; }
@@ -204,8 +204,24 @@ function compileVisualToHtml(v: VisualEmailState): string {
 <body>
   <div class="card">
     <div class="header">
-      <h1>${v.headerTitle}</h1>
-      <p>${v.headerSubtitle}</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>${v.headerTitle}</h1>
+            <p>${v.headerSubtitle}</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <p>${v.greeting}</p>
@@ -217,7 +233,7 @@ function compileVisualToHtml(v: VisualEmailState): string {
       <p style="margin-top: 26px;">${v.footerSignOff}<br />${signOffLines}</p>
     </div>
     <div class="footer">
-      © 2026 Lexicon MILE. Powered by HyperBuild.<br />
+      © 2026 Lexicon MILE · Orion Academic Portal<br />
       If you need assistance, please contact <a href="mailto:{{support_email}}" style="color: ${themeObj.from}; text-decoration: none;">{{support_email}}</a>.
     </div>
   </div>

@@ -146,20 +146,15 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-500/20">
-              <Zap className="h-6 w-6" />
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Zap className="h-5 w-5 fill-amber-500 text-amber-500" />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                  HyperBuild Live Command Center
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                  Live Classroom Projector
-                </span>
-              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                HyperBuild Live Console
+              </h3>
               <p className="text-xs text-slate-500 font-medium">
-                {session.subject_name || 'HyperBuild Session'} · 📍 {session.venue} · ⏰ {session.start_time} - {session.end_time} ({session.duration_minutes}m)
+                📍 {session.venue} · ⏰ {session.start_time?.slice(0, 5)} - {session.end_time?.slice(0, 5)} ({session.duration_minutes} mins)
               </p>
             </div>
           </div>
@@ -191,36 +186,25 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Sequential Activity Navigation Tabs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs">
+            {/* Simple Activity Tabs */}
+            <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
               {sessionDetails?.activities?.map((act: any) => {
                 const isSelected = act.id === selectedActivityId;
-                const isElective = (act.course_category || 'core').toLowerCase() !== 'core';
+                const subj = act.subject_name || act.subject_code || 'Subject';
                 return (
                   <button
                     key={act.id}
                     onClick={() => setSelectedActivityId(act.id)}
-                    className={`flex flex-col text-left p-3 rounded-xl transition-all ${
+                    className={`px-3 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                       isSelected
-                        ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-md border border-cyan-500/30'
-                        : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-900/50'
+                        ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs border border-amber-500/30'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full mb-1">
-                      <span className="font-extrabold text-[10px] uppercase tracking-wider">
-                        Activity {act.activity_no}
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                        isElective ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300'
-                      }`}>
-                        {isElective ? `${act.elective_domain || 'Elective'}` : 'Core'}
-                      </span>
-                    </div>
-                    <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{act.title}</p>
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-                      <span>{act.start_time}-{act.end_time}</span>
-                      <span className="font-mono font-semibold">{act.duration_minutes}m</span>
-                    </div>
+                    <span>Activity {act.activity_no} — {subj}</span>
+                    <span className="font-mono text-[11px] font-normal text-slate-500">
+                      ({act.start_time?.slice(0, 5)} - {act.end_time?.slice(0, 5)})
+                    </span>
                   </button>
                 );
               })}
@@ -230,58 +214,46 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left 2 Cols: Live Activity Broadcast & Projector Challenge Key */}
                 <div className="lg:col-span-2 space-y-4">
-                  <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white border border-slate-800 shadow-xl space-y-4">
-                    <div className="flex items-center justify-between">
+                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    {/* Clean Activity Title & Time */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
                       <div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                          {currentActivity.subject_name || 'Academic Subject'} ({currentActivity.course_category})
-                        </span>
-                        <h2 className="text-xl font-black mt-2 tracking-tight">
-                          {currentActivity.title}
+                        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                          Activity {currentActivity.activity_no} — {currentActivity.subject_name || currentActivity.subject_code || 'Subject'}
                         </h2>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Window Duration</p>
-                        <p className="text-xl font-mono font-extrabold text-cyan-400">
-                          {currentActivity.start_time} - {currentActivity.end_time}
-                        </p>
+                      <div className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        {currentActivity.start_time?.slice(0, 5)} - {currentActivity.end_time?.slice(0, 5)} ({currentActivity.duration_minutes} mins)
                       </div>
                     </div>
 
-                    {currentActivity.instructions && (
-                      <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs text-slate-300 leading-relaxed">
-                        <strong className="text-white block mb-0.5">Instructions & Deliverable:</strong>
-                        {currentActivity.instructions}
-                      </div>
-                    )}
-
                     {/* Window Controls Bar */}
-                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                       <div className="flex items-center space-x-2">
-                        <span className="text-slate-400 font-bold uppercase text-[10px]">Submission Window:</span>
+                        <span className="text-slate-500 font-semibold text-xs">Submission Window:</span>
                         {currentActivity.is_submission_locked ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-500/20 border border-rose-500/40 text-rose-300">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40">
                             <Lock className="h-3 w-3" />
                             <span>Locked</span>
                           </span>
                         ) : currentActivity.is_reopened_indefinite ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-indigo-500/20 border border-indigo-500/40 text-indigo-300">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/40">
                             <Unlock className="h-3 w-3" />
-                            <span>Reopened (Manual Lock)</span>
+                            <span>Reopened (Manual)</span>
                           </span>
                         ) : currentActivity.reopened_until ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
                             <Clock className="h-3 w-3" />
-                            <span>Reopened (Active)</span>
+                            <span>Reopened</span>
                           </span>
                         ) : currentActivity.extended_until ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40">
                             <Clock className="h-3 w-3" />
-                            <span>Extended Window</span>
+                            <span>Extended</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-cyan-500/20 border border-cyan-500/40 text-cyan-300">
-                            <span>Standard Window</span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            <span>Open</span>
                           </span>
                         )}
                       </div>
@@ -292,7 +264,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                           type="button"
                           onClick={() => extendWindowMutation.mutate({ activityId: currentActivity.id, minutes: 10 })}
                           disabled={extendWindowMutation.isPending}
-                          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
                         >
                           +10m
                         </button>
@@ -300,7 +272,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                           type="button"
                           onClick={() => extendWindowMutation.mutate({ activityId: currentActivity.id, minutes: 15 })}
                           disabled={extendWindowMutation.isPending}
-                          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
                         >
                           +15m
                         </button>
@@ -308,60 +280,58 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                           <button
                             type="button"
                             onClick={() => setShowReopenModal(true)}
-                            className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
                           >
                             <Unlock className="h-3 w-3" />
-                            <span>Reopen Window</span>
+                            <span>Reopen</span>
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => setShowLockModal(true)}
-                            className="px-3 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                            className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
                           >
                             <Lock className="h-3 w-3" />
-                            <span>Lock Now</span>
+                            <span>Lock</span>
                           </button>
                         )}
                       </div>
                     </div>
 
-                    {/* Classroom Display Challenge Key Box */}
-                    <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-transparent border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="space-y-1 text-center sm:text-left">
-                        <div className="flex items-center justify-center sm:justify-start space-x-2 text-amber-400 text-xs font-bold uppercase tracking-wider">
-                          <KeyRound className="h-4 w-4" />
-                          <span>60-Second Live Transition Key</span>
+                    {/* Simple Challenge Key Box */}
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <KeyRound className="h-4 w-4 text-amber-500" />
+                          <span>Screen Transition Key</span>
                         </div>
-                        <p className="text-xs text-slate-400">
-                          Broadcast this key to the classroom. Students enter it on their laptops.
-                        </p>
+                        <p className="text-[11px] text-slate-500">Students enter this key to verify attendance.</p>
                       </div>
 
                       <div className="flex items-center space-x-3">
                         {currentActivity.challenge_key ? (
-                          <div className="flex flex-col items-center">
-                            <div className="px-6 py-2.5 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 font-mono font-black text-3xl tracking-widest shadow-lg shadow-orange-500/30 animate-pulse">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-4 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 font-mono font-bold text-xl text-amber-800 dark:text-amber-300 tracking-wider">
                               {currentActivity.challenge_key}
-                            </div>
+                            </span>
                             {keyRemainingSeconds > 0 && (
-                              <span className="text-[10px] font-bold text-amber-400 mt-1">
-                                Expiring in {keyRemainingSeconds}s
+                              <span className="text-xs font-mono font-semibold text-amber-600">
+                                {keyRemainingSeconds}s
                               </span>
                             )}
                           </div>
                         ) : (
-                          <div className="text-xs text-slate-400 italic">No key active</div>
+                          <span className="text-xs text-slate-400 italic">No key active</span>
                         )}
 
                         <button
                           type="button"
                           onClick={() => triggerKeyMutation.mutate(currentActivity.id)}
                           disabled={triggerKeyMutation.isPending}
-                          className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                          className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold text-xs hover:bg-slate-800 transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                         >
-                          <RefreshCw className={`h-3.5 w-3.5 ${triggerKeyMutation.isPending ? 'animate-spin' : ''}`} />
-                          <span>{currentActivity.challenge_key ? 'Regenerate Key' : 'Reveal Screen Key'}</span>
+                          <RefreshCw className={`h-3 w-3 ${triggerKeyMutation.isPending ? 'animate-spin' : ''}`} />
+                          <span>{currentActivity.challenge_key ? 'New Key' : 'Reveal Key'}</span>
                         </button>
                       </div>
                     </div>

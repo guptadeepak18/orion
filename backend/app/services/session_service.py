@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_
 from sqlalchemy.orm import selectinload
 
-from app.models.session import Session, Timetable, TimetableRevision, StudentAttendance
+from app.models.session import Session, Timetable, TimetableRevision, StudentAttendance, HyperbuildActivity
 from app.models.academic import Subject, Topic, Batch
 from app.models.student import Student
 from app.models.faculty import FacultyInternal, FacultyExternal
@@ -298,6 +298,7 @@ async def list_sessions(
             selectinload(Session.original_faculty_external),
             selectinload(Session.program),
             selectinload(Session.batch),
+            selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
         )
         .where(Session.is_deleted == False)
     )
@@ -344,6 +345,24 @@ async def list_sessions(
             r.program_name = s.program.name
         if s.batch:
             r.batch_name = s.batch.name
+        if s.session_type == "hyperbuild" and s.hyperbuild_activities:
+            r.hyperbuild_activities = [
+                {
+                    "id": str(act.id),
+                    "activity_no": act.activity_no,
+                    "title": act.title,
+                    "start_time": act.start_time.strftime("%H:%M") if hasattr(act.start_time, "strftime") else str(act.start_time)[:5],
+                    "end_time": act.end_time.strftime("%H:%M") if hasattr(act.end_time, "strftime") else str(act.end_time)[:5],
+                    "subject_id": str(act.subject_id) if act.subject_id else None,
+                    "subject_name": act.subject.name if act.subject else None,
+                    "subject_code": act.subject.code if act.subject else None,
+                    "duration_minutes": act.duration_minutes,
+                    "submission_type": act.submission_type,
+                    "status": act.status,
+                }
+                for act in s.hyperbuild_activities
+                if not getattr(act, "is_deleted", False)
+            ]
         results.append(r)
     return results
 
@@ -910,10 +929,11 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
         session_id=session.id,
         batch_id=session.batch_id,
         batch_name=session.batch.name if session.batch else None,
-        subject_name=session.subject.name if session.subject else None,
-        subject_code=session.subject.code if session.subject else None,
+        subject_name=session.subject.name if session.subject else ("HyperBuild Session" if session.session_type == "hyperbuild" else "Class Session"),
+        subject_code=session.subject.code if session.subject else ("HB" if session.session_type == "hyperbuild" else "SUB"),
         course_category=session.subject.course_category if session.subject else "core",
         elective_domain=session.subject.elective_domain if session.subject else None,
+        session_type=session.session_type,
         session_date=session.session_date,
         start_time=session.start_time,
         end_time=session.end_time,

@@ -71,9 +71,9 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion") -> 
     body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 0; }}
     .container {{ max-width: 520px; margin: 40px auto; background: #fff; border-radius: 16px;
                   box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; }}
-    .header {{ background: linear-gradient(135deg, #0e7490 0%, #0891b2 100%); padding: 32px 40px; }}
-    .header h1 {{ color: #fff; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }}
-    .header p {{ color: #a5f3fc; margin: 6px 0 0; font-size: 14px; }}
+    .header {{ background: linear-gradient(135deg, #0e7490 0%, #0891b2 100%); padding: 28px 32px; }}
+    .header h1 {{ color: #fff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }}
+    .header p {{ color: #a5f3fc; margin: 4px 0 0; font-size: 13px; }}
     .body {{ padding: 36px 40px; }}
     .body p {{ color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px; }}
     .otp-box {{ background: #f0fdff; border: 2px dashed #06b6d4; border-radius: 12px;
@@ -88,8 +88,24 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion") -> 
 <body>
   <div class="container">
     <div class="header">
-      <h1>{app_name}</h1>
-      <p>Student Registration Portal</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: middle; text-align: left;">
+            <h1>{app_name}</h1>
+            <p>Student Registration Portal</p>
+          </td>
+          <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+            <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 7px 14px; text-align: center;">
+              <span style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                ✨ ORION
+              </span>
+              <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                LEXICON MILE
+              </span>
+            </div>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="body">
       <p>Hello <strong>{full_name}</strong>,</p>
@@ -99,10 +115,10 @@ def _build_otp_email_html(full_name: str, otp: str, app_name: str = "Orion") -> 
         <div class="expiry">This code expires in <strong>10 minutes</strong></div>
       </div>
       <p>If you did not register on {app_name}, please ignore this email.</p>
-      <p>Best regards,<br /><strong>The {app_name} Team</strong></p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
     </div>
     <div class="footer">
-      Questions or issues? Reply directly to this email or contact <a href="mailto:deepak.gupta@mile.education" style="color: #0891b2;">deepak.gupta@mile.education</a>.
+      © 2026 Lexicon MILE · Orion Academic Portal
     </div>
   </div>
 </body>

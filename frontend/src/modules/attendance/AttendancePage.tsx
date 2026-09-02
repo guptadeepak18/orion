@@ -76,6 +76,34 @@ export const AttendancePage: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   // TAB 1: SESSIONS / MARK ATTENDANCE
   // ─────────────────────────────────────────────────────────────────────────────
+  const getSessionTitle = (sess: any) => {
+    if (!sess) return 'Session';
+    if (
+      sess.session_type === 'hyperbuild' ||
+      (sess.venue && typeof sess.venue === 'string' && sess.venue.toLowerCase().includes('hyperbuild')) ||
+      (sess.notes && typeof sess.notes === 'string' && sess.notes.toLowerCase().includes('hyperbuild')) ||
+      sess.subject_name === 'HyperBuild Session' ||
+      !sess.subject_id
+    ) {
+      return 'HyperBuild Session';
+    }
+    return sess.subject_name || 'Class Session';
+  };
+
+  const getSessionCode = (sess: any) => {
+    if (!sess) return 'SUB';
+    if (
+      sess.session_type === 'hyperbuild' ||
+      (sess.venue && typeof sess.venue === 'string' && sess.venue.toLowerCase().includes('hyperbuild')) ||
+      (sess.notes && typeof sess.notes === 'string' && sess.notes.toLowerCase().includes('hyperbuild')) ||
+      sess.subject_code === 'HB' ||
+      !sess.subject_id
+    ) {
+      return 'HB';
+    }
+    return sess.subject_code || 'SUB';
+  };
+
   const [sessionDateFilter, setSessionDateFilter] = useState<string>('');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(selectedSessionIdParam || null);
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
@@ -761,7 +789,7 @@ export const AttendancePage: React.FC = () => {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                            {s.subject_code || 'SUB'}
+                            {getSessionCode(s)}
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
@@ -778,7 +806,7 @@ export const AttendancePage: React.FC = () => {
                         </div>
 
                         <p className="font-bold text-xs text-slate-900 dark:text-white mt-1.5 line-clamp-1">
-                          {s.subject_name || 'Class Session'}
+                          {getSessionTitle(s)}
                         </p>
 
                         <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-500 dark:text-slate-400 mt-2">
@@ -826,7 +854,7 @@ export const AttendancePage: React.FC = () => {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-                        {activeSheetData.subject_name || 'Class Session'}
+                        {getSessionTitle(activeSheetData)}
                       </h2>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                         {activeSheetData.batch_name || 'Batch'}
