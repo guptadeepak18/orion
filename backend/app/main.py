@@ -33,20 +33,28 @@ async def _neon_keepalive_loop():
             pass
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    keepalive_task = None
+async def _background_startup_tasks():
     try:
-        # Start keepalive heartbeat task to keep connection warm
-        keepalive_task = asyncio.create_task(_neon_keepalive_loop())
-
-        # Ensure seed data and sync unlinked student user accounts
+        await asyncio.sleep(1)
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
             from app.services.student_service import sync_all_unlinked_students_to_users
             synced = await sync_all_unlinked_students_to_users(session)
             if synced > 0:
                 print(f"[STARTUP] Synchronized and provisioned {synced} student user accounts with default credentials.")
+    except Exception as e:
+        print(f"[STARTUP NOTICE] Background startup task notice: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    keepalive_task = None
+    startup_task = None
+    try:
+        # Start keepalive heartbeat task to keep connection warm
+        keepalive_task = asyncio.create_task(_neon_keepalive_loop())
+        # Run DB seed & sync in background so HTTP server opens immediately
+        startup_task = asyncio.create_task(_background_startup_tasks())
     except Exception as e:
         print(f"Startup notice: {e}")
 
