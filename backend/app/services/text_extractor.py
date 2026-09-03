@@ -5,12 +5,17 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+_TEXT_CACHE: dict = {}
+
 
 def extract_text_from_file(file_path: str, filename: Optional[str] = None, file_bytes: Optional[bytes] = None) -> str:
     """
     Extract clean textual content from various document formats (PDF, DOCX, PPTX, XLSX, TXT)
     for LLM evaluation, supporting local paths, R2 storage keys, and raw byte buffers.
     """
+    if file_bytes is None and file_path and file_path in _TEXT_CACHE:
+        return _TEXT_CACHE[file_path]
+
     name = (filename or os.path.basename(file_path)).lower()
     ext = os.path.splitext(name)[1].lower()
 
@@ -27,17 +32,21 @@ def extract_text_from_file(file_path: str, filename: Optional[str] = None, file_
 
     try:
         if ext == ".pdf":
-            return _extract_pdf_from_bytes(file_bytes)
+            res = _extract_pdf_from_bytes(file_bytes)
         elif ext in [".docx", ".doc"]:
-            return _extract_docx_from_bytes(file_bytes)
+            res = _extract_docx_from_bytes(file_bytes)
         elif ext in [".pptx", ".ppt"]:
-            return _extract_pptx_from_bytes(file_bytes)
+            res = _extract_pptx_from_bytes(file_bytes)
         elif ext in [".xlsx", ".xls", ".csv"]:
-            return _extract_spreadsheet_from_bytes(file_bytes, ext)
+            res = _extract_spreadsheet_from_bytes(file_bytes, ext)
         elif ext in [".txt", ".md", ".json", ".rtf", ".py", ".html"]:
-            return _extract_text_from_bytes(file_bytes)
+            res = _extract_text_from_bytes(file_bytes)
         else:
-            return _extract_text_from_bytes(file_bytes)
+            res = _extract_text_from_bytes(file_bytes)
+
+        if file_path and res:
+            _TEXT_CACHE[file_path] = res
+        return res
     except Exception as e:
         logger.error(f"Error extracting text from {name}: {e}")
         return f"[Error extracting text from {name}: {str(e)}]"

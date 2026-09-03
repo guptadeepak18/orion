@@ -18,7 +18,7 @@ for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&s
 # For asyncpg + Neon PgBouncer pooler, disable prepared statement cache and add command timeout
 if "asyncpg" in db_url:
     connect_args["statement_cache_size"] = 0
-    connect_args["command_timeout"] = 15
+    connect_args["command_timeout"] = 60
 
 # Handle SQLite for testing if needed
 if db_url.startswith("sqlite"):
@@ -37,9 +37,9 @@ else:
         future=True,
         pool_size=50,
         max_overflow=100,
-        pool_timeout=10.0,
+        pool_timeout=30.0,
         pool_recycle=1800,
-        pool_pre_ping=False,
+        pool_pre_ping=True,
         connect_args=connect_args,
     )
 

@@ -512,9 +512,13 @@ class LMSService:
         return sub
 
     async def evaluate_activity_submission(
-        self, db: AsyncSession, submission_id: uuid.UUID
+        self,
+        db: AsyncSession,
+        submission_id: uuid.UUID,
+        peer_texts: Optional[Dict[str, str]] = None,
     ) -> Optional[ActivitySubmission]:
         from app.services.ai_evaluator import evaluate_submission_against_rubric
+        from app.models.student import Student
 
         sub = await db.get(ActivitySubmission, submission_id)
         if not sub:
@@ -523,10 +527,15 @@ class LMSService:
         if not activity:
             return None
 
+        student = await db.get(Student, sub.student_id)
+        student_name = f"{student.first_name} {student.last_name}" if student else "Student"
+
         ai_eval = await evaluate_submission_against_rubric(
             activity=activity,
             submission_text=sub.submission_text,
             files=sub.files or ([{"file_url": sub.file_url, "file_name": sub.file_name, "file_size": sub.file_size}] if sub.file_url else []),
+            peer_texts=peer_texts,
+            student_name=student_name,
         )
         sub.ai_evaluation = ai_eval
         sub.score = ai_eval.get("total_score")

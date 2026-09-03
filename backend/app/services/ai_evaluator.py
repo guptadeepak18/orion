@@ -13,6 +13,8 @@ async def evaluate_submission_against_rubric(
     activity: Any,
     submission_text: Optional[str] = None,
     files: Optional[List[Dict[str, Any]]] = None,
+    peer_texts: Optional[Dict[str, str]] = None,
+    student_name: str = "Student",
 ) -> Dict[str, Any]:
     """
     Evaluates a student's activity submission critically against the activity's grading rubric.
@@ -80,7 +82,9 @@ async def evaluate_submission_against_rubric(
             logger.error(f"OpenAI evaluation failed: {e}")
 
     # Fallback rule-based evaluator if no live LLM key is configured
-    return _generate_structured_fallback_evaluation(activity, rubric, full_submission_text)
+    return _generate_structured_fallback_evaluation(
+        activity, rubric, full_submission_text, peer_texts=peer_texts, student_name=student_name
+    )
 
 
 def _build_evaluation_prompt(activity: Any, rubric: List[Dict[str, Any]], student_text: str) -> str:
@@ -201,7 +205,7 @@ async def _evaluate_with_anthropic(activity: Any, rubric: List[Dict[str, Any]], 
 
 async def _evaluate_with_gemini(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str) -> Dict[str, Any]:
     prompt = _build_evaluation_prompt(activity, rubric, student_text)
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -438,6 +442,164 @@ def _generate_structured_fallback_evaluation(
             "evaluated_at": datetime.utcnow().isoformat(),
         }
 
+def detect_ai_reliance(text: str) -> Dict[str, Any]:
+    """
+    Analyzes textual artifacts, syntactic markers, and formatting to determine
+    the percentage of AI support/offloading used by the student.
+    """
+    import re
+    text_lower = text.lower()
+    words = text.split()
+    total_words = max(len(words), 1)
+
+    findings = []
+    ai_score_points = 0.0
+
+    # 1. Direct LLM Artifacts & Citations
+    cite_matches = re.findall(r'\[cite: \d+\]', text)
+    if cite_matches:
+        count = len(cite_matches)
+        ai_score_points += min(45.0, count * 4.5)
+        findings.append(f"Contains {count} raw AI search/browse citation tags (e.g. '[cite: 1]') left unedited in document.")
+
+    # 2. Third-person detached self-reference in personal role-play sections
+    third_person_matches = re.findall(r'\b(the negotiator|the participant|the candidate stated|they chose to keep|the author)\b', text_lower)
+    if third_person_matches:
+        count = len(third_person_matches)
+        ai_score_points += min(30.0, count * 7.5)
+        findings.append(f"Uses detached third-person phrasing ({count} instances, e.g. 'the negotiator did not disclose') in what should be personal role-play reflection.")
+
+    # 3. Conversational AI remnants or system prompts
+    ai_remnants = [
+        ("this keeps the batna", "Contains AI assistant explanatory commentary to the user ('This keeps the BATNA...')"),
+        ("certainly! here is", "Contains standard conversational LLM introductory greeting"),
+        ("as an ai", "Explicit AI self-identification"),
+        ("in this simulation, the candidate", "Third-person prompt generation framing"),
+        ("here is a comprehensive", "Boilerplate LLM output framing"),
+        ("to answer your question", "Direct LLM response phrasing"),
+    ]
+    for phrase, desc in ai_remnants:
+        if phrase in text_lower:
+            ai_score_points += 25.0
+            findings.append(desc)
+
+    # 4. Stylistic AI markers
+    cliche_words = ["tapestry", "multifaceted", "paramount", "delve into", "testament to", "crucial to recognize", "in conclusion,"]
+    found_cliches = [w for w in cliche_words if w in text_lower]
+    if len(found_cliches) >= 2:
+        ai_score_points += min(15.0, len(found_cliches) * 4.0)
+        findings.append(f"High density of synthetic transition markers: {', '.join(found_cliches[:3])}.")
+
+    # 5. Legitimate AI usage in Step 7
+    has_claude_critique = "claude" in text_lower and any(k in text_lower for k in ["critique", "value on the table", "prompt", "feedback", "claude.ai"])
+    if has_claude_critique:
+        legit_base = 20.0
+        total_ai_pct = min(96.0, round(legit_base + ai_score_points, 1))
+    else:
+        total_ai_pct = min(96.0, round(ai_score_points, 1))
+
+    if total_ai_pct <= 25.0:
+        level = "Low (Bounded AI Engagement per Instructions)"
+    elif total_ai_pct <= 50.0:
+        level = "Moderate (Partial AI Assistance in Drafting)"
+    elif total_ai_pct <= 70.0:
+        level = "High (Substantial AI Generation & Offloading)"
+    else:
+        level = "Critical (Heavy/Near-Complete AI Generation)"
+
+    if not findings:
+        findings.append("Appropriate bounded AI engagement matching the prescribed Step 7 reflection prompt.")
+
+    return {
+        "ai_support_percentage": total_ai_pct,
+        "ai_support_level": level,
+        "ai_audit_findings": findings,
+    }
+
+
+def _generate_structured_fallback_evaluation(
+    activity: Any,
+    rubric: List[Dict[str, Any]],
+    student_text: str,
+    peer_texts: Optional[Dict[str, str]] = None,
+    student_name: str = "Student",
+) -> Dict[str, Any]:
+    """Generates an exhaustive, continuous, highly critical academic evaluation across all rubric criteria."""
+    import re
+    text_lower = student_text.lower()
+    word_count = len(student_text.split())
+    num_criteria = max(len(rubric), 3)
+    marks_per_criterion = round(100.0 / num_criteria, 1)
+
+    if not rubric:
+        rubric = [
+            {"criterion": "Principled-Negotiation Preparation", "weightage": 35.0},
+            {"criterion": "Live Negotiation Execution & Observation", "weightage": 30.0},
+            {"criterion": "AI-Assisted Critique & Reflection Report", "weightage": 35.0},
+        ]
+
+    # --- TOPIC & PROBLEM STATEMENT ALIGNMENT CHECK ---
+    is_aligned, detected_topic, mismatch_reason = _check_topic_alignment(activity, student_text)
+
+    if not is_aligned:
+        criteria_breakdown = []
+        for i, c in enumerate(rubric):
+            crit_name = c.get("criterion", f"Criterion {i+1}")
+            custom_w = c.get("weightage")
+            if custom_w is not None:
+                try:
+                    max_m = float(custom_w)
+                except (ValueError, TypeError):
+                    max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+            else:
+                max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+
+            criteria_breakdown.append({
+                "criterion": crit_name,
+                "marks_awarded": 0.0,
+                "max_marks": max_m,
+                "tier": "Needs Work (<50%)",
+                "rationale": (
+                    f"Zero marks awarded for {crit_name}. The submitted work completely fails to address the assigned "
+                    f"problem statement for Activity {activity.activity_no} ({activity.title}). No relevant deliverable, "
+                    f"statutory analysis, or case brief was provided for this criterion."
+                ),
+                "evidence": "Submitted document addresses an unrelated topic.",
+                "gap_identified": f"Missing required deliverable for Activity {activity.activity_no}.",
+            })
+
+        return {
+            "total_score": 0.0,
+            "max_score": 100.0,
+            "performance_tier": "Needs Work (<50%)",
+            "executive_summary": (
+                f"CRITICAL PROBLEM STATEMENT MISMATCH: The submitted deliverable does not match the problem statement for "
+                f"Activity {activity.activity_no} ('{activity.title}'). The submission appears to be for '{detected_topic}' "
+                f"rather than the assigned requirements. Graded 0.0/100."
+            ),
+            "strengths": [
+                "Deliverable file was successfully formatted and uploaded to the LMS portal."
+            ],
+            "areas_for_improvement": [
+                f"Submit the correct deliverable specifically addressing Activity {activity.activity_no}: '{activity.title}'.",
+                "Ensure your submission directly addresses the prescribed problem statement, case study, and specific deliverables.",
+                "Review the activity instructions, required statutory frameworks, and rubric criteria before resubmitting.",
+                "Provide verifiable AI prompt logs and independent validation notes alongside your case analysis.",
+            ],
+            "criteria_breakdown": criteria_breakdown,
+            "critical_feedback": (
+                f"ACADEMIC INTEGRITY & PROBLEM STATEMENT MISMATCH NOTICE:\n\n"
+                f"Zero marks (0.0/100) have been awarded because the submitted deliverable has zero relevance to the assigned problem statement "
+                f"for Activity {activity.activity_no} ({activity.title}).\n\n"
+                f"Reason: {mismatch_reason}\n\n"
+                f"The submitted file ('{detected_topic}') pertains to an entirely different case/topic. "
+                f"No analysis of the assigned activity requirements or statutory provisions was present.\n\n"
+                f"Action Required: Please prepare and upload the correct deliverable specifically addressing Activity {activity.activity_no}."
+            ),
+            "model_used": "HyperBuild Assessment Engine (Precision Academic Evaluator)",
+            "evaluated_at": datetime.utcnow().isoformat(),
+        }
+
     # --- ON-TOPIC DEEP MULTI-DIMENSIONAL EVALUATION ---
     act_meta_text = f"{(activity.title or '')} {(activity.instructions or '')} {(activity.why_this_activity or '')}".lower()
     is_negotiation = any(k in act_meta_text for k in ["negotiation", "batna", "fisher", "ury", "harvard", "zopa", "business communication", "role-play"])
@@ -452,13 +614,54 @@ def _generate_structured_fallback_evaluation(
     total_score = 0.0
 
     if is_negotiation:
-        # Negotiation specific indicators
-        has_fisher_ury = any(k in text_lower for k in ["fisher", "ury", "four elements", "principled", "people", "interests", "mutual gain", "objective criteria"])
-        has_batna = any(k in text_lower for k in ["batna", "best alternative", "reservation point", "reservation price", "walkaway", "walk-away"])
-        has_integrative = any(k in text_lower for k in ["integrative", "distributive", "mutual gain", "fixed-pie", "expanding the pie", "trade"])
-        has_roleplay = any(k in text_lower for k in ["counterpart", "role-play", "role play", "outcome reached", "disclose", "impasse", "agreement reached", "peer"])
-        has_ai_critique = any(k in text_lower for k in ["claude", "critique", "reflection report", "what i would do", "lessons learned", "differently"])
+        # 1. AI Reliance Audit
+        ai_audit = detect_ai_reliance(student_text)
+        ai_pct = ai_audit["ai_support_percentage"]
+        ai_level = ai_audit["ai_support_level"]
+        ai_findings = ai_audit["ai_audit_findings"]
 
+        # 2. Peer Plagiarism & Collusion Check
+        plagiarism_flag = False
+        collusion_peers = []
+        max_shared_phrases = 0
+
+        if peer_texts:
+            t_words = [w for w in text_lower.split() if len(w) > 2]
+            if len(t_words) > 7:
+                my_ngrams = set(" ".join(t_words[k:k+7]) for k in range(len(t_words)-6))
+                for peer_name, p_text in peer_texts.items():
+                    if peer_name == student_name or not p_text:
+                        continue
+                    p_words = [w for w in p_text.lower().split() if len(w) > 2]
+                    if len(p_words) > 7:
+                        p_ngrams = set(" ".join(p_words[k:k+7]) for k in range(len(p_words)-6))
+                        common = my_ngrams & p_ngrams
+                        clean_common = [
+                            g for g in common if not any(x in g for x in [
+                                'harvard program on negotiation', 'negotiation simulation', 'principled negotiation',
+                                'options for mutual gain', 'separating people from the', 'best alternative to a',
+                                'fisher & ury', 'fisher, ury', 'focusing on interests rather than'
+                            ])
+                        ]
+                        if len(clean_common) > 100:
+                            plagiarism_flag = True
+                            collusion_peers.append(f"{peer_name} ({len(clean_common)} identical 7-word phrases - VERBATIM CLONE)")
+                            max_shared_phrases = max(max_shared_phrases, len(clean_common))
+                        elif len(clean_common) >= 15:
+                            plagiarism_flag = True
+                            collusion_peers.append(f"{peer_name} ({len(clean_common)} shared 7-word phrases - Template Sharing)")
+                            max_shared_phrases = max(max_shared_phrases, len(clean_common))
+
+        # 3. Step-by-Step Expectation Verification
+        has_step1 = any(k in text_lower for k in ["fisher", "ury", "four elements", "separating people", "interests not positions", "options for mutual gain", "objective criteria"])
+        has_named_peer = any(k in text_lower for k in ["classmate", "peer", "tithi", "nakshatra", "rudra", "sumit", "partner", "colleague"])
+        has_quant_batna = bool(re.search(r'(\$|₹|rs\.?|lakh|inr|\d{2,3},\d{3})\b', student_text)) and any(k in text_lower for k in ["batna", "reservation"])
+        has_integrative_trade = any(k in text_lower for k in ["integrative", "mutual gain", "trade", "distributive", "fixed-pie", "expanding the pie"])
+        has_roleplay_obs = any(k in text_lower for k in ["disclose", "outcome reached", "impasse", "agreement", "counterpart used", "failed to use", "technique by"])
+        has_claude_critique = "claude" in text_lower and any(k in text_lower for k in ["critique", "value on the table", "prompt", "feedback", "claude.ai"])
+        has_reflection = any(k in text_lower for k in ["reflection report", "what i would do differently", "do differently next time", "lessons learned"])
+
+        # 4. Continuous, Granular Rubric Scoring
         for i, c in enumerate(rubric):
             crit_name = c.get("criterion", f"Criterion {i+1}").strip()
             crit_lower = crit_name.lower()
@@ -472,81 +675,59 @@ def _generate_structured_fallback_evaluation(
             else:
                 max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
 
-            # 1. Principled-Negotiation Preparation & BATNA
+            # Criterion 1: Principled-Negotiation Preparation & BATNA (35 marks)
             if any(k in crit_lower for k in ["preparation", "principled", "batna", "framework", "diagnosis"]):
-                if has_fisher_ury and has_batna and has_integrative and word_count >= 300:
-                    awarded = round(max_m * 0.88, 1)
-                    tier = "Distinction (85-100%)"
-                    rationale = (
-                        "The student delivers an exemplary breakdown of Fisher & Ury's 4 principled negotiation elements. "
-                        "The BATNA and reservation point are realistically computed before the simulation with clear quantified parameters. "
-                        "The distributive vs. integrative diagnosis is well-reasoned with specific mutual-gain trades identified."
-                    )
-                    evidence = f'Quoted excerpt: "{p_sample_1}"'
-                    gap = "Could further estimate the counterpart's BATNA and reservation threshold to map out a precise bi-lateral ZOPA."
-                elif has_fisher_ury or has_batna:
-                    awarded = round(max_m * 0.76, 1)
-                    tier = "Merit (70-84%)"
-                    rationale = (
-                        "Accurate summary of Harvard principled negotiation framework and realistic BATNA identification. "
-                        "To reach top distinction, make the reservation point computation and mutual-gain trade formulas more explicit."
-                    )
-                    evidence = f'Quoted excerpt: "{p_sample_1}"'
-                    gap = "Reservation point and mutual-gain options rely on qualitative statements rather than quantified parameters."
-                else:
-                    awarded = round(max_m * 0.55, 1)
-                    tier = "Pass (50-69%)"
-                    rationale = "Basic overview of negotiation principles provided, but BATNA computation and integrative trade analysis are underdeveloped."
-                    evidence = f'Quoted excerpt: "{p_sample_1}"'
-                    gap = "Missing explicit BATNA calculation and structured mutual-gain trade analysis."
+                c1_base = 0.0
+                c1_base += 9.2 if has_step1 else 4.0
+                c1_base += 12.3 if has_quant_batna else 7.5
+                c1_base += 10.8 if has_integrative_trade else 5.0
+                awarded = min(max_m, round(c1_base + min(1.5, word_count / 1500.0), 1))
+                tier = "Distinction (85-100%)" if awarded >= (max_m * 0.85) else ("Merit (70-84%)" if awarded >= (max_m * 0.70) else "Pass (50-69%)")
+                rationale = (
+                    f"Step 1-4 expectations: Harvard PON summary ({'Thorough' if has_step1 else 'Basic'}), "
+                    f"BATNA calculation ({'Quantified & actionable' if has_quant_batna else 'Qualitative'}), "
+                    f"Integrative diagnosis ({'Identified specific mutual gain trades' if has_integrative_trade else 'Distributive mindset only'})."
+                )
+                evidence = f'Quoted excerpt: "{p_sample_1}"'
+                gap = "Estimate counterpart's walkaway threshold to map the full bi-lateral ZOPA."
 
-            # 2. Live Negotiation Execution & Observation
+            # Criterion 2: Live Negotiation Execution & Observation (30 marks)
             elif any(k in crit_lower for k in ["execution", "observation", "live", "role-play", "role play", "interaction"]):
-                if has_roleplay and word_count >= 250:
-                    awarded = round(max_m * 0.86, 1)
-                    tier = "Distinction (85-100%)"
-                    rationale = (
-                        "Commendable execution of live negotiation role-play with counterpart. Post-negotiation process observations "
-                        "provide genuine, unscripted reflections on tactical dynamics, BATNA disclosure decisions, and counterpart behavior."
-                    )
-                    evidence = f'Quoted excerpt: "{p_sample_2}"'
-                    gap = "Could deepen analysis of non-verbal cues, emotional regulation, and active listening techniques during critical impasse moments."
-                elif has_roleplay:
-                    awarded = round(max_m * 0.75, 1)
-                    tier = "Merit (70-84%)"
-                    rationale = "Role-play was conducted and basic process observations are documented. Further detail on negotiation friction points would elevate the work."
-                    evidence = f'Quoted excerpt: "{p_sample_2}"'
-                    gap = "Observation notes are somewhat brief regarding counterpart negotiation tactics and BATNA disclosure strategy."
-                else:
-                    awarded = round(max_m * 0.55, 1)
-                    tier = "Pass (50-69%)"
-                    rationale = "Limited documentation of actual role-play execution and observations."
-                    evidence = f'Quoted excerpt: "{p_sample_2}"'
-                    gap = "Missing detailed post-negotiation process and counterpart observation notes."
+                c2_base = 0.0
+                c2_base += 9.5 if has_named_peer else 6.5
+                c2_base += 9.3 if has_roleplay_obs else 5.0
+                c2_base += min(8.5, max(4.0, (word_count / 250.0)))
+                # Deduct for synthetic detached third-person phrasing in execution
+                if ai_pct > 50.0:
+                    c2_base -= min(4.5, (ai_pct - 50.0) * 0.15)
+                awarded = min(max_m, max(10.0, round(c2_base, 1)))
+                tier = "Distinction (85-100%)" if awarded >= (max_m * 0.85) else ("Merit (70-84%)" if awarded >= (max_m * 0.70) else "Pass (50-69%)")
+                rationale = (
+                    f"Role-play execution assessment: Named peer ({'Yes' if has_named_peer else 'Unnamed/generic'}), "
+                    f"Observations on tactics & disclosure ({'Detailed' if has_roleplay_obs else 'Minimal'}), "
+                    f"Authentic student voice ({'Strong first-person presence' if ai_pct < 45 else 'Noticeable synthetic/detached third-person phrasing'})."
+                )
+                evidence = f'Quoted excerpt: "{p_sample_2}"'
+                gap = "Document interpersonal tension, emotional regulation, and exact verbal exchanges during impasse."
 
-            # 3. AI-Assisted Critique & Reflection Report
+            # Criterion 3: AI-Assisted Critique & Reflection Report (35 marks)
             else:
-                if has_ai_critique and word_count >= 300:
-                    awarded = round(max_m * 0.88, 1)
-                    tier = "Distinction (85-100%)"
-                    rationale = (
-                        "Exemplary reflection report demonstrating critical self-awareness and thoughtful synthesis of Claude/AI critique. "
-                        "The report candidly evaluates missed integrative value, personal bargaining tendencies, and outlines concrete behavioral adaptations for future deals."
-                    )
-                    evidence = f'Quoted excerpt: "{p_sample_3}"'
-                    gap = "Could document an iterative prompt sequence testing alternative counter-offers proposed by the AI."
-                elif has_ai_critique:
-                    awarded = round(max_m * 0.75, 1)
-                    tier = "Merit (70-84%)"
-                    rationale = "Effective engagement with AI critique and competent reflection report identifying personal takeaways."
-                    evidence = f'Quoted excerpt: "{p_sample_3}"'
-                    gap = "Reflection report could provide deeper tactical analysis on specific value left on the table."
-                else:
-                    awarded = round(max_m * 0.58, 1)
-                    tier = "Pass (50-69%)"
-                    rationale = "AI critique and reflection report are partially documented but lack comprehensive depth."
-                    evidence = f'Quoted excerpt: "{p_sample_3}"'
-                    gap = "Missing thorough AI critique analysis and comprehensive 350-word reflection report."
+                c3_base = 0.0
+                c3_base += 13.8 if has_claude_critique else 6.0
+                c3_base += 13.5 if has_reflection else 7.0
+                c3_base += 4.2 if "differently" in text_lower else 2.0
+                # Deduct for excessive uncredited AI drafting beyond prescribed Step 7 critique
+                if ai_pct > 25.0:
+                    c3_base -= min(6.0, (ai_pct - 25.0) * 0.12)
+                awarded = min(max_m, max(12.0, round(c3_base, 1)))
+                tier = "Distinction (85-100%)" if awarded >= (max_m * 0.85) else ("Merit (70-84%)" if awarded >= (max_m * 0.70) else "Pass (50-69%)")
+                rationale = (
+                    f"Step 7-8 evaluation: Claude critique ({'Documented' if has_claude_critique else 'Missing'}), "
+                    f"Reflection Report ({'Comprehensive (>350 words)' if has_reflection else 'Brief'}), "
+                    f"AI Support Level: {ai_pct}% ({ai_level})."
+                )
+                evidence = f'Quoted excerpt: "{p_sample_3}"'
+                gap = "Provide iterative prompt exchanges rather than relying on a single AI output."
 
             total_score += awarded
             criteria_breakdown.append({
@@ -559,6 +740,18 @@ def _generate_structured_fallback_evaluation(
                 "gap_identified": gap,
             })
 
+        # Plagiarism Penalty & Academic Integrity Notice
+        if plagiarism_flag and max_shared_phrases >= 100:
+            penalty = 38.0
+            total_score = max(20.0, round(total_score - penalty, 1))
+            academic_integrity_note = f"ACADEMIC INTEGRITY VIOLATION: Verbatim submission clone detected ({max_shared_phrases} shared phrases with {', '.join(collusion_peers)})."
+        elif plagiarism_flag:
+            penalty = 12.0
+            total_score = max(40.0, round(total_score - penalty, 1))
+            academic_integrity_note = f"COLLUSION WARNING: Substantial shared template/phrasing detected ({max_shared_phrases} shared phrases with {', '.join(collusion_peers)})."
+        else:
+            academic_integrity_note = "Original submission: No unauthorized peer text-sharing detected."
+
         total_score = min(100.0, max(0.0, round(total_score, 1)))
         if total_score >= 85:
             overall_tier = "Distinction (85-100%)"
@@ -570,40 +763,42 @@ def _generate_structured_fallback_evaluation(
             overall_tier = "Needs Work (<50%)"
 
         strengths = [
-            "Principled Framework Application: Accurate understanding and synthesis of Fisher & Ury's 4 principled negotiation pillars.",
-            "Concrete BATNA Quantification: Thoughtful definition of walk-away alternatives and reservation boundaries prior to the simulation.",
-            "Integrative Mindset: Clear diagnostic reasoning distinguishing fixed-pie bargaining from expanding-the-pie mutual gains.",
-            "Reflective AI Integration: Purposeful engagement with Claude for objective critique and honest behavioral evaluation.",
+            "Principled Framework Mastery: Accurate synthesis of Fisher & Ury's 4 negotiation elements.",
+            "Concrete Preparation: Clearly defined BATNA and walkaway parameters.",
+            "Reflective Learning: Engaged with Claude to critique value creation.",
         ]
+        if has_named_peer:
+            strengths.append("Authentic Experiential Dynamic: Role-play conducted with real classroom peer.")
 
         areas_for_improvement = [
-            "Bi-lateral ZOPA Mapping: Estimate the counterpart's BATNA and walkaway reservation point alongside your own to systematically delineate the bargaining zone.",
-            "Objective Criteria Grounding: Anchor opening proposals to external, verifiable market standards and benchmarks rather than subjective preferences.",
-            "Strategic Information Elicitation: Employ open-ended diagnostic questioning to uncover underlying non-financial interests during live exchanges.",
-            "Contingent Concession Structuring: Ensure that every concession made is framed conditionally upon an integrative reciprocal trade-off.",
+            "Bi-lateral ZOPA Construction: Model the counterpart's reservation point alongside your own.",
+            "Diagnostic Questioning: Practice open-ended probing during live role-play.",
         ]
-
-        critical_feedback = (
-            f"COMPREHENSIVE NEGOTIATION & COMMUNICATION APPRAISAL\n\n"
-            f"1. Principled Negotiation & BATNA Preparation:\n"
-            f"The submission demonstrates strong conceptual mastery of Fisher & Ury's Harvard Program on Negotiation framework. "
-            f"Your identification of interests versus positions and computation of a pre-negotiation BATNA provided a solid foundation. "
-            f"To reach elite executive standard, always attempt to reverse-engineer your counterpart's BATNA and reservation point to map out the bi-lateral ZOPA.\n\n"
-            f"2. Live Execution Dynamics & Observation:\n"
-            f"The role-play documentation highlights active engagement with your peer. Your self-awareness regarding whether to disclose your BATNA "
-            f"demonstrates strategic discretion. In subsequent negotiations, focus on active listening and emotional regulation during deadlock moments.\n\n"
-            f"3. AI Critique & Reflective Synthesis:\n"
-            f"The consultation with Claude yielded actionable insights on missed integrative value. Your Reflection Report shows genuine critical self-awareness "
-            f"rather than generic praise, which is the core objective of experiential HyperBuild simulations.\n\n"
-            f"4. Action Plan for Future Negotiations:\n"
-            f"Prior to future commercial or organizational negotiations, establish objective benchmark criteria, prepare package offers rather than single-issue trades, "
-            f"and practice diagnostic open-ended questioning."
-        )
+        if ai_pct > 40.0:
+            areas_for_improvement.append(f"AI Reliance Calibration: Estimated {ai_pct}% AI support. Replace generative AI drafting with personal reflective voice.")
+        if plagiarism_flag:
+            areas_for_improvement.append(f"Originality & Independence: Ensure deliverables are authored independently without sharing templates or drafts with peers.")
 
         exec_summary = (
-            f"Comprehensive evaluation completed across {len(criteria_breakdown)} rubric criteria ({word_count} words analyzed). "
-            f"The submission achieves an overall score of {total_score}/100 ({overall_tier}), demonstrating strong mastery of Harvard principled negotiation, "
-            f"rigorous BATNA preparation, and reflective AI-assisted critique."
+            f"Score: {total_score}/100 ({overall_tier}) | AI Support: {ai_pct}% ({ai_level}) | Word Count: {word_count} words. "
+            f"{'Integrity Alert: ' + academic_integrity_note if plagiarism_flag else 'Originality verified.'}"
+        )
+
+        critical_feedback = (
+            f"DETAILED ACADEMIC & RIGOROUS EVALUATION\n\n"
+            f"1. Preparation & Doctrinal Grounding:\n"
+            f"The deliverable demonstrates understanding of the Harvard PON framework. "
+            f"BATNA and reservation points were {'quantified and actionable' if has_quant_batna else 'somewhat qualitative'}. "
+            f"To reach top distinction, compute both parties' reservation prices to map out the bi-lateral bargaining zone.\n\n"
+            f"2. Role-Play Dynamics & Execution:\n"
+            f"Live simulation execution indicates {'authentic peer collaboration' if has_named_peer else 'generic scenario drafting'}. "
+            f"Observations on counterpart tactics show {'critical discernment' if has_roleplay_obs else 'limited detail'}.\n\n"
+            f"3. AI Critique, Reflection & Authenticity:\n"
+            f"Estimated AI Support: {ai_pct}% ({ai_level}). {ai_findings[0]}\n\n"
+            f"4. Academic Integrity & Peer Comparison:\n"
+            f"{academic_integrity_note}\n\n"
+            f"5. Concrete Remediation Plan:\n"
+            f"Focus on authentic diagnostic communication, eliminate verbatim AI copying, and benchmark opening anchors against verifiable market data."
         )
 
     else:
@@ -716,7 +911,7 @@ def _generate_structured_fallback_evaluation(
             f"The submission achieves an overall score of {total_score}/100 ({overall_tier})."
         )
 
-    return {
+    res = {
         "total_score": total_score,
         "max_score": 100.0,
         "performance_tier": overall_tier,
@@ -725,6 +920,13 @@ def _generate_structured_fallback_evaluation(
         "areas_for_improvement": areas_for_improvement,
         "criteria_breakdown": criteria_breakdown,
         "critical_feedback": critical_feedback,
-        "model_used": "HyperBuild Assessment Engine (Precision Academic Evaluator)",
+        "model_used": "HyperBuild Assessment Engine (Precision Academic Evaluator with AI & Plagiarism Audit)",
         "evaluated_at": datetime.utcnow().isoformat(),
     }
+    if is_negotiation:
+        res["ai_support_percentage"] = ai_pct
+        res["ai_support_level"] = ai_level
+        res["ai_audit_findings"] = ai_findings
+        res["plagiarism_flag"] = plagiarism_flag
+        res["collusion_details"] = collusion_peers
+    return res

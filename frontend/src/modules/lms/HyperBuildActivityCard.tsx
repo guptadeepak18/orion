@@ -109,6 +109,11 @@ interface ActivitySubmission {
     critical_feedback?: string;
     model_used?: string;
     evaluated_at?: string;
+    ai_support_percentage?: number;
+    ai_support_level?: string;
+    ai_audit_findings?: string[];
+    plagiarism_flag?: boolean;
+    collusion_details?: string[];
   };
   submitted_at: string;
   status: string;
@@ -1005,6 +1010,45 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                               </div>
                             </div>
 
+                            {/* AI Assistance & Academic Integrity Banner */}
+                            {(sub.ai_evaluation.ai_support_percentage !== undefined || sub.ai_evaluation.plagiarism_flag !== undefined) && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+                                  (sub.ai_evaluation.ai_support_percentage || 0) > 50
+                                    ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200'
+                                    : 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/40 text-indigo-900 dark:text-indigo-200'
+                                }`}>
+                                  <span className="text-xl">🤖</span>
+                                  <div>
+                                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">AI Assistance & Support</div>
+                                    <div className="font-bold text-xs">
+                                      {sub.ai_evaluation.ai_support_percentage ?? 20}% ({sub.ai_evaluation.ai_support_level || 'Bounded Support'})
+                                    </div>
+                                    {sub.ai_evaluation.ai_audit_findings?.[0] && (
+                                      <div className="text-[10px] opacity-80 mt-0.5 line-clamp-1">{sub.ai_evaluation.ai_audit_findings[0]}</div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+                                  sub.ai_evaluation.plagiarism_flag
+                                    ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
+                                    : 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200'
+                                }`}>
+                                  <span className="text-xl">{sub.ai_evaluation.plagiarism_flag ? '⚠️' : '🛡️'}</span>
+                                  <div>
+                                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Academic Integrity Audit</div>
+                                    <div className="font-bold text-xs">
+                                      {sub.ai_evaluation.plagiarism_flag ? 'Peer Collusion / Template Detected' : 'Original Submission Verified'}
+                                    </div>
+                                    {sub.ai_evaluation.collusion_details?.[0] && (
+                                      <div className="text-[10px] opacity-80 mt-0.5 line-clamp-1">{sub.ai_evaluation.collusion_details[0]}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
                             {/* Executive Summary */}
                             {sub.ai_evaluation.executive_summary && (
                               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
@@ -1137,6 +1181,45 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* AI Assistance & Academic Integrity Banner */}
+              {(submission.ai_evaluation.ai_support_percentage !== undefined || submission.ai_evaluation.plagiarism_flag !== undefined) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className={`p-3.5 rounded-2xl border flex items-center gap-3 ${
+                    (submission.ai_evaluation.ai_support_percentage || 0) > 50
+                      ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200'
+                      : 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/40 text-indigo-900 dark:text-indigo-200'
+                  }`}>
+                    <span className="text-2xl">🤖</span>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">AI Assistance & Support</div>
+                      <div className="font-bold text-xs">
+                        {submission.ai_evaluation.ai_support_percentage ?? 20}% ({submission.ai_evaluation.ai_support_level || 'Bounded Support'})
+                      </div>
+                      {submission.ai_evaluation.ai_audit_findings?.[0] && (
+                        <div className="text-[10px] opacity-80 mt-0.5 line-clamp-1">{submission.ai_evaluation.ai_audit_findings[0]}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`p-3.5 rounded-2xl border flex items-center gap-3 ${
+                    submission.ai_evaluation.plagiarism_flag
+                      ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
+                      : 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200'
+                  }`}>
+                    <span className="text-2xl">{submission.ai_evaluation.plagiarism_flag ? '⚠️' : '🛡️'}</span>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Academic Integrity Audit</div>
+                      <div className="font-bold text-xs">
+                        {submission.ai_evaluation.plagiarism_flag ? 'Peer Collusion / Template Detected' : 'Original Submission Verified'}
+                      </div>
+                      {submission.ai_evaluation.collusion_details?.[0] && (
+                        <div className="text-[10px] opacity-80 mt-0.5 line-clamp-1">{submission.ai_evaluation.collusion_details[0]}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Executive Summary */}
               {submission.ai_evaluation.executive_summary && (
