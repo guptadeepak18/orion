@@ -28,6 +28,8 @@ tmp/
 scratch/
 backend/uploads/
 ~$*
+*.pdf
+*.docx
 
 # OS files
 .DS_Store

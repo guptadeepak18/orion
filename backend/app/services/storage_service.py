@@ -224,27 +224,57 @@ class StorageService:
                 "content_type": content_type,
             }
 
-    async def read_file_bytes(self, key_or_path: str) -> bytes:
+    def read_file_bytes_sync(self, key_or_path: str) -> bytes:
         """
-        Reads raw bytes of a file from R2 or local disk.
+        Synchronously reads raw bytes of a file from local disk, Cloudflare R2, or HTTP URL.
         """
-        s3 = self._get_s3_client()
+        # 1. Existing local file
+        if os.path.exists(key_or_path):
+            try:
+                with open(key_or_path, "rb") as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"[Storage] Local read failed for '{key_or_path}': {e}")
 
-        # If it's an existing local absolute path, read from disk
-        if os.path.isabs(key_or_path) and os.path.exists(key_or_path):
-            with open(key_or_path, "rb") as f:
-                return f.read()
+        # 2. HTTP/HTTPS URL
+        if key_or_path.startswith("http://") or key_or_path.startswith("https://"):
+            try:
+                import httpx
+                resp = httpx.get(key_or_path, timeout=15.0)
+                if resp.status_code == 200:
+                    return resp.content
+                logger.warning(f"[Storage] HTTP GET {resp.status_code} for '{key_or_path}'")
+            except Exception as e:
+                logger.warning(f"[Storage] HTTP download failed for '{key_or_path}': {e}")
 
-        # Try R2 if active
+        # 3. Clean R2 key
         clean_key = key_or_path.replace("\\\\", "/").replace("\\", "/").lstrip("/")
+        if "r2.dev/" in clean_key:
+            clean_key = clean_key.split("r2.dev/")[-1]
+        elif "cloudflarestorage.com/" in clean_key:
+            clean_key = clean_key.split("cloudflarestorage.com/")[-1]
+
+        # 4. Direct S3 Get Object
+        s3 = self._get_s3_client()
         if s3:
             try:
                 resp = s3.get_object(Bucket=settings.R2_BUCKET_NAME, Key=clean_key)
                 return resp["Body"].read()
             except Exception as e:
-                logger.warning(f"[Storage] R2 get_object failed for '{clean_key}': {e}. Checking local disk...")
+                logger.warning(f"[Storage] R2 get_object failed for '{clean_key}': {e}")
 
-        # Try local fallback paths
+        # 5. Public R2 URL fallback
+        if settings.R2_PUBLIC_URL:
+            pub_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{clean_key}"
+            try:
+                import httpx
+                resp = httpx.get(pub_url, timeout=15.0)
+                if resp.status_code == 200:
+                    return resp.content
+            except Exception as e:
+                logger.warning(f"[Storage] Public R2 URL download failed for '{pub_url}': {e}")
+
+        # 6. Local directory search fallback
         possible_local_paths = [
             os.path.join(self.local_base_dir, clean_key),
             os.path.join(self.local_base_dir, "lms", os.path.basename(clean_key)),
@@ -257,6 +287,12 @@ class StorageService:
                     return f.read()
 
         raise FileNotFoundError(f"File not found in R2 or local storage: '{key_or_path}'")
+
+    async def read_file_bytes(self, key_or_path: str) -> bytes:
+        """
+        Reads raw bytes of a file from R2 or local disk (delegates to read_file_bytes_sync).
+        """
+        return self.read_file_bytes_sync(key_or_path)
 
     async def delete_file(self, key_or_path: str) -> bool:
         """

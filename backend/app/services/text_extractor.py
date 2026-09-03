@@ -15,24 +15,12 @@ def extract_text_from_file(file_path: str, filename: Optional[str] = None, file_
     ext = os.path.splitext(name)[1].lower()
 
     if file_bytes is None:
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                file_bytes = f.read()
-        else:
-            try:
-                import asyncio
-                from app.services.storage_service import storage_service
-                
-                try:
-                    loop = asyncio.get_running_loop()
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        file_bytes = pool.submit(asyncio.run, storage_service.read_file_bytes(file_path)).result()
-                except RuntimeError:
-                    file_bytes = asyncio.run(storage_service.read_file_bytes(file_path))
-            except Exception as e:
-                logger.warning(f"[TextExtractor] Failed to read bytes for '{file_path}': {e}")
-                return ""
+        try:
+            from app.services.storage_service import storage_service
+            file_bytes = storage_service.read_file_bytes_sync(file_path)
+        except Exception as e:
+            logger.warning(f"[TextExtractor] Failed to read bytes for '{file_path}': {e}")
+            return ""
 
     if not file_bytes:
         return ""
