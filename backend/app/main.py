@@ -131,7 +131,9 @@ app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
 
 @app.get(f"{settings.API_V1_STR}", tags=["Health"])
+@app.head(f"{settings.API_V1_STR}", tags=["Health"])
 @app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
+@app.head(f"{settings.API_V1_STR}/health", tags=["Health"])
 async def api_health():
     return {
         "status": "healthy",
@@ -151,13 +153,15 @@ if os.path.exists(STATIC_DIR):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/", include_in_schema=False)
+    @app.head("/", include_in_schema=False)
     async def serve_root():
         index_file = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index_file):
             return FileResponse(index_file)
-        return JSONResponse(status_code=404, content={"detail": "Frontend index.html not found"})
+        return JSONResponse(status_code=200, content={"status": "online", "app": settings.PROJECT_NAME})
 
     @app.get("/{full_path:path}", include_in_schema=False)
+    @app.head("/{full_path:path}", include_in_schema=False)
     async def serve_frontend_spa(full_path: str):
         # Allow API, docs, openapi requests to fall through or return 404
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
@@ -172,9 +176,10 @@ if os.path.exists(STATIC_DIR):
         index_file = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index_file):
             return FileResponse(index_file)
-        return JSONResponse(status_code=404, content={"detail": "Frontend index.html not found"})
+        return JSONResponse(status_code=200, content={"status": "online", "app": settings.PROJECT_NAME})
 else:
     @app.get("/", tags=["Health"])
+    @app.head("/", tags=["Health"])
     async def root():
         return {
             "app": settings.PROJECT_NAME,
