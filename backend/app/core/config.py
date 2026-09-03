@@ -21,8 +21,14 @@ class Settings(BaseSettings):
     
     ENVIRONMENT: str = "production"
     DEV_NOTIFICATION_OVERRIDE_EMAIL: str = ""
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost,http://127.0.0.1"
     FILE_STORAGE_PATH: str = "./uploads"
+
+    # Cloudflare R2 Cloud Object Storage settings
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = "crc-storage"
+    R2_PUBLIC_URL: str = ""
 
     # Email API settings (HTTP APIs take precedence over SMTP on platforms like Render where SMTP ports are blocked)
     HOSTINGER_MAIL_API_KEY: str = "47365baa0ca73c5e8c639bd961149cf4ad99f5e3b3fef47dd64dac28f69932b5"

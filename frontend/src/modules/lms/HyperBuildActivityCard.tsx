@@ -306,6 +306,28 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
     },
   });
 
+  // Bulk AI evaluation query & mutation
+  const { data: evalProgress } = useQuery({
+    queryKey: ['activity-eval-progress', activity.id],
+    queryFn: async () => {
+      const res = await api.get(`/lms/activities/${activity.id}/evaluation-progress`);
+      return res.data;
+    },
+    enabled: isFacultyOrAdmin && isExpanded,
+    refetchInterval: (query) => (query.state.data?.status === 'in_progress' ? 2500 : 8000),
+  });
+
+  const bulkEvaluateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post(`/lms/activities/${activity.id}/bulk-evaluate`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-eval-progress', activity.id] });
+      queryClient.invalidateQueries({ queryKey: ['activity-submissions', activity.id] });
+    },
+  });
+
   // File selection handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -809,7 +831,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
           {/* 6. FACULTY & ADMIN: STUDENT SUBMISSIONS REVIEW & ON-DEMAND AI EVALUATION */}
           {isFacultyOrAdmin && (
             <div className="p-5 rounded-3xl bg-indigo-50/40 dark:bg-slate-800/40 border border-indigo-200/80 dark:border-indigo-900/60 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
                     <Bot className="h-5 w-5" />
@@ -823,7 +845,45 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                     </p>
                   </div>
                 </div>
+
+                {facultySubmissions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => bulkEvaluateMutation.mutate()}
+                    disabled={bulkEvaluateMutation.isPending || evalProgress?.status === 'in_progress'}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Sparkles className={`h-3.5 w-3.5 ${evalProgress?.status === 'in_progress' ? 'animate-spin' : ''}`} />
+                    <span>{evalProgress?.status === 'in_progress' ? 'Grading Submissions...' : '⚡ Bulk AI Evaluate All'}</span>
+                  </button>
+                )}
               </div>
+
+              {/* Active Evaluation Progress Bar */}
+              {evalProgress?.status === 'in_progress' && (
+                <div className="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 animate-spin text-purple-600" />
+                      <span>Grading submissions against rubrics...</span>
+                    </span>
+                    <span>{evalProgress?.processed_count || 0} / {evalProgress?.total_submissions || facultySubmissions.length}</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-purple-200 dark:bg-purple-900 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-600 transition-all duration-300"
+                      style={{
+                        width: `${Math.round(((evalProgress?.processed_count || 0) / (evalProgress?.total_submissions || 1)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  {evalProgress?.current_student && (
+                    <p className="text-[10px] text-purple-700 dark:text-purple-300">
+                      Currently evaluating: <span className="font-semibold">{evalProgress.current_student}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {isLoadingSubs ? (
                 <div className="py-6 text-center text-xs text-slate-400">Loading student submissions...</div>

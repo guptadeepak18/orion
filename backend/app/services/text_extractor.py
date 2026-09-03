@@ -1,52 +1,74 @@
-import os
 import io
+import os
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def extract_text_from_file(file_path: str, filename: Optional[str] = None) -> str:
-    """Extract clean textual content from various document formats for LLM evaluation."""
-    if not os.path.exists(file_path):
-        return ""
-
+def extract_text_from_file(file_path: str, filename: Optional[str] = None, file_bytes: Optional[bytes] = None) -> str:
+    """
+    Extract clean textual content from various document formats (PDF, DOCX, PPTX, XLSX, TXT)
+    for LLM evaluation, supporting local paths, R2 storage keys, and raw byte buffers.
+    """
     name = (filename or os.path.basename(file_path)).lower()
     ext = os.path.splitext(name)[1].lower()
 
+    if file_bytes is None:
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+        else:
+            try:
+                import asyncio
+                from app.services.storage_service import storage_service
+                
+                try:
+                    loop = asyncio.get_running_loop()
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        file_bytes = pool.submit(asyncio.run, storage_service.read_file_bytes(file_path)).result()
+                except RuntimeError:
+                    file_bytes = asyncio.run(storage_service.read_file_bytes(file_path))
+            except Exception as e:
+                logger.warning(f"[TextExtractor] Failed to read bytes for '{file_path}': {e}")
+                return ""
+
+    if not file_bytes:
+        return ""
+
     try:
         if ext == ".pdf":
-            return _extract_pdf(file_path)
+            return _extract_pdf_from_bytes(file_bytes)
         elif ext in [".docx", ".doc"]:
-            return _extract_docx(file_path)
+            return _extract_docx_from_bytes(file_bytes)
         elif ext in [".pptx", ".ppt"]:
-            return _extract_pptx(file_path)
+            return _extract_pptx_from_bytes(file_bytes)
         elif ext in [".xlsx", ".xls", ".csv"]:
-            return _extract_spreadsheet(file_path, ext)
+            return _extract_spreadsheet_from_bytes(file_bytes, ext)
         elif ext in [".txt", ".md", ".json", ".rtf", ".py", ".html"]:
-            return _extract_text(file_path)
+            return _extract_text_from_bytes(file_bytes)
         else:
-            # Fallback to binary decode attempt
-            return _extract_text(file_path)
+            return _extract_text_from_bytes(file_bytes)
     except Exception as e:
-        logger.error(f"Error extracting text from {file_path}: {e}")
-        return f"[Error extracting text from {os.path.basename(file_path)}: {str(e)}]"
+        logger.error(f"Error extracting text from {name}: {e}")
+        return f"[Error extracting text from {name}: {str(e)}]"
 
 
-def _extract_pdf(file_path: str) -> str:
+def _extract_pdf_from_bytes(data: bytes) -> str:
     from pypdf import PdfReader
-    reader = PdfReader(file_path)
+    reader = PdfReader(io.BytesIO(data))
     text_parts = []
     for i, page in enumerate(reader.pages):
         page_text = page.extract_text() or ""
         if page_text.strip():
-            text_parts.append(f"--- Page {i+1} ---\n{page_text.strip()}")
+            text_parts.append(f"--- Page {i+1} ---\n" + page_text.strip())
     return "\n\n".join(text_parts)
 
 
-def _extract_docx(file_path: str) -> str:
+def _extract_docx_from_bytes(data: bytes) -> str:
     from docx import Document
-    doc = Document(file_path)
+    doc = Document(io.BytesIO(data))
     lines = []
     for p in doc.paragraphs:
         if p.text.strip():
@@ -59,9 +81,9 @@ def _extract_docx(file_path: str) -> str:
     return "\n".join(lines)
 
 
-def _extract_pptx(file_path: str) -> str:
+def _extract_pptx_from_bytes(data: bytes) -> str:
     from pptx import Presentation
-    prs = Presentation(file_path)
+    prs = Presentation(io.BytesIO(data))
     slides_text = []
     for i, slide in enumerate(prs.slides):
         slide_lines = []
@@ -73,13 +95,12 @@ def _extract_pptx(file_path: str) -> str:
     return "\n\n".join(slides_text)
 
 
-def _extract_spreadsheet(file_path: str, ext: str) -> str:
+def _extract_spreadsheet_from_bytes(data: bytes, ext: str) -> str:
     if ext == ".csv":
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-    
+        return data.decode("utf-8", errors="ignore")
+
     from openpyxl import load_workbook
-    wb = load_workbook(file_path, read_only=True, data_only=True)
+    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     sheets_text = []
     for sheet_name in wb.sheetnames:
         sheet = wb[sheet_name]
@@ -93,6 +114,5 @@ def _extract_spreadsheet(file_path: str, ext: str) -> str:
     return "\n\n".join(sheets_text)
 
 
-def _extract_text(file_path: str) -> str:
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read()
+def _extract_text_from_bytes(data: bytes) -> str:
+    return data.decode("utf-8", errors="ignore")

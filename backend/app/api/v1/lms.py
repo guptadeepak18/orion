@@ -202,39 +202,56 @@ async def upload_lms_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a file to the LMS directory."""
-    result = await lms_service.save_uploaded_file(file)
-    return result
+    """Upload a file to the LMS directory using 64KB chunked streaming."""
+    try:
+        result = await lms_service.save_uploaded_file(file)
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"File upload failed: {str(e)}")
 
 
 @router.get("/files/view")
 async def view_lms_file(file: str):
-    """View uploaded file in browser."""
+    """View uploaded file in browser from R2 or local storage."""
+    from app.services.storage_service import storage_service
     safe_filename = os.path.basename(file)
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        data = await storage_service.read_file_bytes(f"lms/{safe_filename}")
+    except FileNotFoundError:
+        try:
+            data = await storage_service.read_file_bytes(file)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="File not found")
 
-    content_type, _ = mimetypes.guess_type(file_path)
-    return FileResponse(
-        file_path,
+    content_type, _ = mimetypes.guess_type(safe_filename)
+    clean_display_name = safe_filename.split("_", 1)[1] if "_" in safe_filename and len(safe_filename.split("_", 1)[0]) == 32 else safe_filename
+    return Response(
+        content=data,
         media_type=content_type or "application/octet-stream",
-        headers={"Content-Disposition": f"inline; filename={safe_filename}"}
+        headers={"Content-Disposition": f'inline; filename="{clean_display_name}"', "Cache-Control": "public, max-age=86400"}
     )
 
 
 @router.get("/files/download")
 async def download_lms_file(file: str):
-    """Download uploaded file."""
+    """Download uploaded file from R2 or local storage."""
+    from app.services.storage_service import storage_service
     safe_filename = os.path.basename(file)
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        data = await storage_service.read_file_bytes(f"lms/{safe_filename}")
+    except FileNotFoundError:
+        try:
+            data = await storage_service.read_file_bytes(file)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(
-        file_path,
+    clean_display_name = safe_filename.split("_", 1)[1] if "_" in safe_filename and len(safe_filename.split("_", 1)[0]) == 32 else safe_filename
+    return Response(
+        content=data,
         media_type="application/octet-stream",
-        filename=safe_filename
+        headers={"Content-Disposition": f'attachment; filename="{clean_display_name}"', "Cache-Control": "public, max-age=86400"}
     )
 
 
@@ -516,6 +533,40 @@ async def reevaluate_activity_submission(
     if not sub:
         raise HTTPException(status_code=404, detail="Activity submission not found")
     return sub
+
+
+@router.post("/activities/{activity_id}/bulk-evaluate")
+async def bulk_evaluate_activity_submissions(
+    activity_id: uuid.UUID,
+    session_id: Optional[uuid.UUID] = Query(None),
+    reevaluate_all: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Triggers an asynchronous, rate-limited bulk AI evaluation of submissions for an activity.
+    Uses concurrency semaphores to prevent Gemini rate limit throttling.
+    """
+    from app.services.bulk_evaluator import bulk_evaluator
+    return await bulk_evaluator.start_bulk_evaluation(
+        activity_id=activity_id,
+        session_id=session_id,
+        requested_by_user_id=current_user.id,
+        reevaluate_all=reevaluate_all,
+    )
+
+
+@router.get("/activities/{activity_id}/evaluation-progress")
+async def get_activity_evaluation_progress(
+    activity_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
+    """Retrieves live background progress for the bulk AI evaluation job."""
+    from app.services.bulk_evaluator import bulk_evaluator
+    prog = bulk_evaluator.get_task_progress(str(activity_id))
+    if not prog:
+        return {"status": "idle", "activity_id": str(activity_id), "total_submissions": 0, "processed_count": 0}
+    return prog
 
 
 

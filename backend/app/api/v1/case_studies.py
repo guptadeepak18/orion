@@ -118,32 +118,24 @@ async def upload_case_study_file(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file uploaded")
-
-    upload_dir = os.path.join(settings.FILE_STORAGE_PATH, "case_studies")
-    os.makedirs(upload_dir, exist_ok=True)
-
-    file_id = uuid.uuid4().hex[:12]
-    clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', file.filename)
-    stored_filename = f"{file_id}_{clean_name}"
-    file_path = os.path.join(upload_dir, stored_filename)
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    ext = os.path.splitext(file.filename)[1].lower().replace('.', '')
-
-    return ResponseEnvelope(
-        data={
-            "file_url": f"/case-studies/files/{stored_filename}",
-            "file_name": file.filename,
-            "file_size": len(content),
-            "file_type": ext,
-            "stored_filename": stored_filename,
-        }
-    )
+    from app.services.storage_service import storage_service
+    try:
+        res = await storage_service.upload_file(file, folder="case_studies", max_size_bytes=50 * 1024 * 1024)
+        ext = os.path.splitext(file.filename)[1].lower().replace('.', '')
+        stored_filename = os.path.basename(res["saved_filename"])
+        return ResponseEnvelope(
+            data={
+                "file_url": res["file_url"],
+                "file_name": file.filename,
+                "file_size": res["file_size"],
+                "file_type": ext,
+                "stored_filename": stored_filename,
+            }
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 @router.get(
@@ -155,11 +147,15 @@ async def download_case_study_file(
     original_name: Optional[str] = Query(None),
     inline: Optional[bool] = Query(False),
 ):
-    upload_dir = os.path.join(settings.FILE_STORAGE_PATH, "case_studies")
-    file_path = os.path.join(upload_dir, filename)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Case study document not found on server")
+    from app.services.storage_service import storage_service
+    safe_filename = os.path.basename(filename)
+    try:
+        data = await storage_service.read_file_bytes(f"case_studies/{safe_filename}")
+    except FileNotFoundError:
+        try:
+            data = await storage_service.read_file_bytes(safe_filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Case study document not found on server")
 
     download_name = original_name or filename
     safe_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', download_name)
@@ -178,11 +174,10 @@ async def download_case_study_file(
     m_type = media_types.get(ext, "application/octet-stream")
     disposition = "inline" if inline else f'attachment; filename="{safe_name}"'
 
-    return FileResponse(
-        path=file_path,
+    return Response(
+        content=data,
         media_type=m_type,
-        filename=safe_name if not inline else None,
-        headers={"Content-Disposition": disposition},
+        headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=86400"},
     )
 
 

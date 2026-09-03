@@ -127,6 +127,27 @@ async def request_password_reset(db: AsyncSession, raw_email: str) -> bool:
             user = await get_user_by_email(db, alt_email)
 
     if not user:
+        # Check enrolled Student table for students enrolled from backend
+        from app.models.student import Student
+        from app.services.student_service import ensure_user_for_student
+        
+        stmt_st = select(Student).where(
+            or_(
+                Student.email_official == clean_email,
+                Student.email == clean_email,
+                Student.email_personal == clean_email,
+            ),
+            Student.is_deleted == False
+        )
+        res_st = await db.execute(stmt_st)
+        student_obj = res_st.scalars().first()
+        
+        if student_obj:
+            user = await ensure_user_for_student(db, student_obj, default_password="Mile@123")
+            if user:
+                await db.flush()
+
+    if not user:
         # Check student_registrations table too
         stmt_reg = select(StudentRegistration).where(StudentRegistration.email == clean_email)
         res_reg = await db.execute(stmt_reg)

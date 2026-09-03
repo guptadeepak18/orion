@@ -190,3 +190,40 @@ async def get_activity_roster_endpoint(
         return await get_activity_live_roster(db, activity_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post(
+    "/sessions/{session_id}/activities/{activity_id}/bulk-evaluate",
+    dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]))],
+    summary="Trigger rate-limited bulk AI evaluation for a HyperBuild activity in session",
+)
+async def hyperbuild_bulk_evaluate_endpoint(
+    session_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    reevaluate_all: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.bulk_evaluator import bulk_evaluator
+    return await bulk_evaluator.start_bulk_evaluation(
+        activity_id=activity_id,
+        session_id=session_id,
+        requested_by_user_id=current_user.id,
+        reevaluate_all=reevaluate_all,
+    )
+
+
+@router.get(
+    "/activities/{activity_id}/evaluation-progress",
+    dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]))],
+    summary="Poll live progress of background bulk AI evaluation",
+)
+async def hyperbuild_evaluation_progress_endpoint(
+    activity_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.bulk_evaluator import bulk_evaluator
+    prog = bulk_evaluator.get_task_progress(str(activity_id))
+    if not prog:
+        return {"status": "idle", "activity_id": str(activity_id), "total_submissions": 0, "processed_count": 0}
+    return prog

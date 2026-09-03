@@ -314,21 +314,9 @@ async def upload_subject_session_plan_file(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file uploaded")
-
-    # Save file to uploads/session_plans
-    upload_dir = os.path.join(settings.FILE_STORAGE_PATH, "session_plans")
-    os.makedirs(upload_dir, exist_ok=True)
-
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', file.filename)
-    filename = f"{subject_id}_{safe_name}"
-    file_path = os.path.join(upload_dir, filename)
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
+    from app.services.storage_service import storage_service
+    res = await storage_service.upload_file(file, folder="session_plans")
+    content = await storage_service.read_file_bytes(res["saved_filename"])
     ext = os.path.splitext(file.filename)[1].lower().replace('.', '')
     
     # Extract text preview if docx/pdf/txt
@@ -510,11 +498,15 @@ async def download_case_study_file(
     filename: str,
     original_name: Optional[str] = Query(None),
 ):
-    upload_dir = os.path.join(settings.FILE_STORAGE_PATH, "case_studies")
-    file_path = os.path.join(upload_dir, filename)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Case study document not found on server")
+    from app.services.storage_service import storage_service
+    safe_filename = os.path.basename(filename)
+    try:
+        data = await storage_service.read_file_bytes(f"case_studies/{safe_filename}")
+    except FileNotFoundError:
+        try:
+            data = await storage_service.read_file_bytes(safe_filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Case study document not found on server")
 
     download_name = original_name or filename
     safe_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', download_name)
@@ -532,11 +524,10 @@ async def download_case_study_file(
     }
     m_type = media_types.get(ext, "application/octet-stream")
 
-    return FileResponse(
-        path=file_path,
+    return Response(
+        content=data,
         media_type=m_type,
-        filename=safe_name,
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"', "Cache-Control": "public, max-age=86400"},
     )
 
 

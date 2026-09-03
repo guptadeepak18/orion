@@ -39,6 +39,14 @@ async def lifespan(app: FastAPI):
     try:
         # Start keepalive heartbeat task to keep connection warm
         keepalive_task = asyncio.create_task(_neon_keepalive_loop())
+
+        # Ensure seed data and sync unlinked student user accounts
+        async with AsyncSessionLocal() as session:
+            await seed_initial_data(session)
+            from app.services.student_service import sync_all_unlinked_students_to_users
+            synced = await sync_all_unlinked_students_to_users(session)
+            if synced > 0:
+                print(f"[STARTUP] Synchronized and provisioned {synced} student user accounts with default credentials.")
     except Exception as e:
         print(f"Startup notice: {e}")
 

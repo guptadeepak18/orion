@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, CheckCircle2, AlertCircle,
-  X, Lock, Radio
+  X, Lock, Radio, Upload, Link as LinkIcon, FileText
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
@@ -14,6 +14,10 @@ interface StudentHyperbuildModalProps {
 
 export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ session, onClose }) => {
   const [enteredKey, setEnteredKey] = useState('');
+  const [submissionUrl, setSubmissionUrl] = useState('');
+  const [submissionText, setSubmissionText] = useState('');
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<{ file_name: string; file_url: string; file_size?: number } | null>(null);
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [verifError, setVerifError] = useState<string | null>(null);
   const [verifSuccess, setVerifSuccess] = useState<string | null>(null);
@@ -50,6 +54,37 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
 
   const activeActivity = sessionDetails?.activities?.find((a: any) => a.status === 'active') || sessionDetails?.activities?.[0];
 
+  // Handle solution file upload with client validation
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate size (< 25MB)
+    if (file.size > 25 * 1024 * 1024) {
+      setVerifError('File exceeds the 25MB maximum upload limit.');
+      return;
+    }
+
+    setUploadingFile(true);
+    setVerifError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post('/lms/files/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setUploadedFile({
+        file_name: res.data.original_filename || file.name,
+        file_url: res.data.file_url,
+        file_size: res.data.file_size || file.size,
+      });
+    } catch (err: any) {
+      setVerifError(err.response?.data?.detail || 'File upload failed. Please try again.');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
   // 2. Submit Verification Mutation
   const verifyMutation = useMutation({
     mutationFn: async (activityId: string) => {
@@ -60,13 +95,18 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
         latitude: geoCoords?.lat || null,
         longitude: geoCoords?.lng || null,
         accuracy_meters: geoCoords?.acc || null,
+        submission_url: uploadedFile?.file_url || (submissionUrl.trim() ? submissionUrl.trim() : null),
+        submission_text: submissionText.trim() ? submissionText.trim() : null,
       };
       const res = await api.post(`/hyperbuild/activities/${activityId}/verify`, payload);
       return res.data;
     },
     onSuccess: (data) => {
-      setVerifSuccess(data.message || 'Attendance verified successfully!');
+      setVerifSuccess(data.message || 'Attendance & deliverable verified successfully!');
       setEnteredKey('');
+      setSubmissionUrl('');
+      setSubmissionText('');
+      setUploadedFile(null);
       refetch();
     },
     onError: (err: any) => {
@@ -217,7 +257,7 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                     {/* Key Input */}
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Enter Screen Key
+                        1. Enter Screen Key <span className="text-rose-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -230,14 +270,71 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                       />
                     </div>
 
+                    {/* Deliverable File / URL Upload */}
+                    <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700/60">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        2. Attach Solution Deliverable (Optional)
+                      </label>
+                      
+                      {uploadedFile ? (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2 truncate">
+                            <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
+                            <span className="font-semibold text-emerald-900 dark:text-emerald-200 truncate">{uploadedFile.file_name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setUploadedFile(null)}
+                            className="p-1 text-slate-400 hover:text-rose-600 text-xs"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="flex flex-col items-center justify-center p-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-500 bg-white dark:bg-slate-900/60 cursor-pointer transition-colors text-center">
+                            <Upload className="h-4 w-4 text-slate-400 mb-1" />
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              {uploadingFile ? 'Uploading file securely...' : 'Upload Solution File (PDF, DOCX, XLSX, PPTX)'}
+                            </span>
+                            <span className="text-[10px] text-slate-400">Max size: 25MB · Streamed upload</span>
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingFile}
+                              onChange={handleFileUpload}
+                              accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.csv,.txt,.zip"
+                            />
+                          </label>
+
+                          <div className="relative flex items-center">
+                            <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+                            <span className="flex-shrink mx-2 text-[10px] font-bold uppercase text-slate-400">or deliverable link</span>
+                            <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+                          </div>
+
+                          <div className="relative">
+                            <LinkIcon className="h-3.5 w-3.5 absolute left-3 top-3 text-slate-400" />
+                            <input
+                              type="url"
+                              placeholder="Google Drive, GitHub, Notion, or Loom URL..."
+                              value={submissionUrl}
+                              onChange={(e) => setSubmissionUrl(e.target.value)}
+                              className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Submit Button */}
                     <button
                       type="button"
                       onClick={() => verifyMutation.mutate(activeActivity.id)}
-                      disabled={verifyMutation.isPending || !enteredKey.trim()}
-                      className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+                      disabled={verifyMutation.isPending || !enteredKey.trim() || uploadingFile}
+                      className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 mt-3"
                     >
-                      <span>{verifyMutation.isPending ? 'Verifying...' : 'Verify Attendance'}</span>
+                      <span>{verifyMutation.isPending ? 'Verifying...' : 'Verify Attendance & Submit'}</span>
                     </button>
                   </div>
                 )}

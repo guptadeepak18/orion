@@ -86,3 +86,11 @@ async def broadcast_session_event(session_id: Any, event_type: str, data: Any = 
         await ws_manager.broadcast_to_session(s_id, event_type, data)
     except Exception as e:
         logger.error(f"[WS] Failed to broadcast session event '{event_type}': {e}")
+
+
+async def broadcast_global_event(event_type: str, data: Any = None):
+    """Helper function to broadcast global events safely."""
+    try:
+        await ws_manager.broadcast_global(event_type, data)
+    except Exception as e:
+        logger.error(f"[WS] Failed to broadcast global event '{event_type}': {e}")

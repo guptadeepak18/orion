@@ -200,22 +200,13 @@ class LMSService:
         await db.refresh(r)
         return r
 
-    async def save_uploaded_file(self, file: UploadFile) -> Dict[str, Any]:
-        ext = os.path.splitext(file.filename or "")[1]
-        unique_name = f"{uuid.uuid4().hex}_{file.filename}"
-        dest_path = os.path.join(UPLOAD_DIR, unique_name)
-        
-        content = await file.read()
-        with open(dest_path, "wb") as f:
-            f.write(content)
-
-        return {
-            "saved_filename": unique_name,
-            "original_filename": file.filename,
-            "file_path": dest_path,
-            "file_size": len(content),
-            "file_url": f"/api/v1/lms/files/view?file={unique_name}",
-        }
+    async def save_uploaded_file(self, file: UploadFile, max_size_bytes: int = 25 * 1024 * 1024) -> Dict[str, Any]:
+        """
+        Saves an uploaded file to Cloudflare R2 (or local fallback) using 64KB chunked streaming.
+        Maintains minimal memory footprint (<64KB RAM) even under 70+ concurrent student uploads.
+        """
+        from app.services.storage_service import storage_service
+        return await storage_service.upload_file(file, folder="lms", max_size_bytes=max_size_bytes)
 
     async def delete_resource(self, db: AsyncSession, resource_id: uuid.UUID) -> bool:
         r = await db.get(SubjectResource, resource_id)

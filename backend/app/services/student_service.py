@@ -6,7 +6,94 @@ from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.student import Student
 from app.models.academic import Program, Batch
+from app.models.auth import User, Role, UserRole
+from app.core.security import get_password_hash
 from app.schemas.student import StudentCreate, StudentUpdate, StudentResponse, StudentReportSummary
+
+
+async def ensure_user_for_student(
+    db: AsyncSession, student: Student, default_password: str = "Mile@123"
+) -> Optional[User]:
+    """
+    Ensures a corresponding User account exists for the given Student.
+    If no user exists, creates one with default password 'Mile@123' and assigns the 'student' role.
+    Links student.user_id = user.id.
+    """
+    primary_email = (student.email_official or student.email or student.email_personal or "").strip().lower()
+    if not primary_email:
+        return None
+
+    user = None
+    if student.user_id:
+        user = await db.get(User, student.user_id)
+
+    if not user:
+        user_res = await db.execute(select(User).where(User.email == primary_email))
+        user = user_res.unique().scalar_one_or_none()
+
+    if not user:
+        # Check alternative domain
+        if "@mile.education" in primary_email:
+            alt_email = primary_email.replace("@mile.education", "@lexiconmile.com")
+            user_res2 = await db.execute(select(User).where(User.email == alt_email))
+            user = user_res2.unique().scalar_one_or_none()
+        elif "@lexiconmile.com" in primary_email:
+            alt_email = primary_email.replace("@lexiconmile.com", "@mile.education")
+            user_res2 = await db.execute(select(User).where(User.email == alt_email))
+            user = user_res2.unique().scalar_one_or_none()
+
+    if not user:
+        user = User(
+            email=primary_email,
+            password_hash=get_password_hash(default_password),
+            full_name=student.full_name or "Student",
+            phone=student.mobile_number or student.phone or None,
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+
+    # Ensure 'student' role is assigned
+    role_res = await db.execute(select(Role).where(Role.name == "student"))
+    student_role = role_res.scalar_one_or_none()
+    if not student_role:
+        student_role = Role(name="student", description="Enrolled Student")
+        db.add(student_role)
+        await db.flush()
+
+    ur_res = await db.execute(
+        select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == student_role.id)
+    )
+    if not ur_res.scalar_one_or_none():
+        db.add(UserRole(user_id=user.id, role_id=student_role.id))
+
+    if student.user_id != user.id:
+        student.user_id = user.id
+
+    return user
+
+
+async def sync_all_unlinked_students_to_users(db: AsyncSession) -> int:
+    """
+    Reconciles all enrolled students in the database:
+    Creates User accounts with default password 'Mile@123' and role 'student'
+    for any student who doesn't currently have a linked User.
+    """
+    stmt = select(Student).where(Student.is_deleted == False)
+    res = await db.execute(stmt)
+    students = list(res.scalars().all())
+
+    synced_count = 0
+    for st in students:
+        old_uid = st.user_id
+        user = await ensure_user_for_student(db, st, default_password="Mile@123")
+        if user and (old_uid != user.id or old_uid is None):
+            synced_count += 1
+
+    if synced_count > 0:
+        await db.commit()
+
+    return synced_count
 
 
 async def create_student(db: AsyncSession, s_in: StudentCreate) -> Student:
@@ -28,6 +115,11 @@ async def create_student(db: AsyncSession, s_in: StudentCreate) -> Student:
 
     student = Student(**data)
     db.add(student)
+    await db.flush()
+
+    # Automatically provision User account with default password "Mile@123"
+    await ensure_user_for_student(db, student, default_password="Mile@123")
+
     await db.commit()
     await db.refresh(student)
 
@@ -168,6 +260,9 @@ async def update_student(db: AsyncSession, student_id: UUID, s_in: StudentUpdate
     if "prn_number" in update_dict and update_dict["prn_number"]:
         student.roll_no = update_dict["prn_number"]
         student.enrollment_no = update_dict["prn_number"]
+
+    # Ensure User account is linked/synced
+    await ensure_user_for_student(db, student, default_password="Mile@123")
 
     await db.commit()
     await db.refresh(student)
