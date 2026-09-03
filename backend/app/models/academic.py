@@ -150,6 +150,10 @@ class SubjectBatch(Base, TimestampMixin):
     faculty_internal: Mapped[Optional["FacultyInternal"]] = relationship("FacultyInternal", lazy="selectin")
     faculty_external: Mapped[Optional["FacultyExternal"]] = relationship("FacultyExternal", lazy="selectin")
 
+    @property
+    def batch_name(self) -> Optional[str]:
+        return self.batch.name if self.batch else None
+
 
 class Subject(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "subjects"

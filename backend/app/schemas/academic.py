@@ -1,7 +1,7 @@
 from datetime import date
-from typing import Optional, List
+from typing import Optional, List, Any
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 # Program
@@ -133,6 +133,14 @@ class SubjectBatchAllocationResponse(BaseModel):
     end_date: Optional[date] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def resolve_batch_name(cls, val: Any, handler):
+        res = handler(val)
+        if not res.batch_name and hasattr(val, "batch") and val.batch:
+            res.batch_name = getattr(val.batch, "name", None)
+        return res
 
 
 class SubjectProgramSummary(BaseModel):

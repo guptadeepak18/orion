@@ -378,6 +378,27 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
     },
   });
 
+  // Fetch Batches for allocation label fallbacks
+  const { data: batchesData = [] } = useQuery({
+    queryKey: ['academic_batches_all'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/academic/batches');
+        return (res.data?.data || res.data || []) as any[];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  const batchMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    (batchesData || []).forEach((b: any) => {
+      if (b.id && b.name) map[b.id] = b.name;
+    });
+    return map;
+  }, [batchesData]);
+
   // Create Subject Mutation
   const createSubjectMutation = useMutation({
     mutationFn: async (payload: any) => {
@@ -1105,13 +1126,20 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
                       <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">Academic Period & Batches:</span>
                       <div className="flex flex-wrap gap-1.5">
                         {subject.batch_allocations && subject.batch_allocations.length > 0 ? (
-                          subject.batch_allocations.map((ba) => (
-                            <span key={ba.batch_id} className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-medium border border-indigo-200 dark:border-indigo-800">
-                              <strong className="font-bold">{ba.batch_name || 'Batch'}</strong> — {ba.term_label || `Trimester ${ba.term_number || 1}`} {ba.start_date ? `(${ba.start_date} → ${ba.end_date || 'Ongoing'})` : ''}
-                            </span>
-                          ))
+                          subject.batch_allocations.map((ba) => {
+                            const bName = ba.batch_name || batchMap[ba.batch_id] || (subject.batch_id && batchMap[subject.batch_id]) || 'PGDM Batch';
+                            return (
+                              <span key={ba.batch_id || ba.id} className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-medium border border-indigo-200 dark:border-indigo-800 text-xs">
+                                <strong className="font-bold">{bName}</strong> — {ba.term_label || `Trimester ${ba.term_number || subject.trimester || 1}`} {ba.start_date ? `(${ba.start_date} → ${ba.end_date || 'Ongoing'})` : ''}
+                              </span>
+                            );
+                          })
+                        ) : subject.batch_id && batchMap[subject.batch_id] ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-medium border border-indigo-200 dark:border-indigo-800 text-xs">
+                            <strong className="font-bold">{batchMap[subject.batch_id]}</strong> — Trimester {subject.trimester || 1}
+                          </span>
                         ) : (
-                          <span className="text-slate-400 italic">No specific batch allocated</span>
+                          <span className="text-slate-400 italic text-xs">No specific batch allocated</span>
                         )}
                       </div>
                     </div>
