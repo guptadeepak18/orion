@@ -55,6 +55,8 @@ async def evaluate_submission_against_rubric(
     gemini_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 
+    result = None
+
     ollama_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434") or "http://127.0.0.1:11434"
     ollama_model = getattr(settings, "OLLAMA_MODEL", "gemma4:31b-cloud") or "gemma4:31b-cloud"
     ollama_key = getattr(settings, "OLLAMA_API_KEY", None) or os.getenv("OLLAMA_API_KEY")
@@ -142,16 +144,20 @@ async def evaluate_submission_against_rubric(
 def _build_evaluation_prompt(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> str:
     rubric_str = json.dumps(rubric, indent=2) if rubric else "Standard Academic Rubric: Accuracy (35%), Critical Analysis (35%), Professional Execution (30%)"
 
-    return f"""You are an elite, uncompromising Professor of Business Communication and Negotiation at a top-tier business school.
-Student being evaluated: {student_name}
+    act_title = getattr(activity, "title", "Academic Activity") or "Academic Activity"
+    act_no = getattr(activity, "activity_no", "")
+    unit = getattr(activity, "unit_mapping", "") or "Coursework"
+    effort = getattr(activity, "estimated_time", "") or "2-3 hours"
+    mode = getattr(activity, "mode", "") or "Individual"
+    instructions = getattr(activity, "instructions", "") or ""
+    reqs = getattr(activity, "submission_requirements", "") or ""
+    outcomes = getattr(activity, "learning_outcomes", "") or ""
+    why = getattr(activity, "why_this_activity", "") or ""
 
-=== ACTIVITY SPECIFICATIONS ===
-Title: Activity {activity.activity_no}: {activity.title}
-Unit Mapping: {activity.unit_mapping or 'Unit 3: Oral Communication'}
-Estimated Effort: {activity.estimated_time or '3-4 hours'}
-Mode: {activity.mode or 'Individual'}
+    is_negotiation_act = "negotiation" in act_title.lower() or act_no == 9
 
-=== MANDATORY STEP-BY-STEP ACTIVITY PROTOCOL (AUDIT EVERY STEP) ===
+    if is_negotiation_act:
+        protocol_section = """=== MANDATORY STEP-BY-STEP ACTIVITY PROTOCOL (AUDIT EVERY STEP) ===
 1. Step 1: ~150-word accurate summary of the 4 principled-negotiation pillars (People/Problem, Interests/Positions, Options for Mutual Gain, Objective Criteria).
 2. Step 2: Realistic scenario with a REAL named classmate/peer counterpart (e.g., job offer negotiation or vendor deal in a realistic domestic PGDM context, not an imaginary Silicon Valley USD setting).
 3. Step 3: Quantified BATNA and distinct Reservation Point in concrete figures (INR for Indian PGDM cohort).
@@ -169,7 +175,47 @@ Mode: {activity.mode or 'Individual'}
   * Raw AI search tags left unedited (e.g. [cite: 1], [cite: 2]).
   * Conversational AI assistant remnants left in text (e.g. 'This keeps the BATNA confidential while giving you a complete structure...').
   * Detached 3rd-person phrasing ('The negotiator did not disclose...') in what must be a 1st-person reflection.
-  * Omission or truncation of Step 8 Reflection Report.
+  * Omission or truncation of Step 8 Reflection Report."""
+
+        micro_schema = """"micro_compliance_audit": {
+    "step_1_framework_summary": "Passed / Deficient with specific reason",
+    "step_2_real_classmate_scenario": "Passed / Deficient with specific reason",
+    "step_3_batna_reservation_quantified": "Passed / Deficient with specific reason",
+    "step_4_integrative_tradeoff": "Passed / Deficient with specific reason",
+    "step_5_6_live_roleplay_and_specific_moment": "Passed / Deficient with specific reason",
+    "step_7_claude_critique_recorded": "Passed / Deficient with specific reason",
+    "step_8_reflection_authenticity_and_depth": "Passed / Deficient with specific reason"
+  },"""
+    else:
+        protocol_section = f"""=== ACTIVITY LEARNING OBJECTIVES & REQUIREMENTS ===
+Context & Purpose: {why or 'Demonstrate mastery of core principles and practical deliverables.'}
+Instructions: {instructions or 'Fulfill all deliverables specified in the activity prompt.'}
+Submission Requirements: {reqs or 'Complete practical submission meeting all course requirements.'}
+Intended Learning Outcomes: {outcomes or 'Apply concepts analytically with evidence and rigor.'}
+
+=== RIGOROUS, UNCOMPROMISING GRADING NORMS (DO NOT BE LENIENT) ===
+- Distinction (85-100%): Exceptional mastery, thorough compliance with every requirement, original analysis, flawless execution, and authentic personal synthesis. Zero unedited AI copy-paste. (Rare, <5%).
+- Merit (70-84%): High quality work fulfilling all primary requirements with solid critical thinking and minor formatting/analytical gaps.
+- Pass (50-69%): Satisfactory. Meets basic expectations, but exhibits superficial depth, missing secondary deliverables, or noticeable AI drafting assistance.
+- Needs Work (<50%): Incomplete deliverable, major requirements omitted, raw AI chat transcripts/hallucinations, lack of genuine effort, or unverified claims."""
+
+        micro_schema = """"micro_compliance_audit": {
+    "deliverable_completeness": "Passed / Deficient with specific evidence from student text",
+    "conceptual_technical_rigor": "Passed / Deficient with specific evidence from student text",
+    "practical_execution_and_evidence": "Passed / Deficient with specific evidence from student text",
+    "authenticity_and_originality": "Passed / Deficient with specific evidence from student text"
+  },"""
+
+    return f"""You are an elite, uncompromising Academic Professor at a premier business and technology institution.
+Student being evaluated: {student_name}
+
+=== ACTIVITY SPECIFICATIONS ===
+Title: Activity {act_no}: {act_title}
+Unit Mapping: {unit}
+Estimated Effort: {effort}
+Mode: {mode}
+
+{protocol_section}
 
 === RUBRIC ===
 {rubric_str}
@@ -189,15 +235,7 @@ Return ONLY a valid JSON object matching this exact schema (no markdown fences, 
   "ai_audit_findings": [
     "Specific finding explaining AI citation tags, conversational remnants, detached phrasing, or authentic human authorship"
   ],
-  "micro_compliance_audit": {{
-    "step_1_framework_summary": "Passed / Deficient with specific reason",
-    "step_2_real_classmate_scenario": "Passed / Deficient with specific reason",
-    "step_3_batna_reservation_quantified": "Passed / Deficient with specific reason",
-    "step_4_integrative_tradeoff": "Passed / Deficient with specific reason",
-    "step_5_6_live_roleplay_and_specific_moment": "Passed / Deficient with specific reason",
-    "step_7_claude_critique_recorded": "Passed / Deficient with specific reason",
-    "step_8_reflection_authenticity_and_depth": "Passed / Deficient with specific reason"
-  }},
+  {micro_schema}
   "executive_summary": "Brutally honest, 3-4 sentence academic appraisal citing specific accomplishments and critical deficiencies.",
   "criteria_breakdown": [
     {{
@@ -291,7 +329,9 @@ async def _evaluate_with_ollama(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    async with httpx.AsyncClient(timeout=75.0) as client:
+    # Use 1.5s connect timeout so cloud servers (like Render) fail fast if Ollama is only on localhost
+    timeout_cfg = httpx.Timeout(timeout=60.0, connect=1.5)
+    async with httpx.AsyncClient(timeout=timeout_cfg) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/chat",
             headers=headers,

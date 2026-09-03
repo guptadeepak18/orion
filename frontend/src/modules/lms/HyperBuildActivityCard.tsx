@@ -302,9 +302,13 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
       }
       queryClient.invalidateQueries({ queryKey: ['subject-lms-overview'] });
       queryClient.invalidateQueries({ queryKey: ['activity-submissions', activity.id] });
-      if (activeSubmissionScorecard?.id === updatedSub.id) {
+      if (updatedSub) {
         setActiveSubmissionScorecard(updatedSub);
       }
+    },
+    onError: (err: any) => {
+      console.error('AI evaluation failed:', err);
+      alert(err?.response?.data?.detail || err?.message || 'AI evaluation failed. Please verify API configuration or try again.');
     },
     onSettled: () => {
       setEvaluatingSubId(null);
@@ -1055,7 +1059,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                                    📋 Activity Protocol Micro-Audit (Steps 1–8)
+                                    📋 Activity Protocol Micro-Audit
                                   </span>
                                   <span className="text-[10px] text-slate-400 font-semibold">Granular Step-by-Step Verification</span>
                                 </div>
@@ -1258,7 +1262,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                 <div className="p-4 rounded-2xl bg-white/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      📋 Activity Protocol Micro-Audit (Steps 1–8)
+                      📋 Activity Protocol Micro-Audit
                     </span>
                     <span className="text-[11px] text-slate-400 font-semibold">Step-by-Step Requirements Compliance</span>
                   </div>
