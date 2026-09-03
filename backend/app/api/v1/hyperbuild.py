@@ -49,6 +49,8 @@ async def configure_activities_endpoint(
         return await configure_hyperbuild_activities(db, session_id, req)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get(

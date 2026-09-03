@@ -144,32 +144,61 @@ async def configure_hyperbuild_activities(
     if not sess:
         raise ValueError("Session not found")
 
-    del_stmt = select(HyperbuildActivity).where(HyperbuildActivity.session_id == session_id)
-    del_res = await db.execute(del_stmt)
-    existing_activities = del_res.scalars().all()
-    for act in existing_activities:
-        await db.delete(act)
-    await db.flush()
+    if not req.activities:
+        raise ValueError("At least one activity is required for a HyperBuild session")
 
-    created_activities = []
+    # Validate that every activity has a subject_id
     for item in req.activities:
-        act = HyperbuildActivity(
-            session_id=session_id,
-            activity_no=item.activity_no,
-            title=item.title,
-            description=item.description,
-            subject_id=item.subject_id,
-            start_time=item.start_time,
-            end_time=item.end_time,
-            duration_minutes=item.duration_minutes,
-            submission_type=item.submission_type or "link_or_text",
-            instructions=item.instructions,
-            status="pending",
-            auto_lock_at_end_time=True,
-            is_submission_locked=False,
-        )
-        db.add(act)
-        created_activities.append(act)
+        if not item.subject_id:
+            raise ValueError(f"Subject is required for Activity #{item.activity_no}")
+
+    # Fetch existing activities
+    act_stmt = (
+        select(HyperbuildActivity)
+        .where(HyperbuildActivity.session_id == session_id)
+        .order_by(HyperbuildActivity.activity_no.asc())
+    )
+    act_res = await db.execute(act_stmt)
+    existing_activities = list(act_res.scalars().all())
+    existing_by_no = {act.activity_no: act for act in existing_activities}
+
+    new_activity_nos = {item.activity_no for item in req.activities}
+
+    # Delete any activities that were explicitly removed
+    for act in existing_activities:
+        if act.activity_no not in new_activity_nos:
+            await db.delete(act)
+
+    for item in req.activities:
+        if item.activity_no in existing_by_no:
+            # Update existing activity in place
+            act = existing_by_no[item.activity_no]
+            act.title = item.title
+            act.description = item.description
+            act.subject_id = item.subject_id
+            act.start_time = item.start_time
+            act.end_time = item.end_time
+            act.duration_minutes = item.duration_minutes
+            act.submission_type = item.submission_type or "link_or_text"
+            act.instructions = item.instructions
+        else:
+            # Create new activity
+            act = HyperbuildActivity(
+                session_id=session_id,
+                activity_no=item.activity_no,
+                title=item.title,
+                description=item.description,
+                subject_id=item.subject_id,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                duration_minutes=item.duration_minutes,
+                submission_type=item.submission_type or "link_or_text",
+                instructions=item.instructions,
+                status="pending",
+                auto_lock_at_end_time=True,
+                is_submission_locked=False,
+            )
+            db.add(act)
 
     await db.commit()
 

@@ -838,10 +838,16 @@ export const SessionsPage: React.FC = () => {
   const handleOpenEditClass = async (sess: Session, syncUrl = true) => {
     document.body.style.overflow = 'hidden';
     setEditingSession(sess);
+
+    const bId = sess.batch_id || '';
+    const batchObj = allBatches.find((b: any) => b.id === bId);
+    const pId = sess.program_id || batchObj?.program_id || '';
+    const semId = sess.semester_id || batchObj?.semester_id || '';
+
     setForm({
-      program_id: sess.program_id || '',
-      batch_id: sess.batch_id || '',
-      semester_id: sess.semester_id || '',
+      program_id: pId,
+      batch_id: bId,
+      semester_id: semId,
       subject_id: sess.subject_id || '',
       topic_id: sess.topic_id || '',
       session_date: sess.session_date,
@@ -929,6 +935,16 @@ export const SessionsPage: React.FC = () => {
     setCreateError(null);
     const isHyperBuild = form.session_type === 'hyperbuild';
 
+    // Helper: convert empty/falsy/invalid strings to null for UUID fields
+    const toUUID = (v: any): string | null =>
+      v && typeof v === 'string' && v.trim().length > 0 && v.trim() !== 'null' && v.trim() !== 'undefined'
+        ? v.trim()
+        : null;
+
+    const batchObj = allBatches.find((b: any) => b.id === (form.batch_id || editingSession?.batch_id));
+    const resolvedProgramId = toUUID(form.program_id) || toUUID(batchObj?.program_id) || toUUID(editingSession?.program_id);
+    const resolvedSemesterId = toUUID(batchObj?.semester_id) || toUUID(form.semester_id) || toUUID(editingSession?.semester_id);
+
     // Validate faculty selection
     if (form.faculty_type === 'internal' && !form.faculty_internal_id) {
       setCreateError('Please select an internal faculty member.');
@@ -940,7 +956,7 @@ export const SessionsPage: React.FC = () => {
     }
 
     if (isHyperBuild) {
-      if (!form.program_id || !form.batch_id || !form.session_date || !form.start_time || !form.end_time || !form.venue) {
+      if (!resolvedProgramId || !form.batch_id || !form.session_date || !form.start_time || !form.end_time || !form.venue) {
         setCreateError('Please fill in all required fields.');
         return;
       }
@@ -950,11 +966,11 @@ export const SessionsPage: React.FC = () => {
       }
       for (const act of hyperbuildActivities) {
         if (!act.subject_id) {
-          setCreateError(`Activity ${act.activity_no}: Please select a subject.`);
+          setCreateError(`Please select a subject for Activity #${act.activity_no}`);
           return;
         }
-        if (!act.title?.trim()) {
-          setCreateError(`Activity ${act.activity_no}: Please enter an activity title.`);
+        if (!act.title || !act.title.trim()) {
+          setCreateError(`Please enter a title for Activity #${act.activity_no}`);
           return;
         }
         if (act.start_time && act.end_time) {
@@ -976,18 +992,10 @@ export const SessionsPage: React.FC = () => {
       }
     }
 
-    const selectedBatch = allBatches.find((b: any) => b.id === form.batch_id);
-
-    // Helper: convert empty/falsy/invalid strings to null for UUID fields
-    const toUUID = (v: any): string | null =>
-      v && typeof v === 'string' && v.trim().length > 0 && v.trim() !== 'null' && v.trim() !== 'undefined'
-        ? v.trim()
-        : null;
-
     const payload: any = {
-      program_id: toUUID(form.program_id),
-      batch_id: toUUID(form.batch_id),
-      semester_id: toUUID(selectedBatch?.semester_id) || toUUID(form.semester_id),
+      program_id: resolvedProgramId,
+      batch_id: toUUID(form.batch_id) || toUUID(editingSession?.batch_id),
+      semester_id: resolvedSemesterId,
       subject_id: isHyperBuild ? null : toUUID(form.subject_id),
       topic_id: isHyperBuild ? null : toUUID(form.topic_id),
       session_date: form.session_date,
