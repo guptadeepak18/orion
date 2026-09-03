@@ -501,43 +501,45 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
       {subjectAnalytics && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Subject Average</span>
-            <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
-              {subjectAnalytics.summary?.subject_average !== null ? `${subjectAnalytics.summary?.subject_average}%` : '—'}
+            <span className="text-[10.5px] uppercase tracking-wider text-slate-500 font-bold block">Subject Average</span>
+            <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
+              {subjectAnalytics.summary?.subject_average !== null && subjectAnalytics.summary?.subject_average !== undefined ? `${subjectAnalytics.summary?.subject_average}%` : '—'}
             </p>
             <span className="text-[10px] text-slate-400">Total composite %</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">CCE Mean</span>
-            <p className="text-xl font-black text-slate-800 dark:text-slate-200 mt-1">
-              {subjectAnalytics.summary?.cce_average !== null ? `${subjectAnalytics.summary?.cce_average} / ${subject.cce_max_marks || 50}` : '—'}
+            <span className="text-[10.5px] uppercase tracking-wider text-slate-500 font-bold block">CCE Mean</span>
+            <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
+              {subjectAnalytics.summary?.cce_average !== null && subjectAnalytics.summary?.cce_average !== undefined ? `${subjectAnalytics.summary?.cce_average} / ${subject.cce_max_marks || 50}` : '—'}
             </p>
             <span className="text-[10px] text-slate-400">Continuous evaluation</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10.5px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">HyperBuild Labs Mean</span>
-            <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
-              {subjectAnalytics.summary?.hyperbuild_average !== null ? `${subjectAnalytics.summary?.hyperbuild_average} / 100` : '—'}
+            <span className="text-[10.5px] uppercase tracking-wider text-slate-500 font-bold block">HyperBuild Labs Mean</span>
+            <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
+              {subjectAnalytics.summary?.hyperbuild_average !== null && subjectAnalytics.summary?.hyperbuild_average !== undefined ? `${subjectAnalytics.summary?.hyperbuild_average} / 100` : '—'}
             </p>
-            <span className="text-[10px] text-slate-400">Total Avg: {subjectAnalytics.summary?.hyperbuild_total_average || '—'} pts</span>
+            <span className="text-[10px] text-slate-400">Total Avg: {subjectAnalytics.summary?.hyperbuild_total_average ?? '—'} pts</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10.5px] uppercase tracking-wider text-slate-800 dark:text-slate-200 font-bold block">End Term Mean</span>
-            <p className="text-xl font-black text-slate-800 dark:text-slate-200 mt-1">
-              {subjectAnalytics.summary?.term_end_average !== null ? `${subjectAnalytics.summary?.term_end_average} / ${subject.term_end_max_marks || 50}` : '—'}
+            <span className="text-[10.5px] uppercase tracking-wider text-slate-500 font-bold block">End Term Mean</span>
+            <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
+              {subjectAnalytics.summary?.term_end_average !== null && subjectAnalytics.summary?.term_end_average !== undefined ? `${subjectAnalytics.summary?.term_end_average} / ${subject.term_end_max_marks || 50}` : '—'}
             </p>
             <span className="text-[10px] text-slate-400">Final examination</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10.5px] uppercase tracking-wider text-purple-600 font-bold block">Distinction & Merit</span>
-            <p className="text-xl font-black text-purple-600 mt-1">
+            <span className="text-[10.5px] uppercase tracking-wider text-slate-500 font-bold block">Distinction & Merit</span>
+            <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
               {(subjectAnalytics.tier_breakdown?.Distinction || 0) + (subjectAnalytics.tier_breakdown?.Merit || 0)}
             </p>
-            <span className="text-[10px] text-slate-400">of {subjectAnalytics.summary?.total_students} students</span>
+            <span className="text-[10px] text-slate-400">
+              of {subjectAnalytics.summary?.evaluated_students || subjectAnalytics.summary?.total_students || 0} evaluated
+            </span>
           </div>
         </div>
       )}

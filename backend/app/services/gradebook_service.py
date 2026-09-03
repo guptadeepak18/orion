@@ -1234,6 +1234,29 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
         )
         grades_map = {g.student_id: g for g in grades_res.scalars().all()}
 
+        # Pre-fetch published CCE assessments and submissions for this subject
+        cce_ass_res = await db.execute(
+            select(SubjectAssessment).where(
+                SubjectAssessment.subject_id == subject_id,
+                SubjectAssessment.is_published == True,
+            )
+        )
+        subj_cce_assessments = list(cce_ass_res.scalars().all())
+
+        cce_subs_map: Dict[uuid.UUID, List[AssessmentSubmission]] = {}
+        if st_ids and subj_cce_assessments:
+            cce_subs_res = await db.execute(
+                select(AssessmentSubmission)
+                .join(SubjectAssessment, AssessmentSubmission.assessment_id == SubjectAssessment.id)
+                .where(
+                    AssessmentSubmission.student_id.in_(st_ids),
+                    SubjectAssessment.subject_id == subject_id,
+                )
+                .options(selectinload(AssessmentSubmission.assessment))
+            )
+            for cs in cce_subs_res.scalars().all():
+                cce_subs_map.setdefault(cs.student_id, []).append(cs)
+
         # Compute Subject Summary Stats
         total_students = len(students)
         cce_scores = []
@@ -1247,18 +1270,51 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
 
         for st in students:
             g = grades_map.get(st.id)
-            cce_val = g.cce_score if g else None
-            te_val = g.term_end_score if g else None
-            hb_avg = g.hyperbuild_average if g else None
-            hb_tot = g.hyperbuild_total_score if g else None
-            tot_pct = g.total_percentage if g else None
 
-            # If hb_avg is not in g, calculate from submissions
+            # CCE Resolution:
+            cce_val = None
+            if g and g.cce_score is not None:
+                cce_val = g.cce_score
+            else:
+                st_cce_subs = cce_subs_map.get(st.id, [])
+                graded_cce = [cs for cs in st_cce_subs if cs.marks_obtained is not None]
+                if graded_cce:
+                    tot_obt = sum(cs.marks_obtained for cs in graded_cce)
+                    tot_max = sum((cs.assessment.total_marks or 100.0) for cs in graded_cce if cs.assessment)
+                    tot_poss = sum((a.total_marks or 100.0) for a in subj_cce_assessments)
+                    if tot_poss == def_cce_max:
+                        cce_val = min(round(tot_obt, 1), def_cce_max)
+                    elif tot_max > 0:
+                        cce_val = min(round((tot_obt / tot_max) * def_cce_max, 1), def_cce_max)
+                    else:
+                        cce_val = min(round(tot_obt, 1), def_cce_max)
+
+            # Term End Resolution:
+            te_val = g.term_end_score if (g and g.term_end_score is not None) else None
+
+            # HyperBuild Resolution:
+            hb_avg = g.hyperbuild_average if (g and g.hyperbuild_average is not None) else None
+            hb_tot = g.hyperbuild_total_score if (g and g.hyperbuild_total_score is not None) else None
             if hb_avg is None:
                 st_subs = [s for s in submissions if s.student_id == st.id and s.score is not None]
                 if st_subs:
                     hb_tot = round(sum(s.score for s in st_subs), 1)
                     hb_avg = round(hb_tot / len(st_subs), 1)
+
+            # Composite total percentage calculation (aligning with cohort gradebook)
+            if g and g.total_percentage is not None:
+                tot_pct = g.total_percentage
+            elif te_val is not None and cce_val is not None:
+                tot_pct = round(((cce_val + te_val) / (def_cce_max + def_te_max)) * 100.0, 1)
+            elif cce_val is not None and hb_avg is not None:
+                cce_pct = (cce_val / def_cce_max) * 100.0
+                tot_pct = round((cce_pct + hb_avg) / 2.0, 1)
+            elif hb_avg is not None:
+                tot_pct = hb_avg
+            elif cce_val is not None:
+                tot_pct = round((cce_val / def_cce_max) * 100.0, 1)
+            else:
+                tot_pct = None
 
             if cce_val is not None:
                 cce_scores.append(cce_val)
@@ -1268,12 +1324,20 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
                 hb_averages.append(hb_avg)
             if hb_tot is not None:
                 hb_totals.append(hb_tot)
+
             if tot_pct is not None:
                 total_percentages.append(tot_pct)
-                t = g.performance_tier if g else "Needs Work"
-                if t in tier_counts:
-                    tier_counts[t] += 1
-                gl = g.grade_letter if g else "F"
+                gl, g_pts, g_tier_full = calculate_grade_letter_and_points(tot_pct)
+
+                if "Distinction" in g_tier_full:
+                    tier_counts["Distinction"] += 1
+                elif "Merit" in g_tier_full:
+                    tier_counts["Merit"] += 1
+                elif "Pass" in g_tier_full:
+                    tier_counts["Pass"] += 1
+                else:
+                    tier_counts["Needs Work"] += 1
+
                 if gl in grade_distribution:
                     grade_distribution[gl] += 1
                 elif gl:
@@ -1292,7 +1356,7 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
                         "term_end_score": te_val,
                         "total_percentage": tot_pct,
                         "grade_letter": gl,
-                        "performance_tier": t,
+                        "performance_tier": g_tier_full,
                     })
 
         # Activity Breakdown
@@ -1355,6 +1419,7 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
             },
             "summary": {
                 "total_students": total_students,
+                "evaluated_students": len(total_percentages),
                 "subject_average": round(sum(total_percentages) / len(total_percentages), 1) if total_percentages else None,
                 "highest_score": max(total_percentages) if total_percentages else None,
                 "lowest_score": min(total_percentages) if total_percentages else None,
@@ -1365,6 +1430,7 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
             },
             "tier_breakdown": tier_counts,
             "grade_distribution": grade_distribution,
+            "grade_breakdown": grade_distribution,
             "activities_analytics": activity_breakdown,
             "at_risk_students": at_risk_students,
         }
