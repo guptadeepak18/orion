@@ -151,6 +151,29 @@ async def get_subject_attendance_matrix(
 
 
 @router.get(
+    "/student-dossier/me",
+    response_model=ResponseEnvelope[StudentAttendanceDossierResponse],
+    dependencies=[Depends(get_current_token_payload)],
+    summary="Get currently authenticated student's personal cumulative attendance dossier",
+)
+async def get_my_student_attendance_dossier(
+    payload=Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import student_service
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    my_student = await student_service.get_student_by_user_id(db, user_id)
+    if not my_student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found for current user")
+
+    dossier = await attendance_service.get_student_attendance_dossier(db, my_student.id)
+    return ResponseEnvelope(data=dossier)
+
+
+@router.get(
     "/student-dossier/{student_id}",
     response_model=ResponseEnvelope[StudentAttendanceDossierResponse],
     dependencies=[Depends(get_current_token_payload)],
@@ -167,10 +190,8 @@ async def get_student_attendance_dossier(
     
     # Strict Student Privacy Guard: A student can ONLY view their own personal dossier
     if not is_staff and "student" in roles:
-        from app.models.student import Student
-        from sqlalchemy import select
-        res = await db.execute(select(Student).where(Student.user_id == user_id, Student.is_deleted == False))
-        my_student = res.scalar_one_or_none()
+        from app.services import student_service
+        my_student = await student_service.get_student_by_user_id(db, user_id)
         if not my_student or my_student.id != student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

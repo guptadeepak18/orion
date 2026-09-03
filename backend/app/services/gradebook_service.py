@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from sqlalchemy import select, func, desc, or_
+from sqlalchemy import select, func, desc, or_, and_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import AsyncSessionLocal
@@ -272,8 +272,23 @@ class GradebookService:
     """Comprehensive academic gradebook service for student transcripts and cohort analysis."""
 
     async def get_student_by_user(self, db, current_user) -> Optional[Student]:
-        res = await db.execute(select(Student).where(Student.user_id == current_user.id))
-        return res.scalar_one_or_none()
+        if not current_user:
+            return None
+        res = await db.execute(
+            select(Student).where(
+                or_(
+                    Student.user_id == current_user.id,
+                    Student.email_official == current_user.email,
+                    Student.email == current_user.email,
+                ),
+                Student.is_deleted == False,
+            )
+        )
+        st = res.scalar_one_or_none()
+        if st and st.user_id != current_user.id:
+            st.user_id = current_user.id
+            await db.flush()
+        return st
 
     async def get_student_gradebook(self, db, student_id: uuid.UUID) -> Dict[str, Any]:
         """Gathers and computes complete gradebook for a single student across all subjects."""

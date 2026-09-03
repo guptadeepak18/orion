@@ -512,14 +512,13 @@ export const AttendancePage: React.FC = () => {
   const studentProfileId = myStudentProfile?.student?.id || myStudentProfile?.id || '';
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
-    isStudent ? studentProfileId : (selectedStudentIdParam || '')
+    isStudent ? (studentProfileId || 'me') : (selectedStudentIdParam || '')
   );
 
   useEffect(() => {
     if (activeTab === 'students') {
       if (isStudent && studentProfileId) {
         setSelectedStudentId(studentProfileId);
-        updateParams({ studentId: studentProfileId });
       } else if (!isStudent && !selectedStudentId && studentsListData && studentsListData.length > 0) {
         const firstId = selectedStudentIdParam || studentsListData[0].id;
         setSelectedStudentId(firstId);
@@ -528,14 +527,18 @@ export const AttendancePage: React.FC = () => {
     }
   }, [activeTab, isStudent, studentProfileId, studentsListData, selectedStudentId, selectedStudentIdParam]);
 
-  const { data: studentDossierData, isPending: studentDossierLoading } = useQuery({
-    queryKey: ['student_attendance_dossier', selectedStudentId],
+  const effectiveDossierId = isStudent ? (studentProfileId || 'me') : (selectedStudentId || selectedStudentIdParam || '');
+
+  const { data: studentDossierData, isPending: studentDossierLoading, error: studentDossierError, refetch: refetchDossier } = useQuery({
+    queryKey: ['student_attendance_dossier', effectiveDossierId],
     queryFn: async () => {
-      if (!selectedStudentId) return null;
-      const res = await api.get(`/attendance/student-dossier/${selectedStudentId}`);
+      const endpoint = (isStudent && (!effectiveDossierId || effectiveDossierId === 'me'))
+        ? '/attendance/student-dossier/me'
+        : `/attendance/student-dossier/${effectiveDossierId}`;
+      const res = await api.get(endpoint);
       return res.data?.data;
     },
-    enabled: !!selectedStudentId && (activeTab === 'students' || isStudent),
+    enabled: isStudent ? true : !!effectiveDossierId,
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1656,7 +1659,24 @@ export const AttendancePage: React.FC = () => {
                 </div>
               </div>
             </div>
-          ) : null}
+          ) : studentDossierError ? (
+            <div className="p-8 text-center rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 max-w-xl mx-auto my-8">
+              <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
+              <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200">Unable to load attendance dossier</h3>
+              <p className="text-xs text-rose-700 dark:text-rose-300 mt-1">
+                {(studentDossierError as any)?.response?.data?.detail || (studentDossierError as Error).message || 'Please try again.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => refetchDossier()}
+                className="mt-3 px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="p-12 text-center text-slate-400 text-xs">No attendance records found for this student.</div>
+          )}
         </div>
       )}
 

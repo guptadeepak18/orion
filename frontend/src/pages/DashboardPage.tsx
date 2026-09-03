@@ -26,6 +26,7 @@ import {
   MessageSquare,
   ShieldCheck,
   AlertTriangle,
+  Award,
 } from 'lucide-react';
 
 interface SessionItem {
@@ -587,6 +588,17 @@ export const DashboardPage: React.FC = () => {
                   </div>
                   <p className="text-xs font-bold text-slate-900 dark:text-slate-100">My Attendance</p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Logs & Standing</p>
+                </Link>
+
+                <Link
+                  to="/gradebook"
+                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 text-center transition-all group"
+                >
+                  <div className="h-10 w-10 mx-auto rounded-xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                    <Award className="h-5 w-5" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Gradebook</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Marks & Transcripts</p>
                 </Link>
 
                 <Link

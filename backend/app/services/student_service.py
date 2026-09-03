@@ -174,7 +174,38 @@ async def get_student_by_user_id(db: AsyncSession, user_id: UUID) -> Optional[St
         .where(Student.user_id == user_id, Student.is_deleted == False)
     )
     res = await db.execute(stmt)
-    return res.scalar_one_or_none()
+    student = res.scalar_one_or_none()
+    if student:
+        return student
+
+    # Fallback by user email if student.user_id was not linked or desynchronized
+    user = await db.get(User, user_id)
+    if user and user.email:
+        email = user.email.strip().lower()
+        stmt2 = (
+            select(Student)
+            .options(
+                selectinload(Student.program),
+                selectinload(Student.batch),
+                selectinload(Student.divisions),
+            )
+            .where(
+                or_(
+                    Student.email_official == email,
+                    Student.email == email,
+                ),
+                Student.is_deleted == False,
+            )
+        )
+        res2 = await db.execute(stmt2)
+        student = res2.scalar_one_or_none()
+        if student:
+            if student.user_id != user.id:
+                student.user_id = user.id
+                await db.flush()
+            return student
+
+    return None
 
 
 async def list_students(
