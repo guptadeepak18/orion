@@ -55,10 +55,24 @@ async def evaluate_submission_against_rubric(
     gemini_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 
-    result = None
+    ollama_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434") or "http://127.0.0.1:11434"
+    ollama_model = getattr(settings, "OLLAMA_MODEL", "gemma4:31b-cloud") or "gemma4:31b-cloud"
+    ollama_key = getattr(settings, "OLLAMA_API_KEY", None) or os.getenv("OLLAMA_API_KEY")
 
     # 4. Attempt AI evaluation with multi-provider cascade
-    if groq_key:
+    # Priority 1: High-precision Ollama Cloud (Gemma 4 31B, sub-second, 262k context, no rate limits)
+    if ollama_url:
+        try:
+            result = await _evaluate_with_ollama(
+                activity, rubric, full_submission_text,
+                base_url=ollama_url, model=ollama_model, api_key=ollama_key,
+                student_name=student_name
+            )
+        except Exception as e:
+            logger.warning(f"Ollama evaluation failed: {e}")
+
+    # Priority 2: Groq Multi-Model LPU (120B / 27B)
+    if not result and groq_key:
         try:
             result = await _evaluate_with_groq(activity, rubric, full_submission_text, groq_key, student_name=student_name)
         except Exception as e:
@@ -263,6 +277,42 @@ def _audit_peer_collusion(student_text: str, student_name: str, peer_texts: Dict
     }
 
 
+async def _evaluate_with_ollama(
+    activity: Any,
+    rubric: List[Dict[str, Any]],
+    student_text: str,
+    base_url: str = "http://127.0.0.1:11434",
+    model: str = "gemma4:31b-cloud",
+    api_key: Optional[str] = None,
+    student_name: str = "Student",
+) -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    async with httpx.AsyncClient(timeout=75.0) as client:
+        resp = await client.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON with no conversational text or markdown code fences."},
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": False,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        raw_text = data.get("message", {}).get("content", "").strip()
+        parsed = _clean_and_parse_json(raw_text)
+        parsed["model_used"] = f"Ollama {model} (High-Precision Cloud)"
+        parsed["evaluated_at"] = datetime.utcnow().isoformat()
+        return parsed
+
+
 async def _evaluate_with_groq(
     activity: Any,
     rubric: List[Dict[str, Any]],
@@ -272,45 +322,57 @@ async def _evaluate_with_groq(
 ) -> Dict[str, Any]:
     prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
     models_to_try = [
-        os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
         "openai/gpt-oss-120b",
+        os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
+        "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
     ]
     async with httpx.AsyncClient(timeout=65.0) as client:
         last_err = None
         for model in models_to_try:
-            try:
-                resp = await client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.2,
-                        "max_tokens": 2000,
-                        "response_format": {"type": "json_object"},
-                    },
-                )
-                if resp.status_code == 200:
-                    raw_text = resp.json()["choices"][0]["message"]["content"].strip()
-                    parsed = _clean_and_parse_json(raw_text)
-                    parsed["model_used"] = f"Groq {model} (High-Speed LPU)"
-                    parsed["evaluated_at"] = datetime.utcnow().isoformat()
-                    return parsed
-                elif resp.status_code == 429:
-                    logger.warning(f"Groq {model} hit 429, sleeping 3s...")
+            for attempt in range(3):  # Up to 3 attempts per model
+                try:
+                    # Note: We omit response_format={"type": "json_object"} because reasoning/thinking models
+                    # like Qwen3.6 and GPT-OSS output think tokens that fail Groq's server-side JSON schema validator.
+                    # Our robust _clean_and_parse_json extracts the JSON cleanly from any model output.
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": [
+                                {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON with no conversational text or markdown code fences."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            "temperature": 0.2,
+                            "max_tokens": 2500,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+                        parsed = _clean_and_parse_json(raw_text)
+                        parsed["model_used"] = f"Groq {model} (High-Speed LPU)"
+                        parsed["evaluated_at"] = datetime.utcnow().isoformat()
+                        return parsed
+                    elif resp.status_code == 429:
+                        wait = 6 + attempt * 4  # 6s, 10s, 14s
+                        logger.warning(f"Groq {model} hit 429, sleeping {wait}s (attempt {attempt+1}/3)...")
+                        await asyncio.sleep(wait)
+                    else:
+                        last_err = f"Groq {model} returned {resp.status_code}: {resp.text[:200]}"
+                        logger.warning(last_err)
+                        break
+                except (httpx.ConnectError, httpx.NetworkError, httpx.TimeoutException, OSError) as net_err:
+                    last_err = f"Network error connecting to Groq: {net_err}"
+                    logger.warning(f"Groq {model} network error (attempt {attempt+1}/3): {net_err}, retrying in 3s...")
                     await asyncio.sleep(3)
-                else:
-                    last_err = f"Groq {model} returned {resp.status_code}: {resp.text}"
-            except Exception as e:
-                last_err = str(e)
-                logger.warning(f"Groq {model} failed: {e}")
+                except Exception as e:
+                    last_err = str(e)
+                    logger.warning(f"Groq {model} failed: {e}")
+                    break
         raise RuntimeError(f"All Groq models failed: {last_err}")
 
 

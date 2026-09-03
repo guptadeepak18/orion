@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     ANTHROPIC_API_KEY: str = ""
     
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_MODEL: str = "gemma4:31b-cloud"
+    OLLAMA_API_KEY: str = "50b753f0964f41c2bef750dcaac3966d.rJ4R2dCwIVFM8SZUk4oULy1T"
+    
     ENVIRONMENT: str = "production"
     DEV_NOTIFICATION_OVERRIDE_EMAIL: str = ""
     FILE_STORAGE_PATH: str = "./uploads"
