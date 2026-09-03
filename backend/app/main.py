@@ -108,7 +108,10 @@ async def global_exception_handler(request: Request, exc: Exception):
         ).model_dump(),
     )
 
+from app.api.v1.websocket import router as ws_router
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
 
 @app.get(f"{settings.API_V1_STR}", tags=["Health"])

@@ -36,6 +36,7 @@ from app.schemas.hyperbuild import (
     HyperbuildActivityAuditLogItem,
     HyperbuildAuditLogListResponse,
 )
+from app.services.websocket_service import broadcast_session_event
 
 CAMPUS_LAT = 18.5204
 CAMPUS_LNG = 73.8567
@@ -328,6 +329,19 @@ async def trigger_activity_challenge_key(
     await db.commit()
     await db.refresh(act)
 
+    await broadcast_session_event(
+        act.session_id,
+        "challenge_key_triggered",
+        {
+            "activity_id": str(act.id),
+            "activity_no": act.activity_no,
+            "title": act.title,
+            "challenge_key": key,
+            "active_until": active_until.isoformat(),
+            "active_seconds": validity_seconds,
+        },
+    )
+
     return HyperbuildChallengeKeyTriggerResponse(
         activity_id=act.id,
         activity_no=act.activity_no,
@@ -376,6 +390,16 @@ async def extend_activity_window(
     db.add(audit_log)
     await db.commit()
 
+    await broadcast_session_event(
+        act.session_id,
+        "window_extended",
+        {
+            "activity_id": str(act.id),
+            "extended_until": new_extended.isoformat(),
+            "extension_minutes": req.extension_minutes,
+        },
+    )
+
     return HyperbuildWindowActionResponse(
         activity_id=act.id,
         session_id=act.session_id,
@@ -419,6 +443,15 @@ async def lock_activity_window(
     )
     db.add(audit_log)
     await db.commit()
+
+    await broadcast_session_event(
+        act.session_id,
+        "window_locked",
+        {
+            "activity_id": str(act.id),
+            "reason": reason_text,
+        },
+    )
 
     return HyperbuildWindowActionResponse(
         activity_id=act.id,
@@ -479,6 +512,16 @@ async def reopen_activity_window(
     )
     db.add(audit_log)
     await db.commit()
+
+    await broadcast_session_event(
+        act.session_id,
+        "window_reopened",
+        {
+            "activity_id": str(act.id),
+            "reopened_until": open_until.isoformat() if open_until else None,
+            "is_reopened_indefinite": act.is_reopened_indefinite,
+        },
+    )
 
     return HyperbuildWindowActionResponse(
         activity_id=act.id,
@@ -644,6 +687,18 @@ async def verify_student_activity_presence(
         att_rec.status = "present"
 
     await db.commit()
+
+    await broadcast_session_event(
+        activity.session_id,
+        "student_verified",
+        {
+            "activity_id": str(activity.id),
+            "student_id": str(student.id),
+            "student_name": student.full_name or "Student",
+            "roll_no": student.roll_no or getattr(student, "prn_number", "") or "",
+            "verified_at": now_utc.isoformat(),
+        },
+    )
 
     return HyperbuildVerificationResponse(
         activity_id=activity.id,

@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, KeyRound, Users, RefreshCw, CheckCircle2,
-  X, ExternalLink, Lock, Unlock, History, Clock
+  X, ExternalLink, Lock, Unlock, History, Clock, Radio
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
 
 interface HyperbuildLiveConsoleModalProps {
   session: any;
@@ -22,6 +23,9 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   const [reopenDuration, setReopenDuration] = useState<number>(15);
   const [reopenReasonInput, setReopenReasonInput] = useState('');
 
+  // Real-time WebSocket connection for instant classroom pushes
+  const { isConnected: isWsLive } = useSessionWebSocket(session?.id);
+
   // 1. Fetch Session Hyperbuild Details
   const { data: sessionDetails, isLoading, refetch: refetchDetails } = useQuery({
     queryKey: ['hyperbuild-details', session.id],
@@ -29,7 +33,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
       const res = await api.get(`/hyperbuild/sessions/${session.id}/activities`);
       return res.data;
     },
-    refetchInterval: 6000,
+    staleTime: 10000,
   });
 
   // Select initial activity
@@ -150,9 +154,17 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
               <Zap className="h-5 w-5 fill-amber-500 text-amber-500" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                HyperBuild Live Console
-              </h3>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  HyperBuild Live Console
+                </h3>
+                {isWsLive && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
+                    <Radio className="h-2.5 w-2.5" />
+                    LIVE SYNC
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500 font-medium">
                 📍 {session.venue} · ⏰ {session.start_time?.slice(0, 5)} - {session.end_time?.slice(0, 5)} ({session.duration_minutes} mins)
               </p>

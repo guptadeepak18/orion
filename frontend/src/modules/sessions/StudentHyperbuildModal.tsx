@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, CheckCircle2, AlertCircle,
-  X, Lock
+  X, Lock, Radio
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
 
 interface StudentHyperbuildModalProps {
   session: any;
@@ -17,6 +18,9 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
   const [verifError, setVerifError] = useState<string | null>(null);
   const [verifSuccess, setVerifSuccess] = useState<string | null>(null);
 
+  // Real-time WebSocket connection for instant classroom pushes
+  const { isConnected: isWsLive } = useSessionWebSocket(session?.id);
+
   // 1. Fetch Session Hyperbuild Details
   const { data: sessionDetails, isLoading, refetch } = useQuery({
     queryKey: ['student-hyperbuild', session.id],
@@ -24,7 +28,7 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
       const res = await api.get(`/hyperbuild/sessions/${session.id}/activities`);
       return res.data;
     },
-    refetchInterval: 8000,
+    staleTime: 10000,
   });
 
   // Silent background geolocation (no UI prompts or errors)
@@ -81,9 +85,17 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
               <Zap className="h-5 w-5 fill-amber-500 text-amber-500" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                HyperBuild Session Verification
-              </h3>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  HyperBuild Session Verification
+                </h3>
+                {isWsLive && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
+                    <Radio className="h-2.5 w-2.5" />
+                    LIVE
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500 font-medium">
                 📍 {session.venue || 'HyperBuild Lab'} · ⏰ {session.start_time?.slice(0, 5)} - {session.end_time?.slice(0, 5)} ({session.duration_minutes} mins)
               </p>
