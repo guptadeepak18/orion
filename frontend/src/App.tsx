@@ -30,6 +30,7 @@ import { CaseStudyBankPage } from './modules/case-studies/CaseStudyBankPage';
 import { CaseStudyDetailPage } from './modules/case-studies/CaseStudyDetailPage';
 import { AttendancePage } from './modules/attendance/AttendancePage';
 import { ProactiveIntelligenceHub } from './modules/ai/ProactiveIntelligenceHub';
+import { GradebookPage } from './modules/gradebook/GradebookPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
   children,
@@ -112,6 +113,15 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <LMSPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/gradebook"
+            element={
+              <ProtectedRoute>
+                <GradebookPage />
               </ProtectedRoute>
             }
           />

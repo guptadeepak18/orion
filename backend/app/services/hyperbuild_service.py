@@ -475,6 +475,23 @@ async def lock_activity_window(
     act.lock_reason = reason_text
     act.is_reopened_indefinite = False
 
+    # Synchronize SubjectActivity in LMS
+    try:
+        from app.models.activity import SubjectActivity
+        subj_act_res = await db.execute(
+            select(SubjectActivity).where(
+                SubjectActivity.subject_id == act.subject_id,
+                SubjectActivity.activity_no == act.activity_no,
+            )
+        )
+        for subj_act in subj_act_res.scalars().all():
+            subj_act.is_locked = True
+            subj_act.locked_at = datetime.utcnow()
+            subj_act.locked_by = faculty_user.full_name or "Faculty"
+            subj_act.lock_reason = reason_text
+    except Exception as err:
+        logger.warning(f"Error syncing lock to SubjectActivity: {err}")
+
     audit_log = HyperbuildActivityAuditLog(
         activity_id=act.id,
         session_id=act.session_id,
@@ -527,6 +544,21 @@ async def reopen_activity_window(
     act.is_submission_locked = False
     act.lock_reason = None
     act.status = "active"
+
+    # Synchronize SubjectActivity in LMS
+    try:
+        from app.models.activity import SubjectActivity
+        subj_act_res = await db.execute(
+            select(SubjectActivity).where(
+                SubjectActivity.subject_id == act.subject_id,
+                SubjectActivity.activity_no == act.activity_no,
+            )
+        )
+        for subj_act in subj_act_res.scalars().all():
+            subj_act.is_locked = False
+            subj_act.lock_reason = None
+    except Exception as err:
+        logger.warning(f"Error syncing unlock to SubjectActivity: {err}")
 
     if req.mode == "manual_indefinite":
         act.is_reopened_indefinite = True

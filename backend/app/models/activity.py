@@ -37,6 +37,12 @@ class SubjectActivity(Base, TimestampMixin):
     released_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     released_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # Locking & Submission Window Control
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    lock_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     # Case Study Associations (Library or Manual)
     case_study_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("case_studies.id", ondelete="SET NULL"), nullable=True, index=True

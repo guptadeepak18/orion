@@ -4,12 +4,14 @@ from app.api.v1 import (
     faculty, engagements, remuneration, approvals, invoices, payments,
     calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard,
     students, student_registrations, activities, lms, case_studies, attendance, ai_intelligence, academic_operations,
-    email_templates, hyperbuild, academic_events, websocket, storage
+    email_templates, hyperbuild, academic_events, websocket, storage,
+    gradebook
 )
 
 api_router = APIRouter()
 
 api_router.include_router(storage.router)
+api_router.include_router(gradebook.router)
 
 api_router.include_router(health.router)
 api_router.include_router(auth.router)

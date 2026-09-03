@@ -18,6 +18,7 @@ from app.models.lms import (
     SubjectResource, SubjectRecording, SubjectAssessment,
     AssessmentSubmission, ActivitySubmission
 )
+from app.models.gradebook import StudentSubjectGrade
 
 __all__ = [
     "Base",

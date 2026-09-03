@@ -468,6 +468,37 @@ class LMSService:
         if not activity:
             raise ValueError("Activity not found.")
 
+        # 1. Check if activity is released
+        if not activity.is_released:
+            raise ValueError("This activity has not been released yet. Submissions are not accepted.")
+
+        # 2. Check if activity is locked (either on SubjectActivity or on Timetable session)
+        if activity.is_locked:
+            raise ValueError(f"Submissions for this activity are locked: {activity.lock_reason or 'Closed by faculty'}.")
+
+        try:
+            from app.models.session import HyperbuildActivity, Session
+            hb_stmt = (
+                select(HyperbuildActivity)
+                .join(Session, HyperbuildActivity.session_id == Session.id)
+                .where(
+                    HyperbuildActivity.subject_id == activity.subject_id,
+                    HyperbuildActivity.activity_no == activity.activity_no,
+                    HyperbuildActivity.is_deleted == False,
+                    Session.is_deleted == False,
+                )
+            )
+            if student.batch_id:
+                hb_stmt = hb_stmt.where(Session.batch_id == student.batch_id)
+            hb_res = await db.execute(hb_stmt)
+            for ha in hb_res.scalars().all():
+                if ha.is_submission_locked:
+                    raise ValueError(f"Submissions for this activity are locked on the timetable: {ha.lock_reason or 'Closed by faculty'}.")
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.warning(f"Error checking timetable lock: {e}")
+
         # Determine primary file vs list of files
         files_data = payload.files or []
         primary_file_url = payload.file_url or (files_data[0].get("file_url") if files_data else None)
@@ -482,6 +513,14 @@ class LMSService:
         )
         existing = res.scalar_one_or_none()
         if existing:
+            # 3. Post-Grading Lock Policy: Graded submissions cannot be replaced without faculty exception
+            is_graded = (existing.status == "graded" or existing.score is not None)
+            if is_graded and not existing.allow_resubmission:
+                raise ValueError(
+                    f"This activity has already been evaluated and graded ({existing.score}/100 Marks). "
+                    "Resubmission is locked unless an exception is granted by faculty or admin."
+                )
+
             existing.submission_text = payload.submission_text
             existing.file_url = primary_file_url
             existing.file_name = primary_file_name
@@ -490,6 +529,10 @@ class LMSService:
             existing.ai_verification_notes = payload.ai_verification_notes
             existing.submitted_at = datetime.utcnow()
             existing.status = "submitted"
+            # Consume the one-time exception
+            if existing.allow_resubmission:
+                existing.allow_resubmission = False
+
             await db.commit()
             await db.refresh(existing)
             return existing
@@ -590,9 +633,38 @@ class LMSService:
                 "graded_by_name": s.graded_by.full_name if s.graded_by else None,
                 "graded_at": s.graded_at,
                 "feedback": s.feedback,
+                "allow_resubmission": s.allow_resubmission,
+                "resubmission_granted_at": s.resubmission_granted_at,
+                "resubmission_reason": s.resubmission_reason,
             }
             for s in subs
         ]
+
+    async def grant_resubmission_exception(
+        self, db: AsyncSession, submission_id: uuid.UUID, faculty_user_id: uuid.UUID, reason: Optional[str] = None
+    ) -> Optional[ActivitySubmission]:
+        sub = await db.get(ActivitySubmission, submission_id)
+        if not sub:
+            return None
+        sub.allow_resubmission = True
+        sub.resubmission_granted_by_id = faculty_user_id
+        sub.resubmission_granted_at = datetime.utcnow()
+        sub.resubmission_reason = reason or "Faculty approved resubmission exception"
+        await db.commit()
+        await db.refresh(sub)
+        return sub
+
+    async def revoke_resubmission_exception(
+        self, db: AsyncSession, submission_id: uuid.UUID
+    ) -> Optional[ActivitySubmission]:
+        sub = await db.get(ActivitySubmission, submission_id)
+        if not sub:
+            return None
+        sub.allow_resubmission = False
+        sub.resubmission_reason = None
+        await db.commit()
+        await db.refresh(sub)
+        return sub
 
     async def grade_activity_submission(
         self, db: AsyncSession, submission_id: uuid.UUID, payload: ActivitySubmissionGrade, grader_id: uuid.UUID

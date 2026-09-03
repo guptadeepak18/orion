@@ -85,16 +85,19 @@ class ActivityService:
             ha_stmt = ha_stmt.where(Session.batch_id == student.batch_id)
 
         ha_res = await db.execute(ha_stmt)
+        locked_schedule = {}
         for ha, s in ha_res.all():
             try:
                 act_num = int(ha.activity_no)
                 start_dt = datetime.combine(s.session_date, ha.start_time)
                 if act_num not in release_schedule or start_dt < release_schedule[act_num]:
                     release_schedule[act_num] = start_dt
+                if ha.is_submission_locked:
+                    locked_schedule[act_num] = ha.lock_reason or "Locked by faculty on timetable"
             except Exception:
                 continue
 
-        # 4. Mark activities as released if scheduled timetable time has arrived
+        # 4. Mark activities as released or locked based on timetable schedule
         needs_commit = False
         utc_now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         for a in activities:
@@ -104,6 +107,12 @@ class ActivityService:
                     a.released_at = utc_now_naive
                     a.released_by = "Timetable Auto-Release"
                     needs_commit = True
+            if a.activity_no in locked_schedule and not a.is_locked:
+                a.is_locked = True
+                a.lock_reason = locked_schedule[a.activity_no]
+                a.locked_at = utc_now_naive
+                a.locked_by = "Timetable Sync"
+                needs_commit = True
 
         if needs_commit:
             try:
@@ -152,6 +161,48 @@ class ActivityService:
         else:
             act.released_at = None
             act.released_by = None
+        await db.commit()
+        await db.refresh(act)
+        return act
+
+    async def toggle_lock(
+        self,
+        db: AsyncSession,
+        activity_id: UUID,
+        is_locked: bool,
+        locked_by: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> Optional[SubjectActivity]:
+        act = await db.get(SubjectActivity, activity_id)
+        if not act:
+            return None
+        act.is_locked = is_locked
+        if is_locked:
+            act.locked_at = datetime.utcnow()
+            act.locked_by = locked_by
+            act.lock_reason = reason or "Submissions locked by faculty"
+        else:
+            act.locked_at = None
+            act.locked_by = None
+            act.lock_reason = None
+
+        # Synchronize with timetable sessions (HyperbuildActivity)
+        try:
+            from app.models.session import HyperbuildActivity
+            hb_res = await db.execute(
+                select(HyperbuildActivity).where(
+                    HyperbuildActivity.subject_id == act.subject_id,
+                    HyperbuildActivity.activity_no == act.activity_no,
+                )
+            )
+            for hb in hb_res.scalars().all():
+                hb.is_submission_locked = is_locked
+                if is_locked:
+                    hb.lock_reason = act.lock_reason
+                    hb.is_reopened_indefinite = False
+        except Exception as err:
+            logger.warning(f"Error syncing lock to HyperbuildActivity: {err}")
+
         await db.commit()
         await db.refresh(act)
         return act

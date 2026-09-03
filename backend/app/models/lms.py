@@ -154,7 +154,16 @@ class ActivitySubmission(Base, TimestampMixin):
     graded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Resubmission Exception Management (Post-Grading Lock Policy)
+    allow_resubmission: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resubmission_granted_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resubmission_granted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    resubmission_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     activity: Mapped["SubjectActivity"] = relationship("SubjectActivity")
     student: Mapped["Student"] = relationship("Student")
-    graded_by: Mapped[Optional["User"]] = relationship("User")
+    graded_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[graded_by_id])
+    resubmission_granted_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[resubmission_granted_by_id])
 

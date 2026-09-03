@@ -186,8 +186,15 @@ class ActivitySubmissionResponse(BaseModel):
     graded_by_name: Optional[str] = None
     graded_at: Optional[datetime] = None
     feedback: Optional[str] = None
+    allow_resubmission: bool = False
+    resubmission_granted_at: Optional[datetime] = None
+    resubmission_reason: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class GrantResubmissionRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 

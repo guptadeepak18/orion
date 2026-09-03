@@ -19,7 +19,7 @@ from app.schemas.lms import (
     AssessmentCreate, AssessmentUpdate, AssessmentResponse,
     SubmissionCreate, SubmissionGrade, SubmissionResponse,
     ActivitySubmissionCreate, ActivitySubmissionGrade, ActivitySubmissionResponse,
-    SubjectAttendanceResponse, EnrolledSubjectCard
+    SubjectAttendanceResponse, EnrolledSubjectCard, GrantResubmissionRequest
 )
 
 router = APIRouter(prefix="/lms", tags=["Learning Management System (LMS)"])
@@ -107,6 +107,10 @@ async def _get_subject_lms_data(db: AsyncSession, subject: Subject, current_user
             "submission_requirements": act.submission_requirements,
             "rubric": act.rubric,
             "is_released": act.is_released,
+            "is_locked": getattr(act, "is_locked", False),
+            "locked_at": getattr(act, "locked_at", None),
+            "locked_by": getattr(act, "locked_by", None),
+            "lock_reason": getattr(act, "lock_reason", None),
             "case_study_id": act.case_study_id,
             "case_studies": act.case_studies or [],
             "my_submission": None,
@@ -128,6 +132,9 @@ async def _get_subject_lms_data(db: AsyncSession, subject: Subject, current_user
                     "grade": sub.grade,
                     "score": sub.score,
                     "feedback": sub.feedback,
+                    "allow_resubmission": getattr(sub, "allow_resubmission", False),
+                    "resubmission_granted_at": getattr(sub, "resubmission_granted_at", None),
+                    "resubmission_reason": getattr(sub, "resubmission_reason", None),
                 }
         activities_out.append(act_dict)
 
@@ -567,6 +574,74 @@ async def get_activity_evaluation_progress(
     if not prog:
         return {"status": "idle", "activity_id": str(activity_id), "total_submissions": 0, "processed_count": 0}
     return prog
+
+
+@router.post("/activities/{activity_id}/lock")
+async def lock_activity_submissions(
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually lock an activity from the Subject section to stop student submissions."""
+    from app.services.activity_service import activity_service
+    act = await activity_service.toggle_lock(
+        db, activity_id, is_locked=True, locked_by=current_user.full_name or "Faculty", reason="Locked by faculty from Subject section"
+    )
+    if not act:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return {"status": "locked", "activity_id": str(act.id), "is_locked": True, "lock_reason": act.lock_reason}
+
+
+@router.post("/activities/{activity_id}/unlock")
+async def unlock_activity_submissions(
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually unlock an activity from the Subject section to resume submissions."""
+    from app.services.activity_service import activity_service
+    act = await activity_service.toggle_lock(db, activity_id, is_locked=False)
+    if not act:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return {"status": "unlocked", "activity_id": str(act.id), "is_locked": False}
+
+
+@router.post("/activity-submissions/{submission_id}/grant-resubmission")
+async def grant_resubmission_exception_endpoint(
+    submission_id: uuid.UUID,
+    payload: Optional[GrantResubmissionRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Grants a student an exception to resubmit an already-graded activity."""
+    reason = payload.reason if payload and payload.reason else "Faculty approved resubmission exception"
+    sub = await lms_service.grant_resubmission_exception(db, submission_id, current_user.id, reason)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return {
+        "status": "exception_granted",
+        "submission_id": str(sub.id),
+        "allow_resubmission": True,
+        "resubmission_reason": sub.resubmission_reason,
+        "resubmission_granted_at": sub.resubmission_granted_at,
+    }
+
+
+@router.post("/activity-submissions/{submission_id}/revoke-resubmission")
+async def revoke_resubmission_exception_endpoint(
+    submission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Revokes a student's resubmission exception."""
+    sub = await lms_service.revoke_resubmission_exception(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return {
+        "status": "exception_revoked",
+        "submission_id": str(sub.id),
+        "allow_resubmission": False,
+    }
 
 
 

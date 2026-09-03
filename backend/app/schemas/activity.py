@@ -56,6 +56,10 @@ class BatchReleaseRequest(BaseModel):
     activity_ids: List[UUID]
     is_released: bool
 
+class ActivityLockRequest(BaseModel):
+    is_locked: bool
+    reason: Optional[str] = None
+
 class ActivityResponse(BaseModel):
     id: UUID
     subject_id: UUID
@@ -74,6 +78,10 @@ class ActivityResponse(BaseModel):
     is_released: bool
     released_at: Optional[datetime] = None
     released_by: Optional[str] = None
+    is_locked: bool = False
+    locked_at: Optional[datetime] = None
+    locked_by: Optional[str] = None
+    lock_reason: Optional[str] = None
     case_study_id: Optional[UUID] = None
     case_studies: Optional[Any] = None
     created_at: Optional[datetime] = None

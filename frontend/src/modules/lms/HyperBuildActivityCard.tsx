@@ -123,6 +123,9 @@ interface ActivitySubmission {
   graded_by_name?: string;
   graded_at?: string;
   feedback?: string;
+  allow_resubmission?: boolean;
+  resubmission_granted_at?: string;
+  resubmission_reason?: string;
 }
 
 interface ActivityProps {
@@ -224,6 +227,10 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
   const submission: ActivitySubmission | undefined = localSubmission;
   const isSubmitted = !!submission;
   const isReleased = activity.is_released;
+  const isLocked = !!activity.is_locked;
+  const lockReason = activity.lock_reason;
+  const isGraded = isSubmitted && (submission?.status === 'graded' || (submission?.score !== null && submission?.score !== undefined));
+  const allowResubmission = !!submission?.allow_resubmission;
 
   // Faculty submissions query
   const { data: facultySubmissions = [], isLoading: isLoadingSubs } = useQuery<ActivitySubmission[]>({
@@ -238,6 +245,16 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
   const urlModal = searchParams.get('modal');
   const urlActivityId = searchParams.get('activityId') || searchParams.get('id');
   const urlSubmissionId = searchParams.get('submissionId');
+
+  // Auto-open evaluate modal if URL query params point to a submission under this activity
+  React.useEffect(() => {
+    if (urlModal === 'evaluateHyperbuild' && urlActivityId === activity.id && urlSubmissionId) {
+      const targetSub = facultySubmissions.find((s) => s.id === urlSubmissionId);
+      if (targetSub) {
+        setActiveSubmissionScorecard(targetSub);
+      }
+    }
+  }, [urlModal, urlActivityId, urlSubmissionId, activity.id, facultySubmissions]);
 
   React.useEffect(() => {
     if (!urlModal || urlActivityId !== activity.id) {
@@ -264,6 +281,41 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subject-lms-overview'] });
+    },
+  });
+
+  // Toggle lock mutation (Faculty direct lock from Subject Section)
+  const toggleLockMutation = useMutation({
+    mutationFn: async () => {
+      if (isLocked) {
+        await api.post(`/lms/activities/${activity.id}/unlock`);
+      } else {
+        await api.post(`/lms/activities/${activity.id}/lock`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subject-lms-overview'] });
+    },
+  });
+
+  // Grant / Revoke resubmission mutations
+  const grantResubmissionMutation = useMutation({
+    mutationFn: async ({ submissionId, reason }: { submissionId: string; reason?: string }) => {
+      await api.post(`/lms/activity-submissions/${submissionId}/grant-resubmission`, { reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-submissions', activity.id] });
+      queryClient.invalidateQueries({ queryKey: ['subject-lms-overview'] });
+    },
+  });
+
+  const revokeResubmissionMutation = useMutation({
+    mutationFn: async (submissionId: string) => {
+      await api.post(`/lms/activity-submissions/${submissionId}/revoke-resubmission`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-submissions', activity.id] });
       queryClient.invalidateQueries({ queryKey: ['subject-lms-overview'] });
     },
   });
@@ -471,32 +523,60 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
         </div>
 
         {/* Right: Status Pill & Actions */}
-        <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center">
-          {/* Release / Lock Badge */}
+        <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+          {/* Release & Lock Controls for Faculty/Admin */}
           {isFacultyOrAdmin ? (
-            <button
-              onClick={() => toggleReleaseMutation.mutate()}
-              disabled={toggleReleaseMutation.isPending}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ${
-                isReleased
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                  : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
-              }`}
-              title="Click to toggle release status"
-            >
-              {isReleased ? (
-                <>
-                  <Unlock className="h-3.5 w-3.5 text-emerald-600" /> RELEASED
-                </>
-              ) : (
-                <>
-                  <Lock className="h-3.5 w-3.5 text-amber-600" /> LOCKED (FACULTY ONLY)
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => toggleReleaseMutation.mutate()}
+                disabled={toggleReleaseMutation.isPending}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                  isReleased
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                    : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                }`}
+                title="Toggle student visibility (Released / Draft)"
+              >
+                {isReleased ? (
+                  <>
+                    <Unlock className="h-3.5 w-3.5 text-emerald-600" /> RELEASED
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-3.5 w-3.5 text-slate-500" /> DRAFT (UNRELEASED)
+                  </>
+                )}
+              </button>
+
+              {/* Direct Lock/Unlock Submissions Button */}
+              <button
+                onClick={() => toggleLockMutation.mutate()}
+                disabled={toggleLockMutation.isPending}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                  isLocked
+                    ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800'
+                }`}
+                title={isLocked ? "Submissions are currently locked. Click to unlock." : "Submissions are open. Click to lock."}
+              >
+                {isLocked ? (
+                  <>
+                    <Lock className="h-3.5 w-3.5 text-rose-600" /> LOCKED
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="h-3.5 w-3.5 text-indigo-600" /> UNLOCKED
+                  </>
+                )}
+              </button>
+            </div>
           ) : !isReleased ? (
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 text-amber-600" /> LOCKED
+            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-slate-500" /> UNRELEASED
+            </span>
+          ) : isLocked ? (
+            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-rose-600" /> SUBMISSIONS LOCKED
             </span>
           ) : null}
 
@@ -952,6 +1032,34 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                                 >
                                   <RefreshCw className={`h-3.5 w-3.5 ${isEvaluating ? 'animate-spin' : ''}`} />
                                 </button>
+
+                                {/* Resubmission Exception Action Button */}
+                                {sub.allow_resubmission ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => revokeResubmissionMutation.mutate(sub.id)}
+                                    disabled={revokeResubmissionMutation.isPending}
+                                    className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                    title="Click to revoke resubmission exception"
+                                  >
+                                    <AlertTriangle className="h-3 w-3 text-amber-600" /> Exception Active (Revoke)
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const reason = prompt(`Grant resubmission exception for ${sub.student_name || 'this student'}.\nReason (optional):`);
+                                      if (reason !== null) {
+                                        grantResubmissionMutation.mutate({ submissionId: sub.id, reason: reason.trim() || undefined });
+                                      }
+                                    }}
+                                    disabled={grantResubmissionMutation.isPending}
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                    title="Allow this student to resubmit their deliverable once"
+                                  >
+                                    <Unlock className="h-3 w-3 text-indigo-500" /> Allow Resubmission
+                                  </button>
+                                )}
                               </>
                             ) : (
                               <button
@@ -1420,13 +1528,27 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                 </div>
 
                 {!showSubmitPanel && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubmitPanel()}
-                    className="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition-all cursor-pointer shadow-xs"
-                  >
-                    Resubmit / Update Deliverable
-                  </button>
+                  isGraded && !allowResubmission ? (
+                    <div className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                      <Lock className="w-3.5 h-3.5 text-slate-400" /> Graded ({submission.score}/100) — Resubmissions Locked
+                    </div>
+                  ) : isLocked ? (
+                    <div className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5 border border-rose-200 dark:border-rose-800">
+                      <Lock className="w-3.5 h-3.5 text-rose-500" /> Submissions Locked by Faculty
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSubmitPanel()}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs border ${
+                        allowResubmission
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                          : 'bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      }`}
+                    >
+                      {allowResubmission ? '⚠️ Submit Revised Deliverable (Exception Granted)' : 'Resubmit / Update Deliverable'}
+                    </button>
+                  )
                 )}
               </div>
 
@@ -1466,17 +1588,46 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
 
           {/* 9. STUDENT SOLUTION UPLOAD / SUBMISSION FORM */}
           {isStudent && !isReleased ? (
-            <div className="p-5 rounded-3xl border border-amber-200/90 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20 text-center space-y-2">
-              <div className="h-10 w-10 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
+            <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-center space-y-2">
+              <div className="h-10 w-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto shadow-xs">
                 <Lock className="h-5 w-5" />
               </div>
-              <h5 className="text-sm font-bold text-amber-950 dark:text-amber-200">Activity Locked for Submissions</h5>
-              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 max-w-md mx-auto">
-                This activity will automatically unlock and accept student deliverables according to your class timetable schedule.
+              <h5 className="text-sm font-bold text-slate-900 dark:text-white">Activity Not Released Yet</h5>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                This activity will automatically release and accept deliverables according to your class timetable schedule or when released by faculty.
+              </p>
+            </div>
+          ) : isStudent && isLocked ? (
+            <div className="p-5 rounded-3xl border border-rose-200/90 dark:border-rose-800/60 bg-rose-50/40 dark:bg-rose-950/20 text-center space-y-2">
+              <div className="h-10 w-10 rounded-2xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-xs">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h5 className="text-sm font-bold text-rose-950 dark:text-rose-200">Activity Locked for Submissions</h5>
+              <p className="text-xs text-rose-800/80 dark:text-rose-300/80 max-w-md mx-auto">
+                {lockReason || 'Submissions for this activity have been closed by faculty. No deliverables can be submitted or edited.'}
+              </p>
+            </div>
+          ) : isStudent && isGraded && !allowResubmission ? (
+            <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 text-center space-y-2">
+              <div className="h-10 w-10 rounded-2xl bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center mx-auto">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h5 className="text-sm font-bold text-slate-900 dark:text-white">Evaluation Complete — Resubmissions Locked</h5>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Your deliverable has been evaluated and scored ({submission?.score}/100 Marks). Resubmissions are closed. If an update is required, please contact your course faculty or admin to grant an exception.
               </p>
             </div>
           ) : isStudent && isReleased && (!isSubmitted || showSubmitPanel) ? (
             <div className="p-5 rounded-3xl border border-indigo-200/90 dark:border-indigo-800/60 bg-white dark:bg-slate-900 space-y-4">
+              {allowResubmission && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-black text-[12px]">Resubmission Exception Granted by Faculty</strong>
+                    <span className="text-[11px]">{submission?.resubmission_reason || 'Faculty has approved a one-time revised deliverable submission.'}</span>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
