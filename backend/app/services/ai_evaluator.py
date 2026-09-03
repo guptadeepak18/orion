@@ -1,10 +1,12 @@
 import os
 import json
 import logging
+import asyncio
 import httpx
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from app.services.text_extractor import extract_text_from_file
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,30 +25,19 @@ async def evaluate_submission_against_rubric(
     # 1. Gather all submission content
     content_chunks = []
     if submission_text and submission_text.strip():
-        content_chunks.append(f"=== STUDENT COMMENTS / SUBMISSION NOTES ===\n{submission_text.strip()}")
+        content_chunks.append(submission_text.strip())
 
     if files:
         for f in files:
-            f_path = f.get("saved_path") or f.get("file_path")
-            f_url = f.get("file_url")
-            f_name = f.get("file_name", "Untitled File")
+            file_url = f.get("file_url") or f.get("file_path") or f.get("saved_path")
+            file_name = f.get("file_name") or f.get("filename")
+            if file_url:
+                extracted = extract_text_from_file(file_url, file_name)
+                if extracted and extracted.strip():
+                    content_chunks.append(f"=== Content from attached file: {file_name or 'file'} ===\n{extracted.strip()}")
 
-            target_path = f_path or f_url
-            extracted = ""
-            if target_path:
-                extracted = extract_text_from_file(target_path, f_name)
-            if not extracted.strip() and f_url and f_url != target_path:
-                extracted = extract_text_from_file(f_url, f_name)
-
-            if extracted.strip():
-                content_chunks.append(f"=== FILE: {f_name} ===\n{extracted.strip()}")
-            elif target_path:
-                logger.warning(f"[Evaluator] Could not extract text from '{f_name}' ({target_path})")
-                content_chunks.append(f"=== FILE: {f_name} (Content extraction empty or failed) ===")
-
-    full_submission_text = "\n\n".join(content_chunks)
-
-    if not full_submission_text.strip():
+    full_submission_text = "\n\n".join(content_chunks).strip()
+    if not full_submission_text:
         full_submission_text = "[No text content or extractable files provided in this submission]"
 
     # 2. Extract rubric criteria
@@ -57,41 +48,88 @@ async def evaluate_submission_against_rubric(
         except Exception:
             rubric = []
 
-    # 3. Check for API keys
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("HYPERBUILD_AI_API_KEY")
-    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    # 3. Check for API keys in priority order
+    groq_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
+    openrouter_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY")
+    anthropic_key = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY")
+    gemini_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 
-    # 4. Attempt AI evaluation
-    if anthropic_key:
+    result = None
+
+    # 4. Attempt AI evaluation with multi-provider cascade
+    if groq_key:
         try:
-            return await _evaluate_with_anthropic(activity, rubric, full_submission_text, anthropic_key)
+            result = await _evaluate_with_groq(activity, rubric, full_submission_text, groq_key, student_name=student_name)
         except Exception as e:
-            logger.error(f"Anthropic evaluation failed: {e}")
+            logger.warning(f"Groq evaluation failed: {e}")
 
-    if gemini_key:
+    if not result and openrouter_key:
         try:
-            return await _evaluate_with_gemini(activity, rubric, full_submission_text, gemini_key)
+            result = await _evaluate_with_openrouter(activity, rubric, full_submission_text, openrouter_key, student_name=student_name)
         except Exception as e:
-            logger.error(f"Gemini evaluation failed: {e}")
+            logger.warning(f"OpenRouter evaluation failed: {e}")
 
-    if openai_key:
+    if not result and anthropic_key:
         try:
-            return await _evaluate_with_openai(activity, rubric, full_submission_text, openai_key)
+            result = await _evaluate_with_anthropic(activity, rubric, full_submission_text, anthropic_key, student_name=student_name)
         except Exception as e:
-            logger.error(f"OpenAI evaluation failed: {e}")
+            logger.warning(f"Anthropic evaluation failed: {e}")
 
-    # Fallback rule-based evaluator if no live LLM key is configured
-    return _generate_structured_fallback_evaluation(
-        activity, rubric, full_submission_text, peer_texts=peer_texts, student_name=student_name
-    )
+    if not result and gemini_key:
+        try:
+            result = await _evaluate_with_gemini(activity, rubric, full_submission_text, gemini_key, student_name=student_name)
+        except Exception as e:
+            logger.warning(f"Gemini evaluation failed: {e}")
+
+    if not result and openai_key:
+        try:
+            result = await _evaluate_with_openai(activity, rubric, full_submission_text, openai_key, student_name=student_name)
+        except Exception as e:
+            logger.warning(f"OpenAI evaluation failed: {e}")
+
+    # 5. Fallback rule-based evaluator if all live LLMs fail or not configured
+    if not result:
+        result = _generate_structured_fallback_evaluation(
+            activity, rubric, full_submission_text, peer_texts=peer_texts, student_name=student_name
+        )
+
+    # 6. Apply Cohort-Wide Peer Plagiarism & Collusion Audit across all models
+    if peer_texts:
+        audit = _audit_peer_collusion(full_submission_text, student_name, peer_texts)
+        if audit["plagiarism_flag"]:
+            result["plagiarism_flag"] = True
+            result["collusion_details"] = audit["collusion_details"]
+            if audit["penalty"] > 0:
+                result["total_score"] = max(20.0, round(float(result.get("total_score", 0.0)) - audit["penalty"], 1))
+                if result.get("total_score", 0.0) >= 85:
+                    result["performance_tier"] = "Distinction (85-100%)"
+                elif result.get("total_score", 0.0) >= 70:
+                    result["performance_tier"] = "Merit (70-84%)"
+                elif result.get("total_score", 0.0) >= 50:
+                    result["performance_tier"] = "Pass (50-69%)"
+                else:
+                    result["performance_tier"] = "Needs Work (<50%)"
+                result["critical_feedback"] = f"{audit['integrity_note']}\n\n" + str(result.get("critical_feedback", ""))
+        else:
+            result.setdefault("plagiarism_flag", False)
+            result.setdefault("collusion_details", [])
+
+    # Ensure AI Support fields are populated
+    if "ai_support_percentage" not in result or result["ai_support_percentage"] is None:
+        ai_audit = detect_ai_reliance(full_submission_text)
+        result["ai_support_percentage"] = ai_audit["ai_support_percentage"]
+        result["ai_support_level"] = ai_audit["ai_support_level"]
+        result.setdefault("ai_audit_findings", ai_audit["ai_audit_findings"])
+
+    return result
 
 
-def _build_evaluation_prompt(activity: Any, rubric: List[Dict[str, Any]], student_text: str) -> str:
+def _build_evaluation_prompt(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> str:
     rubric_str = json.dumps(rubric, indent=2) if rubric else "Standard Academic Rubric: Accuracy (35%), Critical Analysis (35%), Professional Execution (30%)"
 
-    return f"""You are a distinguished Senior Professor of Law & Strategy and a rigorous academic assessor evaluating a student's HyperBuild AI Activity submission for an executive PGDM curriculum.
-Your task is to conduct an uncompromising, exhaustive, and highly critical assessment of the student's submitted deliverable against the activity requirements and grading rubric.
+    return f"""You are a distinguished Senior Professor and rigorous academic assessor evaluating an experiential learning deliverable.
+Student being evaluated: {student_name}
 
 === ACTIVITY SPECIFICATIONS ===
 Title: Activity {activity.activity_no}: {activity.title}
@@ -108,75 +146,208 @@ Mode: {activity.mode or 'Individual'}
 === ASSESSMENT TASK & SUBMISSION REQUIREMENTS ===
 {activity.submission_requirements or 'N/A'}
 
-=== GRADING RUBRIC (4 TIERS) ===
+=== GRADING RUBRIC ===
 {rubric_str}
 
+=== CRITICAL INSTRUCTIONS ON AI USAGE & INTEGRITY ===
+- Step 7 explicitly required students to consult Claude.ai for an objective critique of their negotiation and document that critique in the report. Documenting Claude's response in Step 7 is FULLY AUTHORIZED AND MANDATORY. Do NOT penalize students for having Claude's critique in Step 7!
+- Step 8 requires the student to author their OWN personal Reflection Report (~350 words) synthesizing what they learned.
+- Inspect the document for signs of excessive, uncredited AI offloading:
+  * Raw search/browse citation tags left unedited (e.g. [cite: 1], [cite: 2]).
+  * Detached third-person phrasing in personal role-play reflection ('the negotiator did not disclose', 'the participant agreed').
+  * Conversational AI remnants or assistant commentary ('This keeps the BATNA confidential while still giving you...').
+  * Generic textbook padding replacing personal dialogue.
+- Calculate an accurate "ai_support_percentage" (0.0 to 100.0) reflecting the proportion of AI assistance vs authentic student authorship.
+
 === STUDENT'S SUBMITTED DELIVERABLE ===
-{student_text}
+{student_text[:8000]}
 
-=== EVALUATION DIRECTIVES (MANDATORY RIGOR) ===
-1. STEP 0: PROBLEM STATEMENT & TOPIC ALIGNMENT CHECK:
-   - Determine if the submitted deliverable addresses the specific problem statement of Activity {activity.activity_no} ({activity.title}).
-   - If the student submitted an off-topic file or completely unrelated subject matter (e.g. food due diligence for an arbitration case, or marketing slides for a legal drafting task):
-     * Award EXACTLY 0.0 out of 100.0 marks.
-     * Set performance_tier to "Needs Work (<50%)".
-     * In criteria_breakdown, award 0.0 marks for all criteria with rationale detailing the complete topic mismatch.
-     * In executive_summary and critical_feedback, clearly explain the mismatch and give zero marks.
-
-2. STEP 1: CRITICAL, UNCOMPROMISING SCORING (IF ON-TOPIC):
-   - Grade with stringent academic standards. Do NOT award easy distinction marks. An average submission should score 60-72 marks. A distinction (85%+) requires flawless statutory citations, deep independent AI verification, and executive-ready strategic insights.
-   - For EACH criterion in the rubric:
-     * Assign precise marks awarded (e.g. 24.5 / 33.3).
-     * Provide an extensive, analytical rationale (min 80 words) evaluating what benchmark was achieved and what exact doctrinal or analytical elements were missing.
-     * Quote exact sentences or phrases from the student submission as evidence.
-     * Highlight specific missing statutory provisions, omitted clauses, or analytical blind spots.
-
-3. STEP 2: EXTENSIVE, ACTIONABLE FEEDBACK:
-   - Provide 4-5 substantive, granular strengths ("What Went Well") citing specific sections or arguments.
-   - Provide 5-6 highly critical, concrete deficiencies ("Areas for Improvement") detailing exact gaps in doctrine, AI verification, contract drafting, or commercial risk mitigation.
-   - Provide a comprehensive, 4-paragraph academic critique in "critical_feedback" covering:
-     * Paragraph 1: Primary Doctrinal & Case Law Rigor
-     * Paragraph 2: AI Verification Audit & Prompt Engineering Quality
-     * Paragraph 3: Commercial & Boardroom Applicability
-     * Paragraph 4: Concrete Remediation Action Plan
-
-Return ONLY a valid JSON object matching this exact schema (no markdown formatting, no code blocks):
+=== EVALUATION DIRECTIVES ===
+1. PROBLEM STATEMENT & TOPIC ALIGNMENT CHECK:
+   - If the student submitted an off-topic file or completely unrelated subject matter, award 0.0 marks with tier "Needs Work (<50%)".
+2. RIGOROUS, UNCOMPROMISING CRITIQUE:
+   - Grade with authentic academic standards. A distinction (85%+) requires flawless execution, quantified preparation, unscripted role-play dialogue, and deep critical introspection.
+   - For EACH rubric criterion:
+     * Assign exact marks (e.g. 26.5 / 35.0).
+     * Quote exact sentences from the submission as evidence.
+     * Identify the specific missing nuance, omission, or analytical gap.
+3. OUTPUT REQUIREMENTS:
+   - Return ONLY a valid JSON object matching this exact schema (no markdown fences, no extra text):
 
 {{
-  "total_score": 0.0,
+  "total_score": float,
   "max_score": 100.0,
-  "performance_tier": "Needs Work (<50%)",
-  "executive_summary": "Thorough 3-4 sentence academic appraisal of submission quality, doctrinal rigor, and compliance.",
-  "strengths": [
-    "Granular strength 1 with exact reference to student work",
-    "Granular strength 2 with exact reference to student work",
-    "Granular strength 3 with exact reference to student work",
-    "Granular strength 4 with exact reference to student work"
+  "performance_tier": string ("Distinction (85-100%)" | "Merit (70-84%)" | "Pass (50-69%)" | "Needs Work (<50%)"),
+  "ai_support_percentage": float,
+  "ai_support_level": string ("Low (Bounded AI Engagement per Instructions)" | "Moderate (Partial AI Assistance in Drafting)" | "High (Substantial AI Generation & Offloading)" | "Critical (Heavy/Near-Complete AI Generation)"),
+  "ai_audit_findings": [
+    "Specific finding 1 explaining AI citation tags, detached phrasing, or authentic human authorship"
   ],
-  "areas_for_improvement": [
-    "Critical deficiency 1 with specific statutory/contractual gap identified",
-    "Critical deficiency 2 with specific statutory/contractual gap identified",
-    "Critical deficiency 3 with specific statutory/contractual gap identified",
-    "Critical deficiency 4 with specific statutory/contractual gap identified",
-    "Critical deficiency 5 with specific statutory/contractual gap identified"
-  ],
+  "executive_summary": "Comprehensive 3-4 sentence appraisal of quality, analytical depth, and compliance.",
   "criteria_breakdown": [
     {{
       "criterion": "Criterion Name",
-      "marks_awarded": 0.0,
-      "max_marks": 33.3,
-      "tier": "Merit (70-84%)",
-      "rationale": "Comprehensive 80-120 word evaluation of this criterion explaining exact deductions and accomplishments.",
-      "evidence": "Quoted sentence or section from student submission.",
-      "gap_identified": "Specific missing statutory section, omitted nuance, or analytical flaw."
+      "marks_awarded": float,
+      "max_marks": float,
+      "tier": string,
+      "rationale": "Thorough 50-80 word critique explaining deductions and strengths.",
+      "evidence": "Direct quoted excerpt from student submission.",
+      "gap_identified": "Specific gap, omitted calculation, or superficial treatment."
     }}
   ],
-  "critical_feedback": "Four-paragraph masterclass academic critique providing exhaustive guidance."
+  "strengths": [
+    "Specific strength 1 with reference to student work",
+    "Specific strength 2 with reference to student work",
+    "Specific strength 3 with reference to student work"
+  ],
+  "areas_for_improvement": [
+    "Concrete actionable deficiency 1",
+    "Concrete actionable deficiency 2",
+    "Concrete actionable deficiency 3"
+  ],
+  "critical_feedback": "Detailed multi-paragraph personalized feedback addressing the student directly."
 }}"""
 
 
-async def _evaluate_with_anthropic(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str) -> Dict[str, Any]:
-    prompt = _build_evaluation_prompt(activity, rubric, student_text)
+def _audit_peer_collusion(student_text: str, student_name: str, peer_texts: Dict[str, str]) -> Dict[str, Any]:
+    """Exhaustive 7-word n-gram peer comparison across the cohort."""
+    text_lower = student_text.lower()
+    t_words = [w for w in text_lower.split() if len(w) > 2]
+    if len(t_words) <= 7:
+        return {"plagiarism_flag": False, "collusion_details": [], "penalty": 0.0, "integrity_note": ""}
+
+    my_ngrams = set(" ".join(t_words[k:k+7]) for k in range(len(t_words)-6))
+    plagiarism_flag = False
+    collusion_peers = []
+    max_shared_phrases = 0
+
+    for peer_name, p_text in peer_texts.items():
+        if peer_name == student_name or not p_text:
+            continue
+        p_words = [w for w in p_text.lower().split() if len(w) > 2]
+        if len(p_words) <= 7:
+            continue
+        p_ngrams = set(" ".join(p_words[k:k+7]) for k in range(len(p_words)-6))
+        common = my_ngrams & p_ngrams
+        clean_common = [
+            g for g in common if not any(x in g for x in [
+                'harvard program on negotiation', 'negotiation simulation', 'principled negotiation',
+                'options for mutual gain', 'separating people from the', 'best alternative to a',
+                'fisher & ury', 'fisher, ury', 'focusing on interests rather than'
+            ])
+        ]
+        if len(clean_common) > 100:
+            plagiarism_flag = True
+            collusion_peers.append(f"{peer_name} ({len(clean_common)} identical 7-word phrases - VERBATIM CLONE)")
+            max_shared_phrases = max(max_shared_phrases, len(clean_common))
+        elif len(clean_common) >= 15:
+            plagiarism_flag = True
+            collusion_peers.append(f"{peer_name} ({len(clean_common)} shared 7-word phrases - Template Sharing)")
+            max_shared_phrases = max(max_shared_phrases, len(clean_common))
+
+    penalty = 0.0
+    integrity_note = ""
+    if plagiarism_flag and max_shared_phrases >= 100:
+        penalty = 38.0
+        integrity_note = f"ACADEMIC INTEGRITY VIOLATION: Verbatim submission clone detected ({max_shared_phrases} shared phrases with {', '.join(collusion_peers)})."
+    elif plagiarism_flag:
+        penalty = 12.0
+        integrity_note = f"COLLUSION WARNING: Substantial shared template/phrasing detected ({max_shared_phrases} shared phrases with {', '.join(collusion_peers)})."
+
+    return {
+        "plagiarism_flag": plagiarism_flag,
+        "collusion_details": collusion_peers,
+        "penalty": penalty,
+        "integrity_note": integrity_note,
+    }
+
+
+async def _evaluate_with_groq(
+    activity: Any,
+    rubric: List[Dict[str, Any]],
+    student_text: str,
+    api_key: str,
+    student_name: str = "Student",
+) -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    models_to_try = [
+        os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.6-27b",
+    ]
+    async with httpx.AsyncClient(timeout=65.0) as client:
+        last_err = None
+        for model in models_to_try:
+            try:
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 2000,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                if resp.status_code == 200:
+                    raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+                    parsed = _clean_and_parse_json(raw_text)
+                    parsed["model_used"] = f"Groq {model} (High-Speed LPU)"
+                    parsed["evaluated_at"] = datetime.utcnow().isoformat()
+                    return parsed
+                elif resp.status_code == 429:
+                    logger.warning(f"Groq {model} hit 429, sleeping 3s...")
+                    await asyncio.sleep(3)
+                else:
+                    last_err = f"Groq {model} returned {resp.status_code}: {resp.text}"
+            except Exception as e:
+                last_err = str(e)
+                logger.warning(f"Groq {model} failed: {e}")
+        raise RuntimeError(f"All Groq models failed: {last_err}")
+
+
+async def _evaluate_with_openrouter(
+    activity: Any,
+    rubric: List[Dict[str, Any]],
+    student_text: str,
+    api_key: str,
+    student_name: str = "Student",
+) -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free")
+    async with httpx.AsyncClient(timeout=65.0) as client:
+        resp = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON matching the requested schema."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+            },
+        )
+        resp.raise_for_status()
+        raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+        parsed = _clean_and_parse_json(raw_text)
+        parsed["model_used"] = f"OpenRouter {model}"
+        parsed["evaluated_at"] = datetime.utcnow().isoformat()
+        return parsed
+
+
+async def _evaluate_with_anthropic(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str, student_name: str = "Student") -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
     model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -203,8 +374,8 @@ async def _evaluate_with_anthropic(activity: Any, rubric: List[Dict[str, Any]], 
         return parsed
 
 
-async def _evaluate_with_gemini(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str) -> Dict[str, Any]:
-    prompt = _build_evaluation_prompt(activity, rubric, student_text)
+async def _evaluate_with_gemini(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str, student_name: str = "Student") -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -226,8 +397,8 @@ async def _evaluate_with_gemini(activity: Any, rubric: List[Dict[str, Any]], stu
         return parsed
 
 
-async def _evaluate_with_openai(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str) -> Dict[str, Any]:
-    prompt = _build_evaluation_prompt(activity, rubric, student_text)
+async def _evaluate_with_openai(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str, student_name: str = "Student") -> Dict[str, Any]:
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
     model = os.getenv("OPENAI_MODEL", "gpt-4o")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -254,7 +425,33 @@ async def _evaluate_with_openai(activity: Any, rubric: List[Dict[str, Any]], stu
 
 
 def _clean_and_parse_json(raw_text: str) -> Dict[str, Any]:
+    import re
     text = raw_text.strip()
+    
+    # 1. Direct JSON parse
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # 2. Extract from markdown code fence
+    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1).strip())
+        except Exception:
+            pass
+
+    # 3. Find outermost braces { ... }
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(text[first_brace:last_brace+1].strip())
+        except Exception:
+            pass
+
+    # 4. Fallback stripping
     if text.startswith("```json"):
         text = text[7:]
     elif text.startswith("```"):
