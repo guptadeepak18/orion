@@ -1049,6 +1049,37 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                               </div>
                             )}
 
+                            {/* Micro-Compliance Protocol Checklist (Steps 1 to 8) */}
+                            {sub.ai_evaluation.micro_compliance_audit && (
+                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    📋 Activity Protocol Micro-Audit (Steps 1–8)
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-semibold">Granular Step-by-Step Verification</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                  {Object.entries(sub.ai_evaluation.micro_compliance_audit).map(([stepKey, val]: [string, any]) => {
+                                    const isPassed = String(val).toLowerCase().startsWith('passed');
+                                    const formattedKey = stepKey.replace(/_/g, ' ').replace(/^step\s*(\d+)/i, 'Step $1:');
+                                    return (
+                                      <div key={stepKey} className={`p-2 rounded-lg border flex items-start gap-2 ${
+                                        isPassed 
+                                          ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-900/30 text-emerald-900 dark:text-emerald-200'
+                                          : 'bg-rose-50/40 dark:bg-rose-950/10 border-rose-200/60 dark:border-rose-900/30 text-rose-900 dark:text-rose-200'
+                                      }`}>
+                                        <span className="text-xs shrink-0 mt-0.5">{isPassed ? '✅' : '❌'}</span>
+                                        <div className="min-w-0">
+                                          <strong className="capitalize block text-[10px] font-bold text-slate-600 dark:text-slate-400">{formattedKey}</strong>
+                                          <span className="line-clamp-2">{String(val)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             {/* Executive Summary */}
                             {sub.ai_evaluation.executive_summary && (
                               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
@@ -1217,6 +1248,37 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                         <div className="text-[10px] opacity-80 mt-0.5 line-clamp-1">{submission.ai_evaluation.collusion_details[0]}</div>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Micro-Compliance Protocol Checklist (Steps 1 to 8) */}
+              {submission.ai_evaluation.micro_compliance_audit && (
+                <div className="p-4 rounded-2xl bg-white/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      📋 Activity Protocol Micro-Audit (Steps 1–8)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-semibold">Step-by-Step Requirements Compliance</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {Object.entries(submission.ai_evaluation.micro_compliance_audit).map(([stepKey, val]: [string, any]) => {
+                      const isPassed = String(val).toLowerCase().startsWith('passed');
+                      const formattedKey = stepKey.replace(/_/g, ' ').replace(/^step\s*(\d+)/i, 'Step $1:');
+                      return (
+                        <div key={stepKey} className={`p-2.5 rounded-xl border flex items-start gap-2.5 ${
+                          isPassed 
+                            ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-900/30 text-emerald-900 dark:text-emerald-200'
+                            : 'bg-rose-50/40 dark:bg-rose-950/10 border-rose-200/60 dark:border-rose-900/30 text-rose-900 dark:text-rose-200'
+                        }`}>
+                          <span className="text-sm shrink-0 mt-0.5">{isPassed ? '✅' : '❌'}</span>
+                          <div className="min-w-0">
+                            <strong className="capitalize block text-[11px] font-bold text-slate-600 dark:text-slate-400">{formattedKey}</strong>
+                            <span className="text-[11.5px] leading-snug">{String(val)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

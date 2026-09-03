@@ -128,51 +128,43 @@ async def evaluate_submission_against_rubric(
 def _build_evaluation_prompt(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> str:
     rubric_str = json.dumps(rubric, indent=2) if rubric else "Standard Academic Rubric: Accuracy (35%), Critical Analysis (35%), Professional Execution (30%)"
 
-    return f"""You are a distinguished Senior Professor and rigorous academic assessor evaluating an experiential learning deliverable.
+    return f"""You are an elite, uncompromising Professor of Business Communication and Negotiation at a top-tier business school.
 Student being evaluated: {student_name}
 
 === ACTIVITY SPECIFICATIONS ===
 Title: Activity {activity.activity_no}: {activity.title}
-Unit Mapping: {activity.unit_mapping or 'N/A'}
-Estimated Effort: {activity.estimated_time or 'N/A'}
+Unit Mapping: {activity.unit_mapping or 'Unit 3: Oral Communication'}
+Estimated Effort: {activity.estimated_time or '3-4 hours'}
 Mode: {activity.mode or 'Individual'}
 
-=== WHY THIS ACTIVITY ===
-{activity.why_this_activity or 'N/A'}
+=== MANDATORY STEP-BY-STEP ACTIVITY PROTOCOL (AUDIT EVERY STEP) ===
+1. Step 1: ~150-word accurate summary of the 4 principled-negotiation pillars (People/Problem, Interests/Positions, Options for Mutual Gain, Objective Criteria).
+2. Step 2: Realistic scenario with a REAL named classmate/peer counterpart (e.g., job offer negotiation or vendor deal in a realistic domestic PGDM context, not an imaginary Silicon Valley USD setting).
+3. Step 3: Quantified BATNA and distinct Reservation Point in concrete figures (INR for Indian PGDM cohort).
+4. Step 4: Distributive vs Integrative diagnosis with at least ONE specific mutual-gain trade-off identified.
+5. Step 5 & 6: Actual 10-15 minute live role-play. Must report: (a) exact outcome, (b) BATNA disclosure decision + rationale, (c) ONE SPECIFIC MOMENT citing what the counterpart did/said using a principled technique.
+6. Step 7: Prompt Claude.ai and RECORD Claude's critique in full (must include the actual critique, not just a vague 2-line summary).
+7. Step 8: ~350-word personal Reflection Report in the student's AUTHENTIC first-person voice analyzing personal mistakes, cognitive biases, missed value, and concrete behavioral commitments.
 
-=== STEP-BY-STEP INSTRUCTIONS ===
-{activity.instructions or 'N/A'}
+=== RIGOROUS, UNCOMPROMISING GRADING NORMS (DO NOT BE LENIENT) ===
+- Distinction (85-100%): Flawless execution across all 8 steps. Real classmate named, actual dialogue cited, realistic INR figures, full Claude critique recorded, deeply introspective 350-word reflection. ZERO AI drafting remnants. (Very rare, <5%).
+- Merit (70-84%): Strong submission. Real classmate, genuine role-play, but minor gaps (e.g. summarized dialogue, reflection slightly below depth).
+- Pass (50-69%): Average work. Meets basic format, but lacks dialogue transcripts, Claude critique is paraphrased/summarized, reflection relies on generic corporate platitudes, or minor AI drafting assistance detected.
+- Needs Work (<50%): Severe deficiencies:
+  * Fabricated/synthetic role-play (e.g. Silicon Valley USD $115k salaries, no classmate named).
+  * Raw AI search tags left unedited (e.g. [cite: 1], [cite: 2]).
+  * Conversational AI assistant remnants left in text (e.g. 'This keeps the BATNA confidential while giving you a complete structure...').
+  * Detached 3rd-person phrasing ('The negotiator did not disclose...') in what must be a 1st-person reflection.
+  * Omission or truncation of Step 8 Reflection Report.
 
-=== ASSESSMENT TASK & SUBMISSION REQUIREMENTS ===
-{activity.submission_requirements or 'N/A'}
-
-=== GRADING RUBRIC ===
+=== RUBRIC ===
 {rubric_str}
-
-=== CRITICAL INSTRUCTIONS ON AI USAGE & INTEGRITY ===
-- Step 7 explicitly required students to consult Claude.ai for an objective critique of their negotiation and document that critique in the report. Documenting Claude's response in Step 7 is FULLY AUTHORIZED AND MANDATORY. Do NOT penalize students for having Claude's critique in Step 7!
-- Step 8 requires the student to author their OWN personal Reflection Report (~350 words) synthesizing what they learned.
-- Inspect the document for signs of excessive, uncredited AI offloading:
-  * Raw search/browse citation tags left unedited (e.g. [cite: 1], [cite: 2]).
-  * Detached third-person phrasing in personal role-play reflection ('the negotiator did not disclose', 'the participant agreed').
-  * Conversational AI remnants or assistant commentary ('This keeps the BATNA confidential while still giving you...').
-  * Generic textbook padding replacing personal dialogue.
-- Calculate an accurate "ai_support_percentage" (0.0 to 100.0) reflecting the proportion of AI assistance vs authentic student authorship.
 
 === STUDENT'S SUBMITTED DELIVERABLE ===
 {student_text[:8000]}
 
-=== EVALUATION DIRECTIVES ===
-1. PROBLEM STATEMENT & TOPIC ALIGNMENT CHECK:
-   - If the student submitted an off-topic file or completely unrelated subject matter, award 0.0 marks with tier "Needs Work (<50%)".
-2. RIGOROUS, UNCOMPROMISING CRITIQUE:
-   - Grade with authentic academic standards. A distinction (85%+) requires flawless execution, quantified preparation, unscripted role-play dialogue, and deep critical introspection.
-   - For EACH rubric criterion:
-     * Assign exact marks (e.g. 26.5 / 35.0).
-     * Quote exact sentences from the submission as evidence.
-     * Identify the specific missing nuance, omission, or analytical gap.
-3. OUTPUT REQUIREMENTS:
-   - Return ONLY a valid JSON object matching this exact schema (no markdown fences, no extra text):
+=== OUTPUT REQUIREMENTS ===
+Return ONLY a valid JSON object matching this exact schema (no markdown fences, no extra text):
 
 {{
   "total_score": float,
@@ -181,16 +173,25 @@ Mode: {activity.mode or 'Individual'}
   "ai_support_percentage": float,
   "ai_support_level": string ("Low (Bounded AI Engagement per Instructions)" | "Moderate (Partial AI Assistance in Drafting)" | "High (Substantial AI Generation & Offloading)" | "Critical (Heavy/Near-Complete AI Generation)"),
   "ai_audit_findings": [
-    "Specific finding 1 explaining AI citation tags, detached phrasing, or authentic human authorship"
+    "Specific finding explaining AI citation tags, conversational remnants, detached phrasing, or authentic human authorship"
   ],
-  "executive_summary": "Comprehensive 3-4 sentence appraisal of quality, analytical depth, and compliance.",
+  "micro_compliance_audit": {{
+    "step_1_framework_summary": "Passed / Deficient with specific reason",
+    "step_2_real_classmate_scenario": "Passed / Deficient with specific reason",
+    "step_3_batna_reservation_quantified": "Passed / Deficient with specific reason",
+    "step_4_integrative_tradeoff": "Passed / Deficient with specific reason",
+    "step_5_6_live_roleplay_and_specific_moment": "Passed / Deficient with specific reason",
+    "step_7_claude_critique_recorded": "Passed / Deficient with specific reason",
+    "step_8_reflection_authenticity_and_depth": "Passed / Deficient with specific reason"
+  }},
+  "executive_summary": "Brutally honest, 3-4 sentence academic appraisal citing specific accomplishments and critical deficiencies.",
   "criteria_breakdown": [
     {{
       "criterion": "Criterion Name",
       "marks_awarded": float,
       "max_marks": float,
       "tier": string,
-      "rationale": "Thorough 50-80 word critique explaining deductions and strengths.",
+      "rationale": "Thorough critique explaining exact deductions based on missing micro-requirements.",
       "evidence": "Direct quoted excerpt from student submission.",
       "gap_identified": "Specific gap, omitted calculation, or superficial treatment."
     }}
@@ -201,11 +202,11 @@ Mode: {activity.mode or 'Individual'}
     "Specific strength 3 with reference to student work"
   ],
   "areas_for_improvement": [
-    "Concrete actionable deficiency 1",
-    "Concrete actionable deficiency 2",
-    "Concrete actionable deficiency 3"
+    "Concrete actionable deficiency 1 citing exact step violated",
+    "Concrete actionable deficiency 2 citing exact step violated",
+    "Concrete actionable deficiency 3 citing exact step violated"
   ],
-  "critical_feedback": "Detailed multi-paragraph personalized feedback addressing the student directly."
+  "critical_feedback": "Exhaustive, direct feedback addressing the student with uncompromising academic rigor."
 }}"""
 
 
