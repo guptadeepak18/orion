@@ -12,6 +12,10 @@ import {
   Filter,
   RotateCcw,
   Check,
+  BarChart3,
+  Mail,
+  Send,
+  CheckCircle2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { StudentGradebookView } from './StudentGradebookView';
@@ -33,6 +37,13 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
   const [selectedComponent, setSelectedComponent] = useState<'all' | 'cce' | 'hyperbuild' | 'term_end'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedStudentForView, setSelectedStudentForView] = useState<string | null>(null);
+
+  // Subject Analytics & Email states
+  const [showSubjectAnalytics, setShowSubjectAnalytics] = useState<boolean>(true);
+  const [isNotifyModalOpen, setIsNotifyModalOpen] = useState<boolean>(false);
+  const [isNotifyingCohort, setIsNotifyingCohort] = useState<boolean>(false);
+  const [notifySuccessMsg, setNotifySuccessMsg] = useState<string | null>(null);
+  const [individualEmailStatus, setIndividualEmailStatus] = useState<{ [studentId: string]: 'sending' | 'sent' | 'error' }>({});
 
   // Marks Entry Modal state
   const [editingGrade, setEditingGrade] = useState<{
@@ -132,6 +143,58 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
     },
   });
 
+  // Granular Subject-Wise Analytics Query
+  const { data: subjectAnalytics } = useQuery({
+    queryKey: ['subject-analytics', selectedSubjectId, selectedBatchId, selectedDivisionId],
+    queryFn: async () => {
+      if (!selectedSubjectId) return null;
+      const params = new URLSearchParams();
+      if (selectedBatchId) params.append('batch_id', selectedBatchId);
+      if (selectedDivisionId) params.append('division_id', selectedDivisionId);
+      const res = await api.get(`/gradebook/subjects/${selectedSubjectId}/analytics?${params.toString()}`);
+      return res.data;
+    },
+    enabled: Boolean(selectedSubjectId),
+  });
+
+  const handleSendIndividualEmail = async (studentId: string) => {
+    setIndividualEmailStatus((prev) => ({ ...prev, [studentId]: 'sending' }));
+    try {
+      const url = selectedSubjectId
+        ? `/gradebook/students/${studentId}/notify?subject_id=${selectedSubjectId}`
+        : `/gradebook/students/${studentId}/notify`;
+      await api.post(url);
+      setIndividualEmailStatus((prev) => ({ ...prev, [studentId]: 'sent' }));
+      setTimeout(() => {
+        setIndividualEmailStatus((prev) => {
+          const next = { ...prev };
+          delete next[studentId];
+          return next;
+        });
+      }, 4000);
+    } catch (err: any) {
+      console.error(err);
+      setIndividualEmailStatus((prev) => ({ ...prev, [studentId]: 'error' }));
+    }
+  };
+
+  const handleSendCohortEmails = async () => {
+    setIsNotifyingCohort(true);
+    setNotifySuccessMsg(null);
+    try {
+      const payload: any = {};
+      if (selectedSubjectId) payload.subject_id = selectedSubjectId;
+      if (selectedBatchId) payload.batch_id = selectedBatchId;
+      const res = await api.post('/gradebook/cohort/notify', payload);
+      setNotifySuccessMsg(res.data?.message || `Results successfully emailed to cohort students!`);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.response?.data?.detail || 'Failed to dispatch notification emails.');
+    } finally {
+      setIsNotifyingCohort(false);
+    }
+  };
+
   const handleExportCsv = () => {
     const params = new URLSearchParams();
     if (selectedProgramId) params.append('program_id', selectedProgramId);
@@ -163,6 +226,8 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
   const batchesList = Array.isArray(batchesData) ? batchesData : [];
   const divisionsList = Array.isArray(divisionsData) ? divisionsData : [];
   const subjectsList = Array.isArray(subjectsData) ? subjectsData : [];
+
+  const selectedSubjectObj = subjectsList.find((s: any) => s.id === selectedSubjectId);
 
   const rows = cohortData?.rows || [];
   const tierBreakdown = cohortData?.tier_breakdown || {};
@@ -207,7 +272,7 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => aiInsightsMutation.mutate()}
             disabled={aiInsightsMutation.isPending}
@@ -224,11 +289,30 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
             )}
           </button>
 
+          {selectedSubjectId && (
+            <button
+              onClick={() => setShowSubjectAnalytics(!showSubjectAnalytics)}
+              className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              {showSubjectAnalytics ? 'Hide Analytics' : `Subject Analytics (${selectedSubjectObj?.code || 'Subject'})`}
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsNotifyModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            {selectedSubjectObj ? `Email ${selectedSubjectObj.code} Results` : 'Email Results'}
+          </button>
+
           <button
             onClick={handleExportCsv}
             className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" /> Export Excel/CSV
+            <Download className="w-3.5 h-3.5" />
+            {selectedSubjectObj ? `Export ${selectedSubjectObj.code} Marksheet` : 'Export Master Marksheet'}
           </button>
         </div>
       </div>
@@ -363,6 +447,196 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                     ))}
                   </ul>
                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Subject-Wise Analytics Section */}
+      {selectedSubjectId && showSubjectAnalytics && subjectAnalytics && (
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-extrabold text-[11px]">
+                    {subjectAnalytics.subject?.code}
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    {subjectAnalytics.subject?.name} — Performance Analytics
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Evaluation Scheme: CCE ({subjectAnalytics.subject?.cce_max_marks} marks) • HyperBuild ({subjectAnalytics.subject?.total_activities} simulation labs) • Term End Exam ({subjectAnalytics.subject?.term_end_max_marks} marks)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCsv}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Export {subjectAnalytics.subject?.code} Marksheet
+              </button>
+              <button
+                onClick={() => setIsNotifyModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5" /> Email Results
+              </button>
+            </div>
+          </div>
+
+          {/* Subject KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Subject Average</span>
+              <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                {subjectAnalytics.summary?.subject_average !== null ? `${subjectAnalytics.summary?.subject_average}%` : '—'}
+              </p>
+              <span className="text-[10px] text-slate-400">Total composite %</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">CCE Mean</span>
+              <p className="text-xl font-black text-slate-800 dark:text-slate-200 mt-1">
+                {subjectAnalytics.summary?.cce_average !== null ? `${subjectAnalytics.summary?.cce_average} / ${subjectAnalytics.subject?.cce_max_marks}` : '—'}
+              </p>
+              <span className="text-[10px] text-slate-400">Continuous evaluation</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10.5px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">HyperBuild Labs Avg</span>
+              <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                {subjectAnalytics.summary?.hyperbuild_average !== null ? `${subjectAnalytics.summary?.hyperbuild_average} / 100` : '—'}
+              </p>
+              <span className="text-[10px] text-slate-400">Total Avg: {subjectAnalytics.summary?.hyperbuild_total_average || '—'} pts</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Term End Exam Mean</span>
+              <p className="text-xl font-black text-slate-800 dark:text-slate-200 mt-1">
+                {subjectAnalytics.summary?.term_end_average !== null ? `${subjectAnalytics.summary?.term_end_average} / ${subjectAnalytics.subject?.term_end_max_marks}` : '—'}
+              </p>
+              <span className="text-[10px] text-slate-400">Final examination</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10.5px] uppercase tracking-wider text-purple-600 font-bold block">Distinction & Merit</span>
+              <p className="text-xl font-black text-purple-600 mt-1">
+                {(subjectAnalytics.tier_breakdown?.Distinction || 0) + (subjectAnalytics.tier_breakdown?.Merit || 0)}
+              </p>
+              <span className="text-[10px] text-slate-400">of {subjectAnalytics.summary?.total_students} students</span>
+            </div>
+          </div>
+
+          {/* Activity Breakdown Table */}
+          {subjectAnalytics.activities_analytics?.length > 0 && (
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> HyperBuild Practical Activities Breakdown
+              </h4>
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                      <th className="py-2.5 px-3">Lab #</th>
+                      <th className="py-2.5 px-3">Activity Title</th>
+                      <th className="py-2.5 px-3 text-center">Submissions</th>
+                      <th className="py-2.5 px-3 text-center">Completion Rate</th>
+                      <th className="py-2.5 px-3 text-center">Avg Score (/100)</th>
+                      <th className="py-2.5 px-3 text-center">Avg AI Support</th>
+                      <th className="py-2.5 px-3 text-center">Range (Min - Max)</th>
+                      <th className="py-2.5 px-3 text-center">Plagiarism Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                    {subjectAnalytics.activities_analytics.map((act: any) => (
+                      <tr key={act.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                        <td className="py-2 px-3 font-bold text-indigo-600 dark:text-indigo-400">
+                          Act {act.activity_no}
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-slate-900 dark:text-white max-w-xs truncate">
+                          {act.title}
+                        </td>
+                        <td className="py-2 px-3 text-center font-bold">
+                          {act.submissions_count} / {subjectAnalytics.summary?.total_students}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className="w-16 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-600 rounded-full"
+                                style={{ width: `${Math.min(100, act.completion_rate)}%` }}
+                              />
+                            </div>
+                            <span className="font-semibold text-[11px]">{act.completion_rate}%</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className={`font-black ${act.average_score >= 80 ? 'text-purple-600' : act.average_score >= 60 ? 'text-indigo-600' : 'text-slate-700'}`}>
+                            {act.average_score > 0 ? `${act.average_score}` : '—'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-center font-semibold text-slate-600 dark:text-slate-300">
+                          {act.average_ai_support}%
+                        </td>
+                        <td className="py-2 px-3 text-center text-[11px] text-slate-500">
+                          {act.lowest_score} - {act.highest_score}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {act.plagiarism_flags_count > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                              {act.plagiarism_flags_count} flagged
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 font-bold text-[11px]">✓ Clean</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* At-Risk Students Focus */}
+          {subjectAnalytics.at_risk_students?.length > 0 && (
+            <div className="p-4 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  At-Risk Students Requiring Faculty Intervention ({subjectAnalytics.at_risk_students.length})
+                </span>
+                <span className="text-[11px] text-rose-700 dark:text-rose-400 font-medium">
+                  Scoring &lt; 50% in this subject
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {subjectAnalytics.at_risk_students.map((st: any) => (
+                  <div key={st.student_id} className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{st.name}</p>
+                      <p className="text-[10.5px] text-slate-400">PRN: {st.prn} • Div: {st.division}</p>
+                      <p className="text-[11px] font-black text-rose-600 mt-0.5">Score: {st.total_percentage}% ({st.grade_letter})</p>
+                    </div>
+                    <button
+                      onClick={() => handleSendIndividualEmail(st.student_id)}
+                      disabled={individualEmailStatus[st.student_id] === 'sending'}
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-indigo-50 text-indigo-600 text-xs font-bold cursor-pointer shrink-0"
+                      title="Email results/warning to student"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -744,18 +1018,41 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                     )}
 
                     <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => {
-                          if (onViewStudentTranscript) {
-                            onViewStudentTranscript(row.student_id);
-                          } else {
-                            setSelectedStudentForView(row.student_id);
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 font-bold text-xs transition-all cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> View Transcript
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          onClick={() => handleSendIndividualEmail(row.student_id)}
+                          disabled={individualEmailStatus[row.student_id] === 'sending'}
+                          className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                            individualEmailStatus[row.student_id] === 'sent'
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : individualEmailStatus[row.student_id] === 'sending'
+                              ? 'border-slate-200 bg-slate-50 text-slate-400 opacity-50'
+                              : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}
+                          title="Email results to student"
+                        >
+                          {individualEmailStatus[row.student_id] === 'sending' ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : individualEmailStatus[row.student_id] === 'sent' ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Mail className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (onViewStudentTranscript) {
+                              onViewStudentTranscript(row.student_id);
+                            } else {
+                              setSelectedStudentForView(row.student_id);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 font-bold text-xs transition-all cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View Transcript
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -862,6 +1159,105 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                 {saveMarksMutation.isPending ? 'Saving...' : 'Save Component Marks'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Cohort Notification Modal */}
+      {isNotifyModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                <Mail className="w-4 h-4 text-emerald-600" />
+                <span>Send Result Notification Emails</span>
+              </div>
+              <button
+                onClick={() => {
+                  setIsNotifyModalOpen(false);
+                  setNotifySuccessMsg(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {notifySuccessMsg ? (
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                  Notification Dispatch Complete
+                </p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                  {notifySuccessMsg}
+                </p>
+                <button
+                  onClick={() => {
+                    setIsNotifyModalOpen(false);
+                    setNotifySuccessMsg(null);
+                  }}
+                  className="mt-3 px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  You are about to dispatch official academic grade notification emails to students. Each email includes their personal credentials, 3-component marks breakdown, evaluator feedback, and a direct link to Orion.
+                </p>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Recipients:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{rows.length} enrolled students</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Scope:</span>
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                      {selectedSubjectObj ? `${selectedSubjectObj.code} — ${selectedSubjectObj.name}` : 'All Evaluated Courses'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Delivery Mode:</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Direct Registered Student Email</span>
+                  </div>
+                </div>
+
+                <div className="border border-slate-100 dark:border-slate-800 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/30 text-[11px] text-slate-500 space-y-1">
+                  <p className="font-bold text-slate-700 dark:text-slate-300">Template Structure:</p>
+                  <p>✓ Orion Official Academic Header & Student Credentials</p>
+                  <p>✓ Course-by-Course Grade Card (CCE • HyperBuild Labs • Term End • Total %)</p>
+                  <p>✓ Practical Competencies, Strengths & Growth Areas</p>
+                  <p>✓ Direct Action Button linking to Orion Student Gradebook</p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    onClick={() => setIsNotifyModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSendCohortEmails}
+                    disabled={isNotifyingCohort}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isNotifyingCohort ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Sending Emails...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" /> Confirm & Send Emails
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

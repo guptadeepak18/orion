@@ -16,6 +16,8 @@ import {
   FileText,
   ExternalLink,
   User,
+  Mail,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -33,6 +35,8 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
   const [viewMode, setViewMode] = useState<'combined' | 'subject'>('combined');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
+  const [emailStatusMsg, setEmailStatusMsg] = useState<string | null>(null);
 
   const endpoint = studentId ? `/gradebook/students/${studentId}` : '/gradebook/me';
 
@@ -97,9 +101,26 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
     return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800';
   };
 
+  const handleSendEmailToStudent = async () => {
+    const targetId = studentId || student?.id;
+    if (!targetId) return;
+    setIsSendingEmail(true);
+    setEmailStatusMsg(null);
+    try {
+      const res = await api.post(`/gradebook/students/${targetId}/notify`);
+      setEmailStatusMsg(res.data?.message || 'Grade results successfully emailed to student!');
+      setTimeout(() => setEmailStatusMsg(null), 5000);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.response?.data?.detail || 'Failed to dispatch email.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Faculty Preview Bar with Student Selector */}
+      {/* Faculty Preview Bar with Student Selector & Email Action */}
       {(onBackToCohort || onSelectStudentId) && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-3 flex-wrap">
@@ -116,27 +137,55 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
             </span>
           </div>
 
-          {/* Student Selector Dropdown */}
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0 flex items-center gap-1">
-              <User className="w-3.5 h-3.5 text-indigo-600" /> Select Student:
-            </label>
-            <select
-              value={studentId || student?.id || ''}
-              onChange={(e) => {
-                if (onSelectStudentId) {
-                  onSelectStudentId(e.target.value);
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white max-w-xs sm:max-w-sm truncate"
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Student Selector Dropdown */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0 flex items-center gap-1">
+                <User className="w-3.5 h-3.5 text-indigo-600" /> Select Student:
+              </label>
+              <select
+                value={studentId || student?.id || ''}
+                onChange={(e) => {
+                  if (onSelectStudentId) {
+                    onSelectStudentId(e.target.value);
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white max-w-xs sm:max-w-sm truncate"
+              >
+                {allStudents.map((st: any) => (
+                  <option key={st.id} value={st.id}>
+                    {st.full_name || `${st.first_name} ${st.last_name || ''}`} — PRN: {st.prn_number || st.roll_no || 'N/A'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Email Results Button */}
+            <button
+              onClick={handleSendEmailToStudent}
+              disabled={isSendingEmail}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+              title="Email official grade card to this student"
             >
-              {allStudents.map((st: any) => (
-                <option key={st.id} value={st.id}>
-                  {st.full_name || `${st.first_name} ${st.last_name || ''}`} — PRN: {st.prn_number || st.roll_no || 'N/A'}
-                </option>
-              ))}
-            </select>
+              {isSendingEmail ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="w-3.5 h-3.5" /> Email Results
+                </>
+              )}
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Email Status Confirmation Banner */}
+      {emailStatusMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+          <Check className="w-4 h-4 text-emerald-600" />
+          {emailStatusMsg}
         </div>
       )}
 

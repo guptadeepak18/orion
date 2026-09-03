@@ -15,6 +15,8 @@ from app.models.lms import ActivitySubmission, SubjectAssessment, AssessmentSubm
 from app.models.activity import SubjectActivity
 from app.models.gradebook import StudentSubjectGrade
 from app.core.config import settings
+from fastapi import HTTPException
+from app.services.email_service import send_custom_html_email
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,192 @@ def extract_subject_max_marks(subj) -> tuple[float, float]:
         except Exception:
             pass
     return cce_max, end_term_max
+
+
+def _build_student_result_email_html(
+    student_name: str,
+    prn: str,
+    program_name: str,
+    batch_name: str,
+    subjects_summary: List[Dict[str, Any]],
+    portal_url: str = "https://crc-one.onrender.com/gradebook",
+) -> str:
+    """
+    Renders an engaging, clean, sectioned HTML email notification for academic results.
+    Structured into:
+    - Header
+    - Student Credentials Box
+    - Course-by-Course 3-Component Scorecard (CCE, HyperBuild Labs, Term End, Total %)
+    - Evaluator Insights & Strengths/Remediation
+    - Call to Action Button linking to Orion
+    """
+    subject_rows_html = ""
+    for s in subjects_summary:
+        cce_disp = f"{s.get('cce_score')} / {s.get('cce_max', 50)}" if s.get('cce_score') is not None else "Pending"
+        hb_disp = f"{s.get('hb_total', '-')} pts ({s.get('hb_avg', '-')}/100 avg)" if s.get('hb_avg') is not None else "No Labs"
+        te_disp = f"{s.get('term_end_score')} / {s.get('term_end_max', 50)}" if s.get('term_end_score') is not None else "Scheduled"
+        tot_disp = f"{s.get('total_percentage')}%" if s.get('total_percentage') is not None else "In Progress"
+        grade_disp = s.get('grade_letter', 'IP')
+        tier_disp = s.get('performance_tier', 'In Progress')
+
+        if "Distinction" in tier_disp:
+            badge_bg = "#f3e8ff"
+            badge_color = "#6b21a8"
+        elif "Merit" in tier_disp:
+            badge_bg = "#e0e7ff"
+            badge_color = "#3730a3"
+        elif "Pass" in tier_disp:
+            badge_bg = "#dcfce7"
+            badge_color = "#166534"
+        else:
+            badge_bg = "#fee2e2"
+            badge_color = "#991b1b"
+
+        subject_rows_html += f"""
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 12px 14px; font-weight: 700; color: #0f172a; font-size: 13px;">
+            {s.get('code')}<br/>
+            <span style="font-weight: 500; color: #64748b; font-size: 11px;">{s.get('name')}</span>
+          </td>
+          <td style="padding: 12px 10px; color: #334155; font-size: 12px; font-weight: 600; text-align: center;">
+            {cce_disp}
+          </td>
+          <td style="padding: 12px 10px; color: #4338ca; font-size: 12px; font-weight: 700; text-align: center;">
+            {hb_disp}
+          </td>
+          <td style="padding: 12px 10px; color: #334155; font-size: 12px; font-weight: 600; text-align: center;">
+            {te_disp}
+          </td>
+          <td style="padding: 12px 10px; color: #0f172a; font-size: 13px; font-weight: 800; text-align: center;">
+            {tot_disp}
+          </td>
+          <td style="padding: 12px 14px; text-align: right;">
+            <span style="display: inline-block; padding: 4px 10px; border-radius: 9999px; background: {badge_bg}; color: {badge_color}; font-size: 11px; font-weight: 700;">
+              {grade_disp} • {tier_disp.split('(')[0].strip()}
+            </span>
+          </td>
+        </tr>
+        """
+
+    feedback_blocks_html = ""
+    for s in subjects_summary:
+        strengths = s.get("strengths", [])
+        gaps = s.get("areas_for_improvement", [])
+        crit = s.get("critical_feedback") or s.get("feedback")
+        if strengths or gaps or crit:
+            strengths_items = "".join([f"<li style='margin-bottom: 4px;'>{st}</li>" for st in strengths[:3]])
+            gaps_items = "".join([f"<li style='margin-bottom: 4px;'>{gp}</li>" for gp in gaps[:3]])
+            
+            feedback_blocks_html += f"""
+            <div style="margin-top: 14px; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
+              <div style="font-weight: 800; font-size: 12px; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                Feedback & Appraisal: {s.get('code')} — {s.get('name')}
+              </div>
+              {f'<div style="margin-bottom: 8px;"><strong style="font-size: 11px; color: #166534; text-transform: uppercase;">Key Strengths:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{strengths_items}</ul></div>' if strengths_items else ''}
+              {f'<div style="margin-bottom: 8px;"><strong style="font-size: 11px; color: #991b1b; text-transform: uppercase;">Growth & Remediation Focus:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{gaps_items}</ul></div>' if gaps_items else ''}
+              {f'<p style="margin: 6px 0 0; font-size: 12px; color: #475569; line-height: 1.5; font-style: italic;">"{crit}"</p>' if crit else ''}
+            </div>
+            """
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Academic Gradebook Results</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 28px 12px; color: #1e293b;">
+  <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);">
+    
+    <!-- Header -->
+    <div style="background: #0f172a; padding: 24px 28px; border-bottom: 3px solid #4f46e5;">
+      <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #818cf8; margin-bottom: 4px;">
+        Orion Academic Portal • Official Grade Notification
+      </div>
+      <h1 style="margin: 0; font-size: 19px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
+        Academic Evaluation & Marksheet Results
+      </h1>
+      <p style="margin: 4px 0 0; font-size: 12.5px; color: #94a3b8;">
+        Continuous Evaluation (CCE) • HyperBuild Practical Labs • Term End Examination
+      </p>
+    </div>
+
+    <!-- Student Credentials Box -->
+    <div style="padding: 20px 28px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td>
+            <div style="font-size: 15px; font-weight: 800; color: #0f172a;">{student_name}</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+              PRN: <span style="font-family: monospace; font-weight: 700; color: #4f46e5;">{prn}</span> • {program_name}
+            </div>
+          </td>
+          <td style="text-align: right; vertical-align: top;">
+            <span style="display: inline-block; padding: 4px 10px; background: #e0e7ff; color: #3730a3; border-radius: 8px; font-size: 11px; font-weight: 700;">
+              {batch_name}
+            </span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Main Body -->
+    <div style="padding: 24px 28px;">
+      <p style="font-size: 13.5px; line-height: 1.6; color: #334155; margin: 0 0 18px;">
+        Dear <strong>{student_name}</strong>,<br/><br/>
+        Your official performance evaluation and marksheet results across Continuous Comprehensive Evaluation (CCE), HyperBuild practical simulation labs, and Term End examination are detailed below.
+      </p>
+
+      <!-- Section: Marks Breakdown Table -->
+      <div style="margin-bottom: 22px;">
+        <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #475569; margin-bottom: 8px;">
+          Course Performance Summary
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+          <thead>
+            <tr style="background: #f1f5f9; text-align: left; font-size: 10.5px; text-transform: uppercase; color: #475569; font-weight: 800; border-bottom: 1px solid #cbd5e1;">
+              <th style="padding: 10px 12px;">Course</th>
+              <th style="padding: 10px 8px; text-align: center;">CCE</th>
+              <th style="padding: 10px 8px; text-align: center;">HyperBuild</th>
+              <th style="padding: 10px 8px; text-align: center;">End Term</th>
+              <th style="padding: 10px 8px; text-align: center;">Total</th>
+              <th style="padding: 10px 12px; text-align: right;">Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subject_rows_html}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Section: Qualitative Feedback & Guidance -->
+      {f'''<div style="margin-bottom: 24px;">
+        <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #475569; margin-bottom: 6px;">
+          Evaluator Feedback & Academic Insights
+        </div>
+        {feedback_blocks_html}
+      </div>''' if feedback_blocks_html else ''}
+
+      <!-- Call to Action Button -->
+      <div style="text-align: center; padding: 20px 0 12px; border-top: 1px solid #e2e8f0;">
+        <a href="{portal_url}" style="display: inline-block; background: #4f46e5; color: #ffffff; font-weight: 700; font-size: 13.5px; padding: 12px 28px; text-decoration: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);">
+          View Full Gradebook in Orion &rarr;
+        </a>
+        <p style="margin: 10px 0 0; font-size: 11px; color: #64748b;">
+          Log in with your registered account to inspect interactive rubric scorecards, download simulation lab feedback, and review step-by-step audit checklists.
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f8fafc; padding: 18px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+      Office of the Academic Registrar & Examination Cell • Orion Academic Portal<br/>
+      This is an official automated notification. Please do not reply directly to this email.
+    </div>
+
+  </div>
+</body>
+</html>"""
 
 
 class GradebookService:
@@ -587,11 +775,67 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
         rows = data.get("rows", [])
 
         output = io.StringIO()
-        # UTF-8 BOM so Excel opens properly
         output.write('\ufeff')
         writer = csv.writer(output)
 
-        # Header construction
+        if subject_id and len(subjects) == 1:
+            target_subj = subjects[0]
+            code = target_subj["code"]
+            acts_res = await db.execute(
+                select(SubjectActivity)
+                .where(SubjectActivity.subject_id == subject_id)
+                .order_by(SubjectActivity.activity_no.asc())
+            )
+            subj_activities = list(acts_res.scalars().all())
+
+            header = ["PRN", "Student Name", "Division", "Batch", f"{code} - CCE Marks", f"{code} - CCE Max"]
+            for a in subj_activities:
+                clean_title = a.title[:30].replace(",", " ")
+                header.append(f"Act {a.activity_no}: {clean_title} (/100)")
+            header.extend([
+                f"{code} - HyperBuild Total",
+                f"{code} - HyperBuild Avg (/100)",
+                f"{code} - End Term Marks",
+                f"{code} - End Term Max",
+                f"{code} - Total Percentage (%)",
+                f"{code} - Grade Letter",
+                f"{code} - Performance Tier",
+            ])
+            writer.writerow(header)
+
+            act_ids = [a.id for a in subj_activities]
+            subs_res = await db.execute(
+                select(ActivitySubmission).where(ActivitySubmission.activity_id.in_(act_ids))
+            )
+            sub_score_map = {(s.student_id, s.activity_id): s.score for s in subs_res.scalars().all()}
+
+            for r in rows:
+                sd = next((s for s in r["subjects"] if s["subject_code"] == code), {})
+                st_id = uuid.UUID(r["student_id"]) if isinstance(r["student_id"], str) else r["student_id"]
+                row_vals = [
+                    r["prn"],
+                    r["name"],
+                    r["division"],
+                    r["batch"],
+                    sd.get("cce_score") if sd.get("cce_score") is not None else "-",
+                    sd.get("cce_max_marks", 50),
+                ]
+                for a in subj_activities:
+                    act_score = sub_score_map.get((st_id, a.id))
+                    row_vals.append(act_score if act_score is not None else "-")
+                row_vals.extend([
+                    sd.get("hyperbuild_total_score") if sd.get("hyperbuild_total_score") is not None else "-",
+                    sd.get("hyperbuild_score") if sd.get("hyperbuild_score") is not None else "-",
+                    sd.get("term_end_score") if sd.get("term_end_score") is not None else "-",
+                    sd.get("term_end_max_marks", 50),
+                    f"{sd.get('total_percentage')}%" if sd.get("total_percentage") is not None else "-",
+                    sd.get("grade_letter", "-"),
+                    sd.get("performance_tier", "-"),
+                ])
+                writer.writerow(row_vals)
+            return output.getvalue()
+
+        # Multi-subject master header construction
         header = ["PRN", "Student Name", "Division", "Batch", "Overall Avg (%)", "Overall Tier"]
         for s in subjects:
             code = s["code"]
@@ -716,6 +960,323 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
         await db.commit()
         await db.refresh(record)
         return record
+
+    async def get_subject_analytics(
+        self,
+        db,
+        subject_id: uuid.UUID,
+        batch_id: Optional[uuid.UUID] = None,
+        division_id: Optional[uuid.UUID] = None,
+    ) -> Dict[str, Any]:
+        """Gathers granular subject-wise analytics: score distribution, activity metrics, and at-risk students."""
+        subj = await db.get(Subject, subject_id)
+        if not subj:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        def_cce_max, def_te_max = extract_subject_max_marks(subj)
+
+        # Get students in scope
+        stmt = (
+            select(Student)
+            .options(
+                selectinload(Student.divisions),
+                selectinload(Student.batch),
+                selectinload(Student.program),
+            )
+            .order_by(Student.prn_number.asc())
+        )
+        if batch_id:
+            stmt = stmt.where(Student.batch_id == batch_id)
+        if division_id:
+            stmt = stmt.join(Student.divisions).where(Division.id == division_id)
+
+        st_res = await db.execute(stmt)
+        students = list(st_res.scalars().all())
+        st_ids = [s.id for s in students]
+
+        # Get activities for this subject
+        acts_res = await db.execute(
+            select(SubjectActivity)
+            .where(SubjectActivity.subject_id == subject_id)
+            .order_by(SubjectActivity.activity_no.asc())
+        )
+        activities = list(acts_res.scalars().all())
+        act_ids = [a.id for a in activities]
+
+        # Get all submissions for these activities
+        subs_res = await db.execute(
+            select(ActivitySubmission)
+            .where(
+                ActivitySubmission.activity_id.in_(act_ids),
+                ActivitySubmission.student_id.in_(st_ids),
+            )
+        )
+        submissions = list(subs_res.scalars().all())
+
+        # Map submissions by activity
+        subs_by_act: Dict[uuid.UUID, List[ActivitySubmission]] = {}
+        for sub in submissions:
+            subs_by_act.setdefault(sub.activity_id, []).append(sub)
+
+        # Pre-fetch recorded grades
+        grades_res = await db.execute(
+            select(StudentSubjectGrade)
+            .where(
+                StudentSubjectGrade.subject_id == subject_id,
+                StudentSubjectGrade.student_id.in_(st_ids),
+            )
+        )
+        grades_map = {g.student_id: g for g in grades_res.scalars().all()}
+
+        # Compute Subject Summary Stats
+        total_students = len(students)
+        cce_scores = []
+        term_end_scores = []
+        hb_averages = []
+        hb_totals = []
+        total_percentages = []
+        tier_counts = {"Distinction": 0, "Merit": 0, "Pass": 0, "Needs Work": 0}
+        grade_distribution = {"O": 0, "A+": 0, "A": 0, "B+": 0, "B": 0, "C": 0, "F": 0}
+        at_risk_students = []
+
+        for st in students:
+            g = grades_map.get(st.id)
+            cce_val = g.cce_score if g else None
+            te_val = g.term_end_score if g else None
+            hb_avg = g.hyperbuild_average if g else None
+            hb_tot = g.hyperbuild_total_score if g else None
+            tot_pct = g.total_percentage if g else None
+
+            # If hb_avg is not in g, calculate from submissions
+            if hb_avg is None:
+                st_subs = [s for s in submissions if s.student_id == st.id and s.score is not None]
+                if st_subs:
+                    hb_tot = round(sum(s.score for s in st_subs), 1)
+                    hb_avg = round(hb_tot / len(st_subs), 1)
+
+            if cce_val is not None:
+                cce_scores.append(cce_val)
+            if te_val is not None:
+                term_end_scores.append(te_val)
+            if hb_avg is not None:
+                hb_averages.append(hb_avg)
+            if hb_tot is not None:
+                hb_totals.append(hb_tot)
+            if tot_pct is not None:
+                total_percentages.append(tot_pct)
+                t = g.performance_tier if g else "Needs Work"
+                if t in tier_counts:
+                    tier_counts[t] += 1
+                gl = g.grade_letter if g else "F"
+                if gl in grade_distribution:
+                    grade_distribution[gl] += 1
+                elif gl:
+                    grade_distribution[gl] = grade_distribution.get(gl, 0) + 1
+
+                if tot_pct < 50.0:
+                    div_names = ", ".join([d.name for d in st.divisions if d]) or "N/A"
+                    at_risk_students.append({
+                        "student_id": str(st.id),
+                        "name": f"{st.first_name} {st.last_name or ''}".strip(),
+                        "prn": st.prn_number or "N/A",
+                        "division": div_names,
+                        "email": st.email_official or st.email or st.email_personal or "N/A",
+                        "cce_score": cce_val,
+                        "hyperbuild_average": hb_avg,
+                        "term_end_score": te_val,
+                        "total_percentage": tot_pct,
+                        "grade_letter": gl,
+                        "performance_tier": t,
+                    })
+
+        # Activity Breakdown
+        activity_breakdown = []
+        for act in activities:
+            act_subs = subs_by_act.get(act.id, [])
+            graded_subs = [s for s in act_subs if s.score is not None]
+            scores = [s.score for s in graded_subs]
+            ai_supports = []
+            plag_count = 0
+            act_tiers = {"Distinction": 0, "Merit": 0, "Pass": 0, "Needs Work": 0}
+
+            for s in graded_subs:
+                eval_data = s.ai_evaluation or {}
+                if eval_data.get("ai_support_percentage") is not None:
+                    ai_supports.append(eval_data.get("ai_support_percentage"))
+                if eval_data.get("plagiarism_flag"):
+                    plag_count += 1
+                tier = s.grade or eval_data.get("performance_tier") or "Pass"
+                if tier in act_tiers:
+                    act_tiers[tier] += 1
+
+            completion_rate = round((len(act_subs) / total_students * 100.0), 1) if total_students > 0 else 0.0
+            avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+            avg_ai = round(sum(ai_supports) / len(ai_supports), 1) if ai_supports else 20.0
+
+            activity_breakdown.append({
+                "id": str(act.id),
+                "activity_no": act.activity_no,
+                "title": act.title,
+                "is_locked": act.is_locked,
+                "released_at": act.released_at.isoformat() if act.released_at else None,
+                "submissions_count": len(act_subs),
+                "completion_rate": completion_rate,
+                "average_score": avg_score,
+                "highest_score": max(scores) if scores else 0.0,
+                "lowest_score": min(scores) if scores else 0.0,
+                "average_ai_support": avg_ai,
+                "plagiarism_flags_count": plag_count,
+                "tier_breakdown": act_tiers,
+            })
+
+        return {
+            "subject": {
+                "id": str(subj.id),
+                "name": subj.name,
+                "code": subj.code,
+                "credits": subj.credits,
+                "cce_max_marks": def_cce_max,
+                "term_end_max_marks": def_te_max,
+                "total_activities": len(activities),
+            },
+            "summary": {
+                "total_students": total_students,
+                "subject_average": round(sum(total_percentages) / len(total_percentages), 1) if total_percentages else None,
+                "highest_score": max(total_percentages) if total_percentages else None,
+                "lowest_score": min(total_percentages) if total_percentages else None,
+                "cce_average": round(sum(cce_scores) / len(cce_scores), 1) if cce_scores else None,
+                "hyperbuild_average": round(sum(hb_averages) / len(hb_averages), 1) if hb_averages else None,
+                "hyperbuild_total_average": round(sum(hb_totals) / len(hb_totals), 1) if hb_totals else None,
+                "term_end_average": round(sum(term_end_scores) / len(term_end_scores), 1) if term_end_scores else None,
+            },
+            "tier_breakdown": tier_counts,
+            "grade_distribution": grade_distribution,
+            "activities_analytics": activity_breakdown,
+            "at_risk_students": at_risk_students,
+        }
+
+    async def send_student_result_email(
+        self,
+        db,
+        student_id: uuid.UUID,
+        subject_id: Optional[uuid.UUID] = None,
+    ) -> Dict[str, Any]:
+        """Dispatches an official academic grade result notification to a specific student."""
+        st = await db.get(Student, student_id)
+        if not st:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        target_email = st.email_official or st.email or st.email_personal
+        if not target_email:
+            raise HTTPException(status_code=400, detail="Student does not have a registered email address")
+
+        gb = await self.get_student_gradebook(db, student_id)
+        subjects = gb.get("subjects", [])
+        if subject_id:
+            subjects = [s for s in subjects if s.get("subject_id") == str(subject_id)]
+
+        if not subjects:
+            raise HTTPException(status_code=404, detail="No evaluation records found for student in requested subject")
+
+        subjects_summary = []
+        for s in subjects:
+            acts = s.get("activities", [])
+            graded_acts = [a for a in acts if a.get("score") is not None]
+            hb_scores = [a["score"] for a in graded_acts]
+            hb_total = round(sum(hb_scores), 1) if hb_scores else None
+            hb_avg = round(hb_total / len(hb_scores), 1) if hb_scores else None
+
+            first_eval = graded_acts[0].get("ai_evaluation", {}) if graded_acts else {}
+            strengths = first_eval.get("strengths", [])
+            gaps = first_eval.get("areas_for_improvement", [])
+            crit = first_eval.get("critical_feedback") or (graded_acts[0].get("feedback") if graded_acts else None)
+
+            subjects_summary.append({
+                "name": s.get("subject_name"),
+                "code": s.get("subject_code"),
+                "cce_score": s.get("cce_score"),
+                "cce_max": s.get("cce_max_marks", 50),
+                "term_end_score": s.get("term_end_score"),
+                "term_end_max": s.get("term_end_max_marks", 50),
+                "hb_total": hb_total,
+                "hb_avg": hb_avg,
+                "total_percentage": s.get("total_percentage"),
+                "grade_letter": s.get("grade_letter", "IP"),
+                "performance_tier": s.get("performance_tier", "In Progress"),
+                "strengths": strengths,
+                "areas_for_improvement": gaps,
+                "critical_feedback": crit,
+            })
+
+        st_name = f"{st.first_name} {st.last_name or ''}".strip()
+        prn = st.prn_number or "N/A"
+        prog = gb.get("student", {}).get("program") or "Academic Program"
+        batch = gb.get("student", {}).get("batch") or "Current Batch"
+
+        html_body = _build_student_result_email_html(
+            student_name=st_name,
+            prn=prn,
+            program_name=prog,
+            batch_name=batch,
+            subjects_summary=subjects_summary,
+            portal_url="https://crc-one.onrender.com/gradebook",
+        )
+
+        subject_line = f"Academic Results & Grade Notification — {subjects_summary[0]['code']}" if len(subjects_summary) == 1 else "Academic Performance & Gradebook Results — Orion"
+
+        success = send_custom_html_email(
+            to_email=target_email,
+            subject=subject_line,
+            html_content=html_body,
+        )
+
+        return {
+            "success": success,
+            "student_id": str(student_id),
+            "recipient": target_email,
+            "subject": subject_line,
+            "message": f"Results successfully emailed to {target_email}" if success else "Email dispatch logged",
+        }
+
+    async def send_cohort_result_emails(
+        self,
+        db,
+        subject_id: Optional[uuid.UUID] = None,
+        program_id: Optional[uuid.UUID] = None,
+        batch_id: Optional[uuid.UUID] = None,
+        division_id: Optional[uuid.UUID] = None,
+    ) -> Dict[str, Any]:
+        """Dispatches result emails to all matching students in the cohort."""
+        data = await self.get_cohort_gradebook(
+            db,
+            program_id=program_id,
+            batch_id=batch_id,
+            division_id=division_id,
+            subject_id=subject_id,
+        )
+        rows = data.get("rows", [])
+        sent_count = 0
+        failed_count = 0
+
+        for r in rows:
+            st_id = uuid.UUID(r["student_id"])
+            try:
+                res = await self.send_student_result_email(db, st_id, subject_id=subject_id)
+                if res.get("success"):
+                    sent_count += 1
+                else:
+                    failed_count += 1
+            except Exception as e:
+                logger.warning(f"Could not send email to student {st_id}: {e}")
+                failed_count += 1
+
+        return {
+            "success": True,
+            "total_students": len(rows),
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "message": f"Processed {len(rows)} notifications ({sent_count} sent, {failed_count} pending/failed).",
+        }
 
 
 gradebook_service = GradebookService()
