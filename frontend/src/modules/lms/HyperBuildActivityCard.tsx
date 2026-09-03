@@ -114,6 +114,7 @@ interface ActivitySubmission {
     ai_audit_findings?: string[];
     plagiarism_flag?: boolean;
     collusion_details?: string[];
+    micro_compliance_audit?: Record<string, any>;
   };
   submitted_at: string;
   status: string;
