@@ -510,36 +510,38 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {subjectAnalytics.activities_analytics.map((act: any) => (
-                          <tr key={act.activity_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                            <td className="py-2.5 px-3 font-mono font-bold text-indigo-600">
+                          <tr key={act.activity_id || act.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                            <td className="py-2.5 px-3 font-mono font-bold text-slate-700 dark:text-slate-300">
                               Act {act.activity_no}
                             </td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white max-w-xs truncate">
+                            <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white max-w-xs truncate">
                               {act.title}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-slate-700 dark:text-slate-300">
-                              {act.total_submissions} / {subjectAnalytics.summary?.total_students}
+                            <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                              {(act.total_submissions ?? act.submissions_count ?? 0)} / {(subjectAnalytics.summary?.total_students ?? 0)}
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-16 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                                   <div
-                                    className="h-full bg-indigo-600 rounded-full"
+                                    className="h-full bg-slate-700 dark:bg-slate-300 rounded-full"
                                     style={{ width: `${act.completion_rate}%` }}
                                   />
                                 </div>
-                                <span className="font-bold text-[11px] text-slate-600 dark:text-slate-400">
+                                <span className="font-semibold text-[11px] text-slate-600 dark:text-slate-400">
                                   {act.completion_rate}%
                                 </span>
                               </div>
                             </td>
-                            <td className="py-2.5 px-3 font-mono font-black text-indigo-600 dark:text-indigo-400">
+                            <td className="py-2.5 px-3 font-mono font-bold text-slate-900 dark:text-slate-100">
                               {act.average_score !== null ? `${act.average_score}/100` : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                              {act.min_score !== null && act.max_score !== null ? `${act.min_score} – ${act.max_score}` : '—'}
+                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                              {act.min_score != null && act.max_score != null
+                                ? `${act.min_score} – ${act.max_score}`
+                                : (act.score_range && act.score_range !== '—' ? act.score_range : '—')}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-slate-600 dark:text-slate-400">
+                            <td className="py-2.5 px-3 font-medium text-slate-600 dark:text-slate-400">
                               {act.average_ai_support !== null ? `${act.average_ai_support}%` : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right">
@@ -910,17 +912,17 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                         {(selectedComponent === 'all' || selectedComponent === 'hyperbuild') && (
                           <>
                             <td className="py-3 px-3">
-                              <span className="font-bold text-slate-900 dark:text-white">
-                                {singleSubjData?.completion_ratio || `${singleSubjData?.activities_completed || 0} / ${singleSubjData?.total_released_activities || 0}`} completed
+                              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                {singleSubjData?.completion_ratio || `${singleSubjData?.activities_completed || 0} / ${singleSubjData?.total_released_activities || 0}`}
                               </span>
                             </td>
                             <td className="py-3 px-3">
                               {singleSubjData?.hyperbuild_score !== null && singleSubjData?.hyperbuild_score !== undefined ? (
                                 <div className="flex flex-col">
-                                  <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">
+                                  <span className="font-mono font-bold text-slate-900 dark:text-white">
                                     {singleSubjData.hyperbuild_score}/100
                                   </span>
-                                  <span className="text-[10.5px] text-slate-400">
+                                  <span className="text-[10.5px] text-slate-500">
                                     Total: {singleSubjData.hyperbuild_total_score || 0} pts
                                   </span>
                                 </div>
@@ -1001,8 +1003,8 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                                 )}
 
                                 {selectedComponent === 'hyperbuild' && (
-                                  <span className="font-bold text-indigo-700 dark:text-indigo-300">
-                                    {s.completion_ratio ? `${s.completion_ratio} completed` : '0/0'} ({s.hyperbuild_score || 0}/100)
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {s.completion_ratio || '0/0'} ({s.hyperbuild_score || 0}/100)
                                   </span>
                                 )}
 

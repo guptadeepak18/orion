@@ -58,19 +58,26 @@ class LMSService:
         )
 
         if student:
-            # Match by student's program or batch
             prog_id = student.program_id
             b_id = student.batch_id
 
-            conditions = []
-            if prog_id:
-                conditions.append(Subject.programs.any(Program.id == prog_id))
             if b_id:
-                conditions.append(Subject.batch_allocations.any(SubjectBatch.batch_id == b_id))
-                conditions.append(Subject.batch_id == b_id)
-
-            if conditions:
-                query = query.where(or_(*conditions))
+                # If subject has specific batch allocations, student must belong to one of those batches.
+                # If subject has no batch allocations, fall back to matching Subject.batch_id or Program.
+                query = query.where(
+                    or_(
+                        Subject.batch_allocations.any(SubjectBatch.batch_id == b_id),
+                        and_(
+                            ~Subject.batch_allocations.any(),
+                            or_(
+                                Subject.batch_id == b_id,
+                                and_(Subject.batch_id.is_(None), Subject.programs.any(Program.id == prog_id)) if prog_id else False
+                            )
+                        )
+                    )
+                )
+            elif prog_id:
+                query = query.where(Subject.programs.any(Program.id == prog_id))
         elif program_id:
             query = query.where(Subject.programs.any(Program.id == program_id))
             if batch_id:

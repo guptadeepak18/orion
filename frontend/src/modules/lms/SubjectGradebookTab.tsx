@@ -182,43 +182,43 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
     return (
       <div className="space-y-6">
         {/* Hero Subject Standing Card */}
-        <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+        <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-md relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
             <Award className="w-56 h-56" />
           </div>
 
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-xs font-mono font-bold uppercase">
+                <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-xs font-mono font-bold uppercase">
                   {subject.code}
                 </span>
-                <span className="text-xs text-indigo-200/80 font-bold">
+                <span className="text-xs text-slate-400 font-medium">
                   Trimester {subject.trimester} • {subject.credits} Credits
                 </span>
               </div>
-              <h2 className="text-2xl font-black tracking-tight">{subject.name}</h2>
-              <p className="text-xs text-indigo-200/70 max-w-xl">
+              <h2 className="text-2xl font-bold tracking-tight text-white">{subject.name}</h2>
+              <p className="text-xs text-slate-400 max-w-xl">
                 Cumulative standing combining Continuous Evaluation (CCE), HyperBuild practical simulation labs, and Term End Examination.
               </p>
             </div>
 
-            <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 shrink-0">
-              <div className="text-center pr-4 border-r border-white/10">
-                <div className="text-[10.5px] uppercase font-bold text-indigo-200">Total Score</div>
-                <div className="text-3xl font-black mt-0.5">
+            <div className="flex items-center gap-4 bg-slate-800/90 p-4 rounded-2xl border border-slate-700/60 shrink-0">
+              <div className="text-center pr-4 border-r border-slate-700/60">
+                <div className="text-[10px] uppercase font-bold text-slate-400">Total Score</div>
+                <div className="text-3xl font-bold mt-0.5 text-white">
                   {currentSubj.total_percentage !== null ? `${currentSubj.total_percentage}%` : 'IP'}
                 </div>
               </div>
-              <div className="text-center pr-4 border-r border-white/10">
-                <div className="text-[10.5px] uppercase font-bold text-indigo-200">Grade</div>
-                <div className="text-3xl font-black text-amber-300 mt-0.5">
+              <div className="text-center pr-4 border-r border-slate-700/60">
+                <div className="text-[10px] uppercase font-bold text-slate-400">Grade</div>
+                <div className="text-3xl font-bold text-slate-100 mt-0.5">
                   {currentSubj.grade_letter || 'IP'}
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-[10.5px] uppercase font-bold text-indigo-200">Tier</div>
-                <div className="text-xs font-black uppercase mt-2 px-2.5 py-1 rounded-full bg-white/20">
+                <div className="text-[10px] uppercase font-bold text-slate-400">Tier</div>
+                <div className="text-xs font-bold uppercase mt-2 px-2.5 py-1 rounded-full bg-slate-700 text-slate-200">
                   {currentSubj.performance_tier || 'In Progress'}
                 </div>
               </div>
@@ -226,36 +226,36 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
           </div>
 
           {/* 3 Component Breakdown Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-6 pt-6 border-t border-white/10">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-6 pt-6 border-t border-slate-800">
             {/* Component 1: CCE */}
-            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[10.5px] uppercase font-bold text-indigo-200 block">1. Continuous Evaluation (CCE)</span>
-              <div className="text-lg font-black mt-1">
-                {currentSubj.cce_score !== null ? `${currentSubj.cce_score} / ${currentSubj.cce_max_marks}` : 'Pending Evaluation'}
+            <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
+              <span className="text-[10.5px] uppercase font-bold text-slate-400 block">1. Continuous Evaluation (CCE)</span>
+              <div className="text-lg font-bold mt-1 text-white">
+                {currentSubj.cce_score !== null ? `${currentSubj.cce_score} / ${currentSubj.cce_max_marks}` : 'Pending'}
               </div>
-              <span className="text-[10px] text-indigo-200/60">
-                {currentSubj.cce_completion_ratio || '0/0'} Assignments Evaluated • Max {currentSubj.cce_max_marks || 50} Marks
+              <span className="text-[10px] text-slate-400">
+                {currentSubj.cce_completion_ratio || '0/0'} Assignments • Max {currentSubj.cce_max_marks || 50} Marks
               </span>
             </div>
 
             {/* Component 2: HyperBuild Labs */}
-            <div className="p-3.5 rounded-xl bg-white/10 border border-indigo-400/30">
-              <span className="text-[10.5px] uppercase font-bold text-indigo-300 block">2. HyperBuild Practical Labs</span>
-              <div className="text-lg font-black mt-1 text-emerald-300">
-                {currentSubj.hyperbuild_score !== null ? `${currentSubj.hyperbuild_score} / 100` : 'No Labs Evaluated'}
+            <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
+              <span className="text-[10.5px] uppercase font-bold text-slate-400 block">2. HyperBuild Practical Labs</span>
+              <div className="text-lg font-bold mt-1 text-white">
+                {currentSubj.hyperbuild_score !== null ? `${currentSubj.hyperbuild_score} / 100` : 'No Labs'}
               </div>
-              <span className="text-[10px] text-indigo-200/80">
-                {currentSubj.completion_ratio || `${currentSubj.activities_completed || 0} / ${currentSubj.total_released_activities || 0}`} Released Labs Completed • Total: {currentSubj.hyperbuild_total_score || 0} pts
+              <span className="text-[10px] text-slate-400">
+                {currentSubj.completion_ratio || `${currentSubj.activities_completed || 0} / ${currentSubj.total_released_activities || 0}`} Labs Completed • Total: {currentSubj.hyperbuild_total_score || 0} pts
               </span>
             </div>
 
             {/* Component 3: Term End */}
-            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[10.5px] uppercase font-bold text-indigo-200 block">3. Term End Examination</span>
-              <div className="text-lg font-black mt-1">
-                {currentSubj.term_end_score !== null ? `${currentSubj.term_end_score} / ${currentSubj.term_end_max_marks}` : 'Scheduled End Term'}
+            <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
+              <span className="text-[10.5px] uppercase font-bold text-slate-400 block">3. Term End Examination</span>
+              <div className="text-lg font-bold mt-1 text-white">
+                {currentSubj.term_end_score !== null ? `${currentSubj.term_end_score} / ${currentSubj.term_end_max_marks}` : 'Scheduled'}
               </div>
-              <span className="text-[10px] text-indigo-200/60">Summative terminal examination</span>
+              <span className="text-[10px] text-slate-400">Summative terminal examination</span>
             </div>
           </div>
         </div>
@@ -598,36 +598,38 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {subjectAnalytics.activities_analytics.map((act: any) => (
-                  <tr key={act.activity_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-600">
+                  <tr key={act.activity_id || act.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-700 dark:text-slate-300">
                       Act {act.activity_no}
                     </td>
-                    <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white max-w-xs truncate">
+                    <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white max-w-xs truncate">
                       {act.title}
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-700 dark:text-slate-300">
-                      {act.total_submissions} / {subjectAnalytics.summary?.total_students}
+                    <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                      {(act.total_submissions ?? act.submissions_count ?? 0)} / {(subjectAnalytics.summary?.total_students ?? 0)}
                     </td>
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                           <div
-                            className="h-full bg-indigo-600 rounded-full"
+                            className="h-full bg-slate-700 dark:bg-slate-300 rounded-full"
                             style={{ width: `${act.completion_rate}%` }}
                           />
                         </div>
-                        <span className="font-bold text-[11px] text-slate-600 dark:text-slate-400">
+                        <span className="font-semibold text-[11px] text-slate-600 dark:text-slate-400">
                           {act.completion_rate}%
                         </span>
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 font-mono font-black text-indigo-600 dark:text-indigo-400">
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900 dark:text-slate-100">
                       {act.average_score !== null ? `${act.average_score}/100` : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                      {act.min_score !== null && act.max_score !== null ? `${act.min_score} – ${act.max_score}` : '—'}
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                      {act.min_score != null && act.max_score != null
+                        ? `${act.min_score} – ${act.max_score}`
+                        : (act.score_range && act.score_range !== '—' ? act.score_range : '—')}
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-600 dark:text-slate-400">
+                    <td className="py-2.5 px-3 font-medium text-slate-600 dark:text-slate-400">
                       {act.average_ai_support !== null ? `${act.average_ai_support}%` : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right">
@@ -675,7 +677,7 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
                   <th className="py-3 px-4">Student & PRN</th>
                   <th className="py-3 px-3">Division</th>
                   <th className="py-3 px-3">CCE Marks</th>
-                  <th className="py-3 px-3">HyperBuild Labs Completed</th>
+                  <th className="py-3 px-3">HyperBuild Labs</th>
                   <th className="py-3 px-3">HyperBuild Score</th>
                   <th className="py-3 px-3">End Term Marks</th>
                   <th className="py-3 px-3">Total Score</th>
@@ -692,7 +694,7 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
                     <tr key={row.student_id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4">
                         <div className="font-bold text-slate-900 dark:text-white">{row.name}</div>
-                        <div className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 font-bold">
+                        <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                           {row.prn}
                         </div>
                       </td>
@@ -711,8 +713,8 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
 
                       {/* HyperBuild Labs Completed */}
                       <td className="py-3 px-3">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {sData?.completion_ratio || `${sData?.activities_completed || 0} / ${sData?.total_released_activities || 0}`} completed
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {sData?.completion_ratio || `${sData?.activities_completed || 0} / ${sData?.total_released_activities || 0}`}
                         </span>
                       </td>
 
@@ -720,10 +722,10 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
                       <td className="py-3 px-3">
                         {sData?.hyperbuild_score !== null && sData?.hyperbuild_score !== undefined ? (
                           <div className="flex flex-col">
-                            <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
                               {sData.hyperbuild_score}/100
                             </span>
-                            <span className="text-[10px] text-slate-400">
+                            <span className="text-[10px] text-slate-500">
                               Total: {sData.hyperbuild_total_score || 0} pts
                             </span>
                           </div>

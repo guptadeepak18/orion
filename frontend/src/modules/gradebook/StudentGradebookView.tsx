@@ -303,16 +303,16 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
                     <td className="py-3.5 px-3">
                       {sub.hyperbuild_score !== null ? (
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-900 dark:text-white text-xs">
-                            {sub.completion_ratio || `${sub.activities_completed || 0} / ${sub.total_released_activities || 0}`} completed
+                          <span className="font-semibold text-slate-900 dark:text-white text-xs">
+                            {sub.completion_ratio || `${sub.activities_completed || 0} / ${sub.total_released_activities || 0}`}
                           </span>
-                          <span className="text-[10.5px] text-indigo-600 dark:text-indigo-400 font-bold">
+                          <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
                             Total: {sub.hyperbuild_total_score} pts • Avg: {sub.hyperbuild_score}/100
                           </span>
                         </div>
                       ) : (
                         <span className="text-slate-400 italic text-[11px]">
-                          0 / {sub.total_released_activities || 0} completed
+                          0 / {sub.total_released_activities || 0}
                         </span>
                       )}
                     </td>

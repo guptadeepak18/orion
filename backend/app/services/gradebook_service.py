@@ -291,8 +291,32 @@ class GradebookService:
         if not student:
             return {"error": "Student not found", "subjects": []}
 
-        # Resolve subjects relevant to student
-        subjects_stmt = select(Subject).where(Subject.is_archived == False).order_by(Subject.trimester.asc(), Subject.name.asc())
+        # Resolve subjects relevant to student (filtered by batch-faculty allocation)
+        subjects_stmt = (
+            select(Subject)
+            .where(Subject.is_archived == False, Subject.is_deleted == False)
+            .options(
+                selectinload(Subject.batch_allocations),
+                selectinload(Subject.programs),
+            )
+            .order_by(Subject.trimester.asc(), Subject.name.asc())
+        )
+        if student.batch_id:
+            subjects_stmt = subjects_stmt.where(
+                or_(
+                    Subject.batch_allocations.any(SubjectBatch.batch_id == student.batch_id),
+                    and_(
+                        ~Subject.batch_allocations.any(),
+                        or_(
+                            Subject.batch_id == student.batch_id,
+                            and_(Subject.batch_id.is_(None), Subject.programs.any(Program.id == student.program_id)) if student.program_id else False
+                        )
+                    )
+                )
+            )
+        elif student.program_id:
+            subjects_stmt = subjects_stmt.where(Subject.programs.any(Program.id == student.program_id))
+
         subjects_res = await db.execute(subjects_stmt)
         all_subjects = list(subjects_res.scalars().all())
 
@@ -619,12 +643,31 @@ class GradebookService:
         res = await db.execute(stmt)
         students = list(res.scalars().all())
 
-        # Selected subject or all subjects
+        # Selected subject or all subjects (with batch allocation awareness)
         if subject_id:
-            subj_res = await db.execute(select(Subject).where(Subject.id == subject_id))
+            subj_res = await db.execute(
+                select(Subject)
+                .where(Subject.id == subject_id)
+                .options(selectinload(Subject.batch_allocations))
+            )
             target_subjects = list(subj_res.scalars().all())
+            # If batch_id was not explicitly specified, constrain students strictly to the subject's allocated batch(es)
+            if not batch_id and target_subjects:
+                subj_obj = target_subjects[0]
+                alloc_batch_ids = [ba.batch_id for ba in subj_obj.batch_allocations]
+                if not alloc_batch_ids and subj_obj.batch_id:
+                    alloc_batch_ids = [subj_obj.batch_id]
+                if alloc_batch_ids:
+                    stmt = stmt.where(Student.batch_id.in_(alloc_batch_ids))
+                    res = await db.execute(stmt)
+                    students = list(res.scalars().all())
         else:
-            subj_res = await db.execute(select(Subject).where(Subject.is_archived == False).order_by(Subject.name.asc()))
+            subj_res = await db.execute(
+                select(Subject)
+                .where(Subject.is_archived == False, Subject.is_deleted == False)
+                .options(selectinload(Subject.batch_allocations))
+                .order_by(Subject.name.asc())
+            )
             target_subjects = list(subj_res.scalars().all())
 
         # Pre-fetch activities and submissions
@@ -636,6 +679,30 @@ class GradebookService:
         subs_res = await db.execute(select(ActivitySubmission).where(ActivitySubmission.activity_id.in_(act_ids)))
         all_subs = list(subs_res.scalars().all())
 
+        # Pre-fetch SubjectAssessments and AssessmentSubmissions for CCE
+        all_ass_res = await db.execute(
+            select(SubjectAssessment).where(SubjectAssessment.subject_id.in_(subj_ids), SubjectAssessment.is_published == True)
+        )
+        assessments_by_subj: Dict[uuid.UUID, List[SubjectAssessment]] = {}
+        for a in all_ass_res.scalars().all():
+            assessments_by_subj.setdefault(a.subject_id, []).append(a)
+
+        student_ids_list = [s.id for s in students]
+        cce_subs_map: Dict[tuple, List[AssessmentSubmission]] = {}
+        if student_ids_list:
+            cce_subs_res = await db.execute(
+                select(AssessmentSubmission)
+                .join(SubjectAssessment, AssessmentSubmission.assessment_id == SubjectAssessment.id)
+                .where(
+                    AssessmentSubmission.student_id.in_(student_ids_list),
+                    SubjectAssessment.subject_id.in_(subj_ids)
+                )
+                .options(selectinload(AssessmentSubmission.assessment))
+            )
+            for cs in cce_subs_res.scalars().all():
+                if cs.assessment:
+                    cce_subs_map.setdefault((cs.student_id, cs.assessment.subject_id), []).append(cs)
+
         # Map by (student_id, subject_id)
         act_by_subject = {a.id: a.subject_id for a in activities}
         subs_map: Dict[tuple, List[float]] = {}
@@ -645,8 +712,10 @@ class GradebookService:
                 subs_map.setdefault((sub.student_id, s_id), []).append(sub.score)
 
         # Pre-fetch recorded grades
-        grade_records_res = await db.execute(select(StudentSubjectGrade).where(StudentSubjectGrade.subject_id.in_(subj_ids)))
-        grades_map = {(g.student_id, g.subject_id): g for g in grade_records_res.scalars().all()}
+        grades_map = {}
+        if subj_ids:
+            grade_records_res = await db.execute(select(StudentSubjectGrade).where(StudentSubjectGrade.subject_id.in_(subj_ids)))
+            grades_map = {(g.student_id, g.subject_id): g for g in grade_records_res.scalars().all()}
 
         # Count released activities per subject
         subj_released_counts: Dict[uuid.UUID, int] = {}
@@ -666,6 +735,10 @@ class GradebookService:
             st_overall_scores = []
 
             for subj in target_subjects:
+                # If subject has specific batch allocations, ensure this student's batch is allocated to it!
+                subj_batches = [ba.batch_id for ba in subj.batch_allocations] if subj.batch_allocations else ([subj.batch_id] if subj.batch_id else [])
+                if subj_batches and st.batch_id and (st.batch_id not in subj_batches):
+                    continue
                 def_cce_max, def_te_max = extract_subject_max_marks(subj)
                 grade_rec = grades_map.get((st.id, subj.id))
                 cce_max = grade_rec.cce_max_marks if (grade_rec and grade_rec.cce_max_marks) else def_cce_max
@@ -1098,7 +1171,15 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
 
         def_cce_max, def_te_max = extract_subject_max_marks(subj)
 
-        # Get students in scope
+        # Resolve batches allocated to this subject
+        alloc_res = await db.execute(
+            select(SubjectBatch.batch_id).where(SubjectBatch.subject_id == subject_id)
+        )
+        allocated_batch_ids = list(alloc_res.scalars().all())
+        if not allocated_batch_ids and subj.batch_id:
+            allocated_batch_ids = [subj.batch_id]
+
+        # Get students in scope (constrained strictly to this subject's allocated batch)
         stmt = (
             select(Student)
             .options(
@@ -1110,6 +1191,8 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
         )
         if batch_id:
             stmt = stmt.where(Student.batch_id == batch_id)
+        elif allocated_batch_ids:
+            stmt = stmt.where(Student.batch_id.in_(allocated_batch_ids))
         if division_id:
             stmt = stmt.join(Student.divisions).where(Division.id == division_id)
 
@@ -1235,18 +1318,26 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
             completion_rate = round((len(act_subs) / total_students * 100.0), 1) if total_students > 0 else 0.0
             avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
             avg_ai = round(sum(ai_supports) / len(ai_supports), 1) if ai_supports else 20.0
+            min_sc = min(scores) if scores else None
+            max_sc = max(scores) if scores else None
+            range_str = f"{min_sc} – {max_sc}" if (min_sc is not None and max_sc is not None) else "—"
 
             activity_breakdown.append({
                 "id": str(act.id),
+                "activity_id": str(act.id),
                 "activity_no": act.activity_no,
                 "title": act.title,
                 "is_locked": act.is_locked,
                 "released_at": act.released_at.isoformat() if act.released_at else None,
                 "submissions_count": len(act_subs),
+                "total_submissions": len(act_subs),
                 "completion_rate": completion_rate,
                 "average_score": avg_score,
-                "highest_score": max(scores) if scores else 0.0,
-                "lowest_score": min(scores) if scores else 0.0,
+                "highest_score": max_sc,
+                "lowest_score": min_sc,
+                "min_score": min_sc,
+                "max_score": max_sc,
+                "score_range": range_str,
                 "average_ai_support": avg_ai,
                 "plagiarism_flags_count": plag_count,
                 "tier_breakdown": act_tiers,
