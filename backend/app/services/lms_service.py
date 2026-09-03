@@ -449,11 +449,20 @@ class LMSService:
             return None
         sub.marks_obtained = payload.marks_obtained
         sub.feedback = payload.feedback
-        sub.status = payload.status
+        sub.status = payload.status or "graded"
         sub.graded_by_id = grader_id
         sub.graded_at = datetime.utcnow()
         await db.commit()
         await db.refresh(sub)
+
+        # Automated notification for CCE assessment grading
+        try:
+            import asyncio
+            from app.services.gradebook_service import send_automated_cce_grade_email
+            asyncio.create_task(send_automated_cce_grade_email(sub.id))
+        except Exception as e:
+            logger.warning(f"Could not queue automated CCE assessment grade notification: {e}")
+
         return sub
 
     # --- HyperBuild Activity Submissions ---
@@ -584,8 +593,19 @@ class LMSService:
         sub.score = ai_eval.get("total_score")
         sub.grade = ai_eval.get("performance_tier")
         sub.feedback = ai_eval.get("executive_summary")
+        sub.status = "graded"
+        sub.graded_at = datetime.utcnow()
         await db.commit()
         await db.refresh(sub)
+
+        # Automated grade notification to student upon faculty evaluation
+        try:
+            import asyncio
+            from app.services.gradebook_service import send_automated_activity_grade_email
+            asyncio.create_task(send_automated_activity_grade_email(sub.id))
+        except Exception as e:
+            logger.warning(f"Could not queue automated student grade notification email: {e}")
+
         return sub
 
     async def get_student_activity_submission(

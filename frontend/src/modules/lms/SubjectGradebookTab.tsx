@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  CheckSquare,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { GradebookExportModal } from '../../components/GradebookExportModal';
@@ -176,6 +177,7 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
     }
 
     const activitiesList = currentSubj.activities || [];
+    const cceAssessmentsList = currentSubj.cce_assessments || [];
 
     return (
       <div className="space-y-6">
@@ -231,7 +233,9 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
               <div className="text-lg font-black mt-1">
                 {currentSubj.cce_score !== null ? `${currentSubj.cce_score} / ${currentSubj.cce_max_marks}` : 'Pending Evaluation'}
               </div>
-              <span className="text-[10px] text-indigo-200/60">Classwork, quizzes, and internal reviews</span>
+              <span className="text-[10px] text-indigo-200/60">
+                {currentSubj.cce_completion_ratio || '0/0'} Assignments Evaluated • Max {currentSubj.cce_max_marks || 50} Marks
+              </span>
             </div>
 
             {/* Component 2: HyperBuild Labs */}
@@ -255,6 +259,75 @@ export const SubjectGradebookTab: React.FC<SubjectGradebookTabProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Continuous Comprehensive Evaluation (CCE) Detailed Assignments Breakdown */}
+        {cceAssessmentsList.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                Continuous Assessment (CCE) Internal Assignments ({cceAssessmentsList.length})
+              </h3>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                CCE Aggregate: {currentSubj.cce_score !== null ? `${currentSubj.cce_score} / ${currentSubj.cce_max_marks}` : 'Pending'} ({currentSubj.cce_completion_ratio || '0/0'} Evaluated)
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {cceAssessmentsList.map((ass: any, idx: number) => {
+                const hasMarks = ass.marks_obtained !== null;
+                return (
+                  <div
+                    key={ass.assessment_id || idx}
+                    className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                        hasMarks
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                      }`}>
+                        #{idx + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {ass.title}
+                          </h4>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {ass.assessment_type}
+                          </span>
+                        </div>
+                        {ass.feedback && (
+                          <p className="text-[11px] text-slate-500 italic mt-0.5">
+                            "{ass.feedback}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                      {hasMarks ? (
+                        <div className="text-right">
+                          <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                            {ass.marks_obtained} / {ass.total_marks}
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-400">
+                            {ass.percentage}%
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          {ass.status === 'submitted' ? 'Submitted (Awaiting Review)' : 'Pending Submission'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* All Evaluated Labs & Assessments Granular List */}
         <div className="space-y-3">

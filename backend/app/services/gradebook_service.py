@@ -337,6 +337,13 @@ class GradebookService:
             if csub.assessment:
                 cce_subs_by_subject.setdefault(csub.assessment.subject_id, []).append(csub)
 
+        # Fetch published SubjectAssessments for all subjects
+        ass_stmt = select(SubjectAssessment).where(SubjectAssessment.is_published == True)
+        ass_res = await db.execute(ass_stmt)
+        assessments_by_subject: Dict[uuid.UUID, List[SubjectAssessment]] = {}
+        for ass in ass_res.scalars().all():
+            assessments_by_subject.setdefault(ass.subject_id, []).append(ass)
+
         subject_entries = []
         total_credits = 0
         weighted_points_sum = 0.0
@@ -425,14 +432,73 @@ class GradebookService:
             completed_cnt = len(hb_scores)
             ratio_str = f"{completed_cnt} / {total_rel}"
 
-            # 3. CCE calculations
+            # 3. CCE calculations & comprehensive N-assignments aggregation
+            subj_assessments = assessments_by_subject.get(subj.id, [])
             cce_subs = cce_subs_by_subject.get(subj.id, [])
+            cce_assessments_detail = []
+            graded_cce_obtained = 0.0
+            graded_cce_max = 0.0
+            total_possible_cce_max = sum((a.total_marks or 100.0) for a in subj_assessments)
+            
+            for ass in subj_assessments:
+                matching_csub = next((cs for cs in cce_subs if cs.assessment_id == ass.id), None)
+                obt = matching_csub.marks_obtained if matching_csub else None
+                ass_max = ass.total_marks or 100.0
+                cce_assessments_detail.append({
+                    "id": str(matching_csub.id) if matching_csub else None,
+                    "assessment_id": str(ass.id),
+                    "title": ass.title,
+                    "assessment_type": ass.assessment_type or "assignment",
+                    "total_marks": ass_max,
+                    "weightage_percentage": ass.weightage_percentage,
+                    "marks_obtained": obt,
+                    "percentage": round((obt / ass_max) * 100.0, 1) if (obt is not None and ass_max > 0) else None,
+                    "status": matching_csub.status if matching_csub else "pending",
+                    "feedback": matching_csub.feedback if matching_csub else None,
+                    "graded_at": matching_csub.graded_at.isoformat() if matching_csub and matching_csub.graded_at else None,
+                })
+                if obt is not None:
+                    graded_cce_obtained += obt
+                    graded_cce_max += ass_max
+
+            # Catch any submissions whose assessments might not be in published list
+            for cs in cce_subs:
+                if cs.assessment and not any(d["assessment_id"] == str(cs.assessment_id) for d in cce_assessments_detail):
+                    obt = cs.marks_obtained
+                    ass_max = cs.assessment.total_marks or 100.0
+                    cce_assessments_detail.append({
+                        "id": str(cs.id),
+                        "assessment_id": str(cs.assessment_id),
+                        "title": cs.assessment.title,
+                        "assessment_type": cs.assessment.assessment_type or "assignment",
+                        "total_marks": ass_max,
+                        "weightage_percentage": cs.assessment.weightage_percentage,
+                        "marks_obtained": obt,
+                        "percentage": round((obt / ass_max) * 100.0, 1) if (obt is not None and ass_max > 0) else None,
+                        "status": cs.status,
+                        "feedback": cs.feedback,
+                        "graded_at": cs.graded_at.isoformat() if cs.graded_at else None,
+                    })
+                    if obt is not None:
+                        graded_cce_obtained += obt
+                        graded_cce_max += ass_max
+
+            # Scaling N assignments to subject CCE max marks (e.g. 50):
             if recorded_grade and recorded_grade.cce_score is not None:
                 cce_obtained = recorded_grade.cce_score
-            elif cce_subs:
-                cce_obtained = sum(cs.marks_obtained or 0.0 for cs in cce_subs)
+            elif graded_cce_max > 0:
+                if total_possible_cce_max == cce_max:
+                    cce_obtained = min(round(graded_cce_obtained, 1), cce_max)
+                else:
+                    # Scaled proportionately across assignments to cce_max
+                    cce_obtained = min(round((graded_cce_obtained / graded_cce_max) * cce_max, 1), cce_max)
+            elif cce_subs and any(cs.marks_obtained is not None for cs in cce_subs):
+                raw_sum = sum(cs.marks_obtained for cs in cce_subs if cs.marks_obtained is not None)
+                cce_obtained = min(round(raw_sum, 1), cce_max)
             else:
                 cce_obtained = None
+
+            cce_ratio_str = f"{len([a for a in cce_assessments_detail if a['marks_obtained'] is not None])} / {len(cce_assessments_detail)}" if cce_assessments_detail else "0 / 0"
 
             # 4. Term End calculations
             term_end_obtained = recorded_grade.term_end_score if recorded_grade else None
@@ -468,6 +534,8 @@ class GradebookService:
                 "course_category": subj.course_category,
                 "cce_score": cce_obtained,
                 "cce_max_marks": cce_max,
+                "cce_assessments": cce_assessments_detail,
+                "cce_completion_ratio": cce_ratio_str,
                 "hyperbuild_total_score": hb_total,
                 "hyperbuild_max_total": hb_max_total,
                 "hyperbuild_score": hb_average,
@@ -1392,7 +1460,7 @@ async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
         tier_val = sub.grade or ("Pass" if score_val >= 50 else "Needs Work")
         feedback_val = sub.feedback or "Your submission has been evaluated against the activity rubric."
         
-        graded_date = sub.graded_at.strftime("%B %d, %Y") if sub.graded_at else datetime.now(timezone.utc).strftime("%B %d, %Y")
+        graded_date = sub.graded_at.strftime("%B %d, %Y") if sub.graded_at else datetime.utcnow().strftime("%B %d, %Y")
 
         grader_name = "Faculty Evaluator"
         if sub.graded_by_id:
@@ -1573,6 +1641,207 @@ async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
 </html>"""
 
         subject_line = f"Grade Published: Act {act_no} ({course_code}) — {score_val}/100 Marks"
+        return send_custom_html_email(
+            to_email=target_email,
+            subject=subject_line,
+            html_content=html_body,
+        )
+
+
+async def send_automated_cce_grade_email(submission_id: uuid.UUID) -> bool:
+    """
+    Automated notification dispatched when faculty grades a CCE assignment submission on LMS.
+    Sends a singled-out result email for the specific CCE assignment:
+    - Assessment Component: Continuous Comprehensive Evaluation (CCE)
+    - Subject Name & Code
+    - Assessment Title & Type
+    - Marks Secured: marks_obtained / total_marks
+    - Evaluator Remarks & Qualitative Feedback
+    - Direct Portal Link to LMS Subject Gradebook
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.models.lms import AssessmentSubmission, SubjectAssessment
+    from app.models.user import User
+
+    async with AsyncSessionLocal() as db:
+        sub = await db.get(AssessmentSubmission, submission_id)
+        if not sub or sub.marks_obtained is None:
+            return False
+
+        assessment = await db.get(SubjectAssessment, sub.assessment_id)
+        if not assessment:
+            return False
+
+        subj = await db.get(Subject, assessment.subject_id)
+        
+        stmt = (
+            select(Student)
+            .where(Student.id == sub.student_id)
+            .options(
+                selectinload(Student.program),
+                selectinload(Student.batch),
+            )
+        )
+        res = await db.execute(stmt)
+        student = res.scalar_one_or_none()
+        if not student:
+            return False
+
+        target_email = student.email_official or student.email or student.email_personal
+        if not target_email:
+            return False
+
+        student_name = f"{student.first_name} {student.last_name or ''}".strip()
+        prn = student.prn_number or "N/A"
+        program_name = student.program.name if student.program else "Academic Program"
+        batch_name = student.batch.name if student.batch else "Current Cohort"
+        
+        course_name = subj.name if subj else "Academic Course"
+        course_code = subj.code if subj else "LMS"
+        ass_title = assessment.title
+        ass_type = (assessment.assessment_type or "Assignment").title()
+
+        total_marks = assessment.total_marks or 100.0
+        marks_val = round(sub.marks_obtained, 1)
+        pct = round((marks_val / total_marks) * 100.0, 1) if total_marks > 0 else 0.0
+        feedback_val = sub.feedback or "Evaluation completed by faculty."
+        
+        graded_date = sub.graded_at.strftime("%B %d, %Y") if sub.graded_at else datetime.utcnow().strftime("%B %d, %Y")
+
+        grader_name = "Faculty Evaluator"
+        if sub.graded_by_id:
+            grader = await db.get(User, sub.graded_by_id)
+            if grader and grader.full_name:
+                grader_name = grader.full_name
+
+        portal_url = f"https://crc-one.onrender.com/lms/subjects/{course_code}/gradebook"
+
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>CCE Assessment Grade Notification</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 32px 12px; color: #1e293b;">
+  <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);">
+    
+    <!-- Header -->
+    <div style="background: #0f172a; padding: 26px 30px; border-bottom: 3px solid #10b981;">
+      <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #34d399; margin-bottom: 6px;">
+        ORION ACADEMIC PORTAL • CCE ASSESSMENT NOTIFICATION
+      </div>
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
+        CCE Evaluation Published
+      </h1>
+      <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">
+        {course_name} ({course_code})
+      </p>
+    </div>
+
+    <!-- Student Credentials Strip -->
+    <div style="padding: 16px 30px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td>
+            <div style="font-size: 15px; font-weight: 800; color: #0f172a;">{student_name}</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+              PRN: <span style="font-family: monospace; font-weight: 700; color: #10b981;">{prn}</span> • {program_name} ({batch_name})
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Main Content -->
+    <div style="padding: 26px 30px;">
+      
+      <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px;">
+        Dear <strong>{student_name}</strong>,<br/><br/>
+        Your Continuous Comprehensive Evaluation (CCE) deliverable has been evaluated and graded by faculty. Your score and feedback are detailed below.
+      </p>
+
+      <!-- ASSIGNMENT DETAILS CARD -->
+      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 14px; padding: 20px; margin-bottom: 24px;">
+        
+        <div style="margin-bottom: 14px;">
+          <span style="display: inline-block; padding: 3px 10px; background: #d1fae5; color: #065f46; font-size: 11px; font-weight: 800; text-transform: uppercase; border-radius: 6px; letter-spacing: 0.5px;">
+            Component: Continuous Evaluation (CCE)
+          </span>
+          <h2 style="margin: 10px 0 4px; font-size: 17px; font-weight: 800; color: #0f172a; line-height: 1.3;">
+            {ass_title}
+          </h2>
+          <div style="font-size: 13px; color: #475569; font-weight: 600;">
+            Course: <strong style="color: #0f172a;">{course_name}</strong> ({course_code}) • Type: {ass_type}
+          </div>
+        </div>
+
+        <!-- Score Grid -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center;">
+          <tr>
+            <td width="50%" style="padding: 16px 12px; border-right: 1px solid #e2e8f0;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
+                Marks Awarded
+              </div>
+              <div style="font-size: 34px; font-weight: 900; color: #059669; margin: 4px 0;">
+                {marks_val} <span style="font-size: 16px; color: #94a3b8; font-weight: 700;">/ {total_marks}</span>
+              </div>
+              <div style="font-size: 11px; color: #64748b;">
+                Percentage: {pct}%
+              </div>
+            </td>
+            <td width="50%" style="padding: 16px 12px;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
+                Assessment Component
+              </div>
+              <div style="margin: 6px 0;">
+                <span style="display: inline-block; padding: 5px 14px; border-radius: 9999px; background: #ecfdf5; color: #065f46; font-size: 12.5px; font-weight: 800;">
+                  CCE Internal
+                </span>
+              </div>
+              <div style="font-size: 11px; color: #64748b;">
+                Evaluated by: {grader_name} • {graded_date}
+              </div>
+            </td>
+          </tr>
+        </table>
+
+      </div>
+
+      <!-- EVALUATOR FEEDBACK -->
+      <div style="border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin-bottom: 24px; background: #ffffff;">
+        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #475569; letter-spacing: 0.5px; margin-bottom: 12px;">
+          Faculty Evaluation Remarks & Feedback
+        </div>
+        
+        <div style="background: #f8fafc; border-left: 3px solid #10b981; padding: 14px 16px; border-radius: 6px; font-size: 13px; color: #1e293b; line-height: 1.6; font-style: italic;">
+          "{feedback_val}"
+        </div>
+      </div>
+
+      <!-- CTA BUTTON & GRADEBOOK LINK -->
+      <div style="text-align: center; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+        <a href="{portal_url}" style="display: inline-block; background: #059669; color: #ffffff; font-weight: 700; font-size: 13.5px; padding: 12px 28px; text-decoration: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25); margin-bottom: 14px;">
+          View Subject Gradebook in Orion &rarr;
+        </a>
+        <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+          You can inspect your total CCE standing, HyperBuild labs, and full marksheet anytime on the 
+          <a href="https://crc-one.onrender.com/lms/subjects/{course_code}/gradebook" style="color: #059669; font-weight: 700; text-decoration: underline;">Subject Gradebook</a>.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f8fafc; padding: 18px 30px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+      Office of the Academic Registrar & Examination Cell • Orion Academic Portal<br/>
+      Automated CCE grade notification issued immediately upon faculty evaluation.
+    </div>
+
+  </div>
+</body>
+</html>"""
+
+        subject_line = f"CCE Grade Published: {ass_title} ({course_code}) — {marks_val}/{total_marks} Marks"
         return send_custom_html_email(
             to_email=target_email,
             subject=subject_line,
