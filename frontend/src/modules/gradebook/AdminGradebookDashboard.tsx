@@ -84,8 +84,8 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
   const { data: subjectsData } = useQuery({
     queryKey: ['academic-subjects-list'],
     queryFn: async () => {
-      const res = await api.get('/subjects');
-      return res.data?.items || res.data || [];
+      const res = await api.get('/academic/subjects');
+      return res.data?.data || res.data?.items || (Array.isArray(res.data) ? res.data : []);
     },
   });
 

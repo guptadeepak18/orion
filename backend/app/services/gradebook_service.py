@@ -189,8 +189,35 @@ def _build_student_result_email_html(
         Your official performance evaluation and marksheet results across Continuous Comprehensive Evaluation (CCE), HyperBuild practical simulation labs, and Term End examination are detailed below.
       </p>
 
-      <!-- Section: Marks Breakdown Table -->
-      <div style="margin-bottom: 22px;">
+      <!-- Section: Marks Breakdown Card / Table -->
+      {f'''<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 14px; padding: 20px; margin-bottom: 22px;">
+        <div style="font-size: 11px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+          Subject Performance Card
+        </div>
+        <h2 style="margin: 0 0 14px; font-size: 18px; font-weight: 800; color: #0f172a;">
+          {subjects_summary[0].get('name')} ({subjects_summary[0].get('code')})
+        </h2>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center;">
+          <tr>
+            <td width="25%" style="padding: 12px 6px; border-right: 1px solid #e2e8f0;">
+              <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b;">CCE Marks</div>
+              <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-top: 4px;">{f"{subjects_summary[0].get('cce_score')} / {subjects_summary[0].get('cce_max', 50)}" if subjects_summary[0].get('cce_score') is not None else "Pending"}</div>
+            </td>
+            <td width="25%" style="padding: 12px 6px; border-right: 1px solid #e2e8f0;">
+              <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #4338ca;">HyperBuild Avg</div>
+              <div style="font-size: 14px; font-weight: 800; color: #4338ca; margin-top: 4px;">{f"{subjects_summary[0].get('hb_avg')}/100" if subjects_summary[0].get('hb_avg') is not None else "No Labs Graded"}</div>
+            </td>
+            <td width="25%" style="padding: 12px 6px; border-right: 1px solid #e2e8f0;">
+              <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b;">End Term</div>
+              <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-top: 4px;">{f"{subjects_summary[0].get('term_end_score')} / {subjects_summary[0].get('term_end_max', 50)}" if subjects_summary[0].get('term_end_score') is not None else "Scheduled"}</div>
+            </td>
+            <td width="25%" style="padding: 12px 6px;">
+              <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0f172a;">Composite %</div>
+              <div style="font-size: 14px; font-weight: 900; color: #0f172a; margin-top: 4px;">{f"{subjects_summary[0].get('total_percentage')}%" if subjects_summary[0].get('total_percentage') is not None else "In Progress"} ({subjects_summary[0].get('grade_letter', 'IP')})</div>
+            </td>
+          </tr>
+        </table>
+      </div>''' if len(subjects_summary) == 1 else f'''<div style="margin-bottom: 22px;">
         <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #475569; margin-bottom: 8px;">
           Course Performance Summary
         </div>
@@ -209,7 +236,7 @@ def _build_student_result_email_html(
             {subject_rows_html}
           </tbody>
         </table>
-      </div>
+      </div>'''}
 
       <!-- Section: Qualitative Feedback & Guidance -->
       {f'''<div style="margin-bottom: 24px;">
@@ -1220,8 +1247,8 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
             crit = first_eval.get("critical_feedback") or (graded_acts[0].get("feedback") if graded_acts else None)
 
             subjects_summary.append({
-                "name": s.get("subject_name"),
-                "code": s.get("subject_code"),
+                "name": s.get("name") or s.get("subject_name"),
+                "code": s.get("code") or s.get("subject_code"),
                 "cce_score": s.get("cce_score"),
                 "cce_max": s.get("cce_max_marks", 50),
                 "term_end_score": s.get("term_end_score"),
@@ -1234,6 +1261,7 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
                 "strengths": strengths,
                 "areas_for_improvement": gaps,
                 "critical_feedback": crit,
+                "activities": graded_acts,
             })
 
         st_name = f"{st.first_name} {st.last_name or ''}".strip()
@@ -1310,7 +1338,10 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
 async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
     """
     Automated notification dispatched when faculty grades an activity submission on LMS.
-    Sends an engaging, sectioned result email with marks, rubric tier, feedback, and direct portal link.
+    Sends an engaging, singled-out result email for the specific activity graded:
+    - Top Section: Assessment Component (HyperBuild Practical Simulation Lab), Subject Name & Code, Activity Details, Marks & Tier.
+    - Evaluator Feedback: Strengths, Areas for Improvement, Faculty Comments.
+    - Direct Portal Link: Links straight to this activity deliverable and student gradebook.
     """
     from app.core.database import AsyncSessionLocal
     from app.models.lms import ActivitySubmission
@@ -1326,7 +1357,19 @@ async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
             return False
 
         subj = await db.get(Subject, activity.subject_id)
-        student = await db.get(Student, sub.student_id)
+        
+        # Load student with program and batch relations
+        stmt = (
+            select(Student)
+            .where(Student.id == sub.student_id)
+            .options(
+                selectinload(Student.program),
+                selectinload(Student.batch),
+                selectinload(Student.divisions),
+            )
+        )
+        res = await db.execute(stmt)
+        student = res.scalar_one_or_none()
         if not student:
             return False
 
@@ -1337,115 +1380,199 @@ async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
 
         student_name = f"{student.first_name} {student.last_name or ''}".strip()
         prn = student.prn_number or "N/A"
+        program_name = student.program.name if student.program else "Academic Program"
+        batch_name = student.batch.name if student.batch else "Current Cohort"
+        
         course_name = subj.name if subj else "Academic Course"
         course_code = subj.code if subj else "LMS"
-        score_val = sub.score if sub.score is not None else 0.0
-        tier_val = sub.grade or "Graded"
-        feedback_val = sub.feedback or "Evaluation completed by faculty."
-        portal_url = f"https://crc-one.onrender.com/academic/subjects/{activity.subject_id}"
+        act_no = activity.activity_no
+        act_title = activity.title
+
+        score_val = round(sub.score, 1) if sub.score is not None else 0.0
+        tier_val = sub.grade or ("Pass" if score_val >= 50 else "Needs Work")
+        feedback_val = sub.feedback or "Your submission has been evaluated against the activity rubric."
+        
+        graded_date = sub.graded_at.strftime("%B %d, %Y") if sub.graded_at else datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+        grader_name = "Faculty Evaluator"
+        if sub.graded_by_id:
+            grader = await db.get(User, sub.graded_by_id)
+            if grader and grader.full_name:
+                grader_name = grader.full_name
+
+        portal_url = f"https://crc-one.onrender.com/lms/subjects/{course_code}/activities"
 
         eval_data = sub.ai_evaluation or {}
         strengths = eval_data.get("strengths", [])
         gaps = eval_data.get("areas_for_improvement", [])
         
-        strengths_html = "".join([f"<li style='margin-bottom: 4px;'>{s}</li>" for s in strengths[:3]]) if strengths else ""
-        gaps_html = "".join([f"<li style='margin-bottom: 4px;'>{g}</li>" for g in gaps[:3]]) if gaps else ""
+        strengths_html = "".join([f"<li style='margin-bottom: 5px;'>{s}</li>" for s in strengths[:4]]) if strengths else ""
+        gaps_html = "".join([f"<li style='margin-bottom: 5px;'>{g}</li>" for g in gaps[:4]]) if gaps else ""
+
+        if "Distinction" in tier_val:
+            badge_bg = "#f3e8ff"
+            badge_color = "#6b21a8"
+        elif "Merit" in tier_val:
+            badge_bg = "#e0e7ff"
+            badge_color = "#3730a3"
+        elif "Pass" in tier_val:
+            badge_bg = "#dcfce7"
+            badge_color = "#166534"
+        else:
+            badge_bg = "#fee2e2"
+            badge_color = "#991b1b"
+
+        strengths_section = f"""
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e2e8f0;">
+          <div style="font-size: 11.5px; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+            Key Strengths Identified:
+          </div>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #334155; line-height: 1.55;">
+            {strengths_html}
+          </ul>
+        </div>
+        """ if strengths_html else ""
+
+        remediation_section = f"""
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e2e8f0;">
+          <div style="font-size: 11.5px; font-weight: 800; color: #991b1b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+            Growth & Remediation Focus:
+          </div>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #334155; line-height: 1.55;">
+            {gaps_html}
+          </ul>
+        </div>
+        """ if gaps_html else ""
 
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Activity Grade Notification</title>
+  <title>Assessment Grade Notification</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 28px 12px; color: #1e293b;">
-  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 32px 12px; color: #1e293b;">
+  <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);">
     
     <!-- Header -->
-    <div style="background: #0f172a; padding: 24px 28px; border-bottom: 3px solid #4f46e5;">
-      <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #818cf8; margin-bottom: 4px;">
-        Orion LMS • Official Evaluation Notification
+    <div style="background: #0f172a; padding: 26px 30px; border-bottom: 3px solid #4f46e5;">
+      <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #818cf8; margin-bottom: 6px;">
+        ORION ACADEMIC PORTAL • ASSESSMENT GRADE NOTIFICATION
       </div>
-      <h1 style="margin: 0; font-size: 19px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
-        Activity Evaluation Completed
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
+        Assessment Evaluation Published
       </h1>
-      <p style="margin: 4px 0 0; font-size: 12.5px; color: #94a3b8;">
-        {course_code} — {course_name}
+      <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">
+        {course_name} ({course_code})
       </p>
     </div>
 
-    <!-- Student Credentials Box -->
-    <div style="padding: 18px 28px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+    <!-- Student Credentials Strip -->
+    <div style="padding: 16px 30px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
           <td>
-            <div style="font-size: 14.5px; font-weight: 800; color: #0f172a;">{student_name}</div>
+            <div style="font-size: 15px; font-weight: 800; color: #0f172a;">{student_name}</div>
             <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
-              PRN: <span style="font-family: monospace; font-weight: 700; color: #4f46e5;">{prn}</span>
+              PRN: <span style="font-family: monospace; font-weight: 700; color: #4f46e5;">{prn}</span> • {program_name} ({batch_name})
             </div>
-          </td>
-          <td style="text-align: right; vertical-align: middle;">
-            <span style="display: inline-block; padding: 4px 12px; background: #e0e7ff; color: #3730a3; border-radius: 9999px; font-size: 12px; font-weight: 700;">
-              Act {activity.activity_no}
-            </span>
           </td>
         </tr>
       </table>
     </div>
 
-    <!-- Main Body -->
-    <div style="padding: 24px 28px;">
-      <p style="font-size: 13.5px; line-height: 1.6; color: #334155; margin: 0 0 18px;">
+    <!-- Main Content -->
+    <div style="padding: 26px 30px;">
+      
+      <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px;">
         Dear <strong>{student_name}</strong>,<br/><br/>
-        Your submission for <strong>Act {activity.activity_no}: {activity.title}</strong> has been evaluated and graded by faculty.
+        Your deliverable for the assignment detailed below has been evaluated and graded by faculty. Your score, performance standing, and comprehensive qualitative appraisal are provided below.
       </p>
 
-      <!-- Grade Card Table -->
-      <div style="margin-bottom: 22px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; text-align: center;">
-        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
-          Marks Awarded
+      <!-- DEDICATED ASSIGNMENT & ASSESSMENT DETAILS CARD (TOP SECTION) -->
+      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 14px; padding: 20px; margin-bottom: 24px;">
+        
+        <div style="margin-bottom: 14px;">
+          <span style="display: inline-block; padding: 3px 10px; background: #e0e7ff; color: #3730a3; font-size: 11px; font-weight: 800; text-transform: uppercase; border-radius: 6px; letter-spacing: 0.5px;">
+            Assessment Component: HyperBuild Simulation Lab
+          </span>
+          <h2 style="margin: 10px 0 4px; font-size: 17px; font-weight: 800; color: #0f172a; line-height: 1.3;">
+            Activity {act_no}: {act_title}
+          </h2>
+          <div style="font-size: 13px; color: #475569; font-weight: 600;">
+            Subject / Course: <strong style="color: #0f172a;">{course_name}</strong> ({course_code})
+          </div>
         </div>
-        <div style="font-size: 38px; font-weight: 900; color: #4338ca; margin: 4px 0;">
-          {score_val} <span style="font-size: 18px; color: #94a3b8; font-weight: 700;">/ 100</span>
-        </div>
-        <span style="display: inline-block; padding: 4px 12px; border-radius: 9999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 700;">
-          Tier: {tier_val}
-        </span>
+
+        <!-- Score & Tier Grid -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center;">
+          <tr>
+            <td width="50%" style="padding: 16px 12px; border-right: 1px solid #e2e8f0;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
+                Score Awarded
+              </div>
+              <div style="font-size: 34px; font-weight: 900; color: #4338ca; margin: 4px 0;">
+                {score_val} <span style="font-size: 16px; color: #94a3b8; font-weight: 700;">/ 100</span>
+              </div>
+              <div style="font-size: 11px; color: #64748b;">
+                Scaled Weightage: 30% of Subject Total
+              </div>
+            </td>
+            <td width="50%" style="padding: 16px 12px;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
+                Performance Tier
+              </div>
+              <div style="margin: 6px 0;">
+                <span style="display: inline-block; padding: 5px 14px; border-radius: 9999px; background: {badge_bg}; color: {badge_color}; font-size: 12.5px; font-weight: 800;">
+                  {tier_val}
+                </span>
+              </div>
+              <div style="font-size: 11px; color: #64748b;">
+                Evaluated by: {grader_name} • {graded_date}
+              </div>
+            </td>
+          </tr>
+        </table>
+
       </div>
 
-      <!-- Evaluator Feedback Section -->
-      <div style="margin-bottom: 22px; padding: 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #475569; margin-bottom: 8px;">
-          Faculty & Evaluator Feedback
+      <!-- EVALUATOR FEEDBACK & ACADEMIC INSIGHTS -->
+      <div style="border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin-bottom: 24px; background: #ffffff;">
+        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #475569; letter-spacing: 0.5px; margin-bottom: 12px;">
+          Evaluator Feedback & Qualitative Remarks
         </div>
-        <p style="font-size: 13px; color: #334155; line-height: 1.6; margin: 0 0 10px; font-style: italic;">
+        
+        <div style="background: #f8fafc; border-left: 3px solid #4f46e5; padding: 14px 16px; border-radius: 6px; font-size: 13px; color: #1e293b; line-height: 1.6; font-style: italic;">
           "{feedback_val}"
-        </p>
-        {f'''<div style="margin-top: 10px;"><strong style="font-size: 11px; color: #166534; text-transform: uppercase;">Key Strengths:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{strengths_html}</ul></div>''' if strengths_html else ''}
-        {f'''<div style="margin-top: 10px;"><strong style="font-size: 11px; color: #991b1b; text-transform: uppercase;">Areas for Improvement:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{gaps_html}</ul></div>''' if gaps_html else ''}
+        </div>
+
+        {strengths_section}
+        {remediation_section}
       </div>
 
-      <!-- CTA Button -->
-      <div style="text-align: center; padding: 20px 0 12px; border-top: 1px solid #e2e8f0;">
-        <a href="{portal_url}" style="display: inline-block; background: #4f46e5; color: #ffffff; font-weight: 700; font-size: 13.5px; padding: 12px 28px; text-decoration: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);">
-          View Activity Scorecard in Orion &rarr;
+      <!-- CTA BUTTON & GRADEBOOK LINK -->
+      <div style="text-align: center; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+        <a href="{portal_url}" style="display: inline-block; background: #4f46e5; color: #ffffff; font-weight: 700; font-size: 13.5px; padding: 12px 28px; text-decoration: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25); margin-bottom: 14px;">
+          View Activity Deliverable in Orion &rarr;
         </a>
-        <p style="margin: 10px 0 0; font-size: 11px; color: #64748b;">
-          Log in to inspect criterion-by-criterion rubric scoring and step-by-step audit reports.
+        <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+          You can inspect your overall academic performance, continuous evaluation (CCE), and term end standing across all subjects anytime on the 
+          <a href="https://crc-one.onrender.com/gradebook" style="color: #4f46e5; font-weight: 700; text-decoration: underline;">Orion Student Gradebook</a>.
         </p>
       </div>
+
     </div>
 
     <!-- Footer -->
-    <div style="background: #f8fafc; padding: 18px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;">
-      Office of the Academic Registrar • Orion LMS Evaluation Engine<br/>
-      Automated grade notification issued upon evaluation completion.
+    <div style="background: #f8fafc; padding: 18px 30px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+      Office of the Academic Registrar & Examination Cell • Orion Academic Portal<br/>
+      Automated grade notification issued immediately upon faculty evaluation.
     </div>
 
   </div>
 </body>
 </html>"""
 
-        subject_line = f"Grade Published: Act {activity.activity_no} ({course_code}) — {score_val}/100 Marks"
+        subject_line = f"Grade Published: Act {act_no} ({course_code}) — {score_val}/100 Marks"
         return send_custom_html_email(
             to_email=target_email,
             subject=subject_line,

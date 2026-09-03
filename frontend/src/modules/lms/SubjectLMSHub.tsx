@@ -30,6 +30,7 @@ import { api } from '../../lib/api';
 import { useAuthStore } from '../../lib/store';
 import { StructuredSyllabusViewer } from '../subjects/StructuredSyllabusViewer';
 import { HyperBuildActivityCard } from './HyperBuildActivityCard';
+import { SubjectGradebookTab } from './SubjectGradebookTab';
 
 // Helper component for rich text formatting
 const FormattedSectionText: React.FC<{ text?: string }> = ({ text }) => {
@@ -240,8 +241,8 @@ export const SubjectLMSHub: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
 
-  type TabId = 'overview' | 'syllabus' | 'session_plan' | 'activities' | 'resources' | 'recordings' | 'assessments' | 'attendance';
-  const VALID_SECTIONS: TabId[] = ['overview', 'syllabus', 'session_plan', 'activities', 'resources', 'recordings', 'assessments', 'attendance'];
+  type TabId = 'overview' | 'syllabus' | 'session_plan' | 'activities' | 'resources' | 'recordings' | 'assessments' | 'attendance' | 'gradebook';
+  const VALID_SECTIONS: TabId[] = ['overview', 'syllabus', 'session_plan', 'activities', 'resources', 'recordings', 'assessments', 'attendance', 'gradebook'];
 
   // Derive active tab from URL section param
   const activeTab: TabId = (section && VALID_SECTIONS.includes(section as TabId)) ? (section as TabId) : 'overview';
@@ -639,6 +640,7 @@ export const SubjectLMSHub: React.FC = () => {
     { id: 'recordings', label: 'Recordings', icon: Video, count: recordings?.length },
     { id: 'assessments', label: 'Assessments', icon: CheckSquare, count: assessments?.length },
     { id: 'attendance', label: 'Attendance', icon: CalendarCheck, count: attendance ? `${attendance.attendance_percentage}%` : null },
+    { id: 'gradebook', label: 'Subject Gradebook', icon: Award, count: null },
   ];
 
   return (
@@ -1624,6 +1626,15 @@ export const SubjectLMSHub: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* 9. GRADEBOOK TAB */}
+      {activeTab === 'gradebook' && (
+        <SubjectGradebookTab
+          subject={subject}
+          isStudent={Boolean(isStudent)}
+          isFacultyOrAdmin={Boolean(isFacultyOrAdmin)}
+        />
       )}
 
       {/* --- MODALS --- */}
