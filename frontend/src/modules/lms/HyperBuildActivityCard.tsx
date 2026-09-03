@@ -24,7 +24,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Trash2,
-  Paperclip,
   Check,
   Download,
   Edit3,
@@ -1305,7 +1304,6 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                   </div>
                 </div>
               )}
-
               {/* Submitted Notes */}
               {submission.submission_text && (
                 <div className="p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-emerald-100 dark:border-emerald-900/40 text-xs text-slate-700 dark:text-slate-300">
@@ -1317,7 +1315,17 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
           )}
 
           {/* 9. STUDENT SOLUTION UPLOAD / SUBMISSION FORM */}
-          {isStudent && (!isSubmitted || showSubmitPanel) && (
+          {isStudent && !isReleased ? (
+            <div className="p-5 rounded-3xl border border-amber-200/90 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20 text-center space-y-2">
+              <div className="h-10 w-10 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h5 className="text-sm font-bold text-amber-950 dark:text-amber-200">Activity Locked for Submissions</h5>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 max-w-md mx-auto">
+                This activity will automatically unlock and accept student deliverables according to your class timetable schedule.
+              </p>
+            </div>
+          ) : isStudent && isReleased && (!isSubmitted || showSubmitPanel) ? (
             <div className="p-5 rounded-3xl border border-indigo-200/90 dark:border-indigo-800/60 bg-white dark:bg-slate-900 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1335,115 +1343,111 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
                 </div>
               </div>
 
-              {(!isSubmitted || showSubmitPanel) && (
-                <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-                  {/* Drag & Drop File Selector */}
-                  <div className="relative border-2 border-dashed border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-6 bg-indigo-50/30 dark:bg-indigo-950/20 text-center hover:bg-indigo-50/60 transition-all">
-                    <input
-                      type="file"
-                      multiple
-                      id={`file-upload-${activity.id}`}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      onChange={handleFileChange}
-                    />
-                    <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
-                      <div className="h-12 w-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
-                        <Paperclip className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
-                          Click to browse or drag & drop solution files
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Accepts all formats (.docx, .pptx, .pdf, .xlsx, .txt, .csv, etc.) · Multiple files supported
-                        </p>
-                      </div>
+              <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+                {/* Drag & Drop File Selector */}
+                <div className="relative border-2 border-dashed border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-6 bg-indigo-50/30 dark:bg-indigo-950/20 text-center hover:bg-indigo-50/60 transition-all">
+                  <input
+                    type="file"
+                    multiple
+                    id={`file-upload-${activity.id}`}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={handleFileChange}
+                  />
+                  <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
+                    <div className="h-12 w-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+                      <Upload className="h-6 w-6" />
                     </div>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {selectedFiles.length > 0 ? 'Add more files or drag here' : 'Drop files here or click to browse'}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Supports PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), images & code
+                    </span>
                   </div>
+                </div>
 
-                  {/* Selected Files List */}
-                  {selectedFiles.length > 0 && (
-                    <div className="space-y-2">
-                      <h6 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Files to be submitted ({selectedFiles.length}):
-                      </h6>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {selectedFiles.map((f, i) => (
-                          <div
-                            key={i}
-                            className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              {getFileIcon(f.name)}
-                              <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{f.name}</span>
-                              <span className="text-[10px] text-slate-400">({formatBytes(f.size)})</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeSelectedFile(i)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
-                              title="Remove file"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                {/* Selected Files List Preview */}
+                {selectedFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Files to submit ({selectedFiles.length}):
+                    </p>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {selectedFiles.map((file, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between text-xs"
+                        >
+                          <div className="flex items-center gap-2 truncate pr-2">
+                            {getFileIcon(file.name)}
+                            <span className="font-semibold text-slate-900 dark:text-white truncate">{file.name}</span>
+                            <span className="text-slate-400 shrink-0 text-[10px]">({formatBytes(file.size)})</span>
                           </div>
-                        ))}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedFile(idx)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                            title="Remove file"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  {/* Optional Notes */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Solution Notes & AI Tool Verification Documentation (Optional)
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={submissionNotes}
-                      onChange={(e) => setSubmissionNotes(e.target.value)}
-                      placeholder="Paste your executive summary, AI prompt logs, verification citations, or answers directly here..."
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
                   </div>
+                )}
 
-                  {uploadError && (
-                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-400 font-semibold flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {uploadError}
-                    </div>
-                  )}
+                {/* Optional Solution Notes Textarea */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Solution Summary / Executive Notes (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={submissionNotes}
+                    onChange={(e) => setSubmissionNotes(e.target.value)}
+                    placeholder="Add brief commentary, context, methodology, or notes for your faculty evaluator..."
+                    className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-sans"
+                  />
+                </div>
 
-                  {/* Submit Button */}
-                  <div className="flex items-center justify-end gap-2 pt-2">
-                    {showSubmitPanel && (
-                      <button
-                        type="button"
-                        onClick={() => handleCloseSubmitPanel()}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    )}
+                {uploadError && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-400 font-semibold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {uploadError}
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  {showSubmitPanel && (
                     <button
-                      type="submit"
-                      disabled={isUploading || submitDeliverableMutation.isPending}
-                      className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      type="button"
+                      onClick={() => handleCloseSubmitPanel()}
+                      className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 cursor-pointer"
                     >
-                      {isUploading || submitDeliverableMutation.isPending ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" /> Uploading Solution...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4" /> Submit Solution Deliverable
-                        </>
-                      )}
+                      Cancel
                     </button>
-                  </div>
-                </form>
-              )}
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isUploading || submitDeliverableMutation.isPending}
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isUploading || submitDeliverableMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" /> Uploading Solution...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" /> Submit Solution Deliverable
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 

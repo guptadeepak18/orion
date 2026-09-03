@@ -52,7 +52,47 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
     }
   }, []);
 
-  const activeActivity = sessionDetails?.activities?.find((a: any) => a.status === 'active') || sessionDetails?.activities?.[0];
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+
+  // Sort activities chronologically by start_time ASC
+  const sortedActivities = React.useMemo(() => {
+    if (!sessionDetails?.activities) return [];
+    return [...sessionDetails.activities].sort((a: any, b: any) => {
+      const timeA = a.start_time || '00:00';
+      const timeB = b.start_time || '00:00';
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      return (a.activity_no || 0) - (b.activity_no || 0);
+    });
+  }, [sessionDetails?.activities]);
+
+  // Determine active/selected activity
+  const activeActivity = React.useMemo(() => {
+    if (!sortedActivities || sortedActivities.length === 0) return null;
+    if (selectedActivityId) {
+      const found = sortedActivities.find((a: any) => a.id === selectedActivityId);
+      if (found) return found;
+    }
+    if (sessionDetails?.active_activity_id) {
+      const found = sortedActivities.find((a: any) => a.id === sessionDetails.active_activity_id);
+      if (found) return found;
+    }
+    const active = sortedActivities.find((a: any) => a.status === 'active');
+    if (active) return active;
+    const unverified = sortedActivities.find((a: any) => a.is_eligible && !a.is_verified_by_student);
+    if (unverified) return unverified;
+    return sortedActivities[0];
+  }, [sortedActivities, selectedActivityId, sessionDetails?.active_activity_id]);
+
+  const handleSelectActivity = (actId: string) => {
+    if (actId === activeActivity?.id) return;
+    setSelectedActivityId(actId);
+    setEnteredKey('');
+    setUploadedFile(null);
+    setSubmissionUrl('');
+    setSubmissionText('');
+    setVerifError(null);
+    setVerifSuccess(null);
+  };
 
   // Handle solution file upload with client validation
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,51 +193,68 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
           <div className="py-12 text-center text-xs text-slate-500 font-medium">Loading session activities...</div>
         ) : (
           <div className="space-y-4">
-            {/* Sequential Activities Summary */}
+            {/* Sequential Activities Summary with Selection */}
             <div className="space-y-1.5">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Session Activities
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Select Activity to Mark Attendance
+                </p>
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                  Sorted by schedule time · Click to switch
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {sessionDetails?.activities?.map((act: any) => {
+                {sortedActivities.map((act: any) => {
                   const isVerified = act.is_verified_by_student;
                   const isActive = act.status === 'active' && act.is_eligible;
+                  const isSelected = activeActivity?.id === act.id;
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={act.id}
-                      className={`p-2.5 rounded-xl border text-xs transition-all ${
-                        isVerified
-                          ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
+                      onClick={() => handleSelectActivity(act.id)}
+                      className={`w-full text-left p-3 rounded-xl border text-xs transition-all cursor-pointer relative ${
+                        isSelected
+                          ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-50/90 dark:bg-amber-950/40 shadow-sm'
+                          : isVerified
+                          ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 hover:border-emerald-400'
                           : isActive
-                          ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700'
+                          ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 hover:border-amber-400'
                           : !act.is_eligible
                           ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 opacity-60'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600'
                       }`}
                     >
                       <div className="flex items-center justify-between font-semibold">
-                        <span className="text-slate-900 dark:text-white">
+                        <span className="text-slate-900 dark:text-white truncate max-w-[180px]">
                           Activity {act.activity_no} — {act.subject_name || act.subject_code || 'Subject'}
                         </span>
                         {isVerified ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
                             <CheckCircle2 className="h-3 w-3" />
                             <span>Verified</span>
                           </span>
                         ) : !act.is_eligible ? (
-                          <span className="text-[10px] text-slate-400">N/A</span>
+                          <span className="text-[10px] text-slate-400 shrink-0">N/A</span>
                         ) : isActive ? (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 shrink-0">
                             Active
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400">Upcoming</span>
+                          <span className="text-[10px] text-slate-400 shrink-0">Upcoming</span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                        {act.start_time?.slice(0, 5)} - {act.end_time?.slice(0, 5)} ({act.duration_minutes}m)
+                      <div className="flex items-center justify-between mt-1 text-[11px] text-slate-500 font-mono">
+                        <span>
+                          {act.start_time?.slice(0, 5)} - {act.end_time?.slice(0, 5)} ({act.duration_minutes}m)
+                        </span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                            Selected ✓
+                          </span>
+                        )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -207,11 +264,16 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
             {activeActivity && (
               <div className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3.5">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="font-bold text-xs text-slate-900 dark:text-white">
-                    Activity {activeActivity.activity_no} — {activeActivity.subject_name || activeActivity.subject_code || 'Subject'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 uppercase">
+                      Marking Attendance
+                    </span>
+                    <span className="font-bold text-xs text-slate-900 dark:text-white">
+                      Activity {activeActivity.activity_no}: {activeActivity.subject_name || activeActivity.subject_code || 'Subject'}
+                    </span>
+                  </div>
                   <span className="font-mono text-xs font-semibold text-slate-500">
-                    {activeActivity.start_time?.slice(0, 5)} - {activeActivity.end_time?.slice(0, 5)} ({activeActivity.duration_minutes}m)
+                    ⏰ {activeActivity.start_time?.slice(0, 5)} - {activeActivity.end_time?.slice(0, 5)} ({activeActivity.duration_minutes}m)
                   </span>
                 </div>
 
@@ -334,7 +396,11 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                       disabled={verifyMutation.isPending || !enteredKey.trim() || uploadingFile}
                       className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 mt-3"
                     >
-                      <span>{verifyMutation.isPending ? 'Verifying...' : 'Verify Attendance & Submit'}</span>
+                      <span>
+                        {verifyMutation.isPending
+                          ? 'Verifying...'
+                          : `Verify Attendance & Submit (Activity #${activeActivity.activity_no})`}
+                      </span>
                     </button>
                   </div>
                 )}

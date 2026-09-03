@@ -41,6 +41,16 @@ class ActivityService:
             student = student_res.scalar_one_or_none()
 
         # 3. Fetch active sessions for timetable automatic time-gated release
+        from app.models.session import HyperbuildActivity
+        from datetime import timezone, timedelta
+
+        # Indian Standard Time (UTC+05:30) for scheduled timetable comparison
+        ist = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(ist).replace(tzinfo=None)
+
+        release_schedule = {}
+
+        # 3a. Direct sessions mapped to this subject
         session_stmt = select(Session).where(
             Session.subject_id == subject_id,
             Session.is_deleted == False
@@ -50,9 +60,6 @@ class ActivityService:
             
         session_res = await db.execute(session_stmt)
         active_sessions = session_res.scalars().all()
-        
-        release_schedule = {}
-        now = datetime.now()
         
         for s in active_sessions:
             if s.hyperbuild_activity_no:
@@ -64,16 +71,49 @@ class ActivityService:
                 except Exception:
                     continue
 
+        # 3b. Multi-activity HyperBuild sessions where activities are in hyperbuild_activities table
+        ha_stmt = (
+            select(HyperbuildActivity, Session)
+            .join(Session, HyperbuildActivity.session_id == Session.id)
+            .where(
+                HyperbuildActivity.subject_id == subject_id,
+                HyperbuildActivity.is_deleted == False,
+                Session.is_deleted == False,
+            )
+        )
+        if student and student.batch_id:
+            ha_stmt = ha_stmt.where(Session.batch_id == student.batch_id)
+
+        ha_res = await db.execute(ha_stmt)
+        for ha, s in ha_res.all():
+            try:
+                act_num = int(ha.activity_no)
+                start_dt = datetime.combine(s.session_date, ha.start_time)
+                if act_num not in release_schedule or start_dt < release_schedule[act_num]:
+                    release_schedule[act_num] = start_dt
+            except Exception:
+                continue
+
         # 4. Mark activities as released if scheduled timetable time has arrived
+        needs_commit = False
+        utc_now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         for a in activities:
             if not a.is_released and a.activity_no in release_schedule:
-                if now >= release_schedule[a.activity_no]:
+                if now_ist >= release_schedule[a.activity_no]:
                     a.is_released = True
+                    a.released_at = utc_now_naive
+                    a.released_by = "Timetable Auto-Release"
+                    needs_commit = True
 
-        # 5. Students only see released activities (unreleased activities are filtered out)
-        if is_student:
-            return [a for a in activities if a.is_released]
-            
+        if needs_commit:
+            try:
+                await db.commit()
+                # Re-fetch activities cleanly after commit to prevent expired attribute access
+                res = await db.execute(stmt)
+                activities = list(res.scalars().all())
+            except Exception:
+                await db.rollback()
+
         return activities
 
     async def get_activity(self, db: AsyncSession, activity_id: UUID) -> Optional[SubjectActivity]:

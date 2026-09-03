@@ -220,8 +220,8 @@ async def get_hyperbuild_session_details(
     act_stmt = (
         select(HyperbuildActivity)
         .options(joinedload(HyperbuildActivity.subject))
-        .where(HyperbuildActivity.session_id == session_id)
-        .order_by(HyperbuildActivity.activity_no.asc())
+        .where(HyperbuildActivity.session_id == session_id, HyperbuildActivity.is_deleted == False)
+        .order_by(HyperbuildActivity.start_time.asc(), HyperbuildActivity.activity_no.asc())
     )
     act_res = await db.execute(act_stmt)
     activities = act_res.scalars().all()
@@ -234,6 +234,10 @@ async def get_hyperbuild_session_details(
 
     activity_responses = []
     active_activity_id = None
+
+    # Current time in IST for session schedule matching
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(ist).replace(tzinfo=None)
 
     for act in activities:
         is_elig = True
@@ -264,6 +268,13 @@ async def get_hyperbuild_session_details(
 
         is_open, open_until, _ = is_activity_submission_open(act, sess)
 
+        # Dynamic status: if pending and within scheduled window, mark active
+        act_status = act.status
+        start_dt = datetime.combine(sess.session_date, act.start_time)
+        end_dt = datetime.combine(sess.session_date, act.end_time)
+        if act.status == "pending" and start_dt <= now_ist < end_dt and not act.is_submission_locked:
+            act_status = "active"
+
         resp = HyperbuildActivityResponse(
             id=act.id,
             session_id=act.session_id,
@@ -276,7 +287,7 @@ async def get_hyperbuild_session_details(
             duration_minutes=act.duration_minutes,
             submission_type=act.submission_type,
             instructions=act.instructions,
-            status=act.status,
+            status=act_status,
             challenge_key=act.challenge_key,
             challenge_key_active_until=act.challenge_key_active_until,
             auto_lock_at_end_time=act.auto_lock_at_end_time,
@@ -299,11 +310,13 @@ async def get_hyperbuild_session_details(
         )
         activity_responses.append(resp)
 
-        if act.status == "active" and not active_activity_id:
+        if act_status == "active" and not active_activity_id:
             active_activity_id = act.id
 
     if not active_activity_id and activity_responses:
-        active_activity_id = activity_responses[0].id
+        # Fallback to first eligible unverified activity, or first activity in time order
+        unverified = [a for a in activity_responses if a.is_eligible and not a.is_verified_by_student]
+        active_activity_id = unverified[0].id if unverified else activity_responses[0].id
 
     return HyperbuildSessionDetailResponse(
         session_id=sess.id,
