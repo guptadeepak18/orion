@@ -199,7 +199,18 @@ Intended Learning Outcomes: {outcomes or 'Apply concepts analytically with evide
 - Pass (50-69%): Satisfactory. Meets basic expectations, but exhibits superficial depth, missing secondary deliverables, or noticeable AI drafting assistance.
 - Needs Work (<50%): Incomplete deliverable, major requirements omitted, raw AI chat transcripts/hallucinations, lack of genuine effort, or unverified claims."""
 
-        micro_schema = """"micro_compliance_audit": {
+        import re
+        step_matches = re.findall(r'(?:^|\n)\s*(?:(\d+)[\.\)]|\bStep\s*(\d+)[:\.\s])\s*([^\n\.\:]{5,50})', instructions)
+        if step_matches:
+            step_keys_schema = []
+            for m in step_matches[:10]:
+                step_num = m[0] or m[1]
+                clean_title = re.sub(r'[^a-zA-Z0-9]+', '_', m[2].strip()).strip('_').lower()[:35]
+                step_keys_schema.append(f'    "step_{step_num}_{clean_title}": "Passed / Deficient with specific evidence from student text"')
+            micro_schema_body = ",\n".join(step_keys_schema)
+            micro_schema = f""""micro_compliance_audit": {{\n{micro_schema_body}\n  }},"""
+        else:
+            micro_schema = """"micro_compliance_audit": {
     "deliverable_completeness": "Passed / Deficient with specific evidence from student text",
     "conceptual_technical_rigor": "Passed / Deficient with specific evidence from student text",
     "practical_execution_and_evidence": "Passed / Deficient with specific evidence from student text",
@@ -319,8 +330,8 @@ async def _evaluate_with_ollama(
     activity: Any,
     rubric: List[Dict[str, Any]],
     student_text: str,
-    base_url: str = "http://127.0.0.1:11434",
-    model: str = "gemma4:31b-cloud",
+    base_url: str = "https://ollama.com",
+    model: str = "gemma4:31b",
     api_key: Optional[str] = None,
     student_name: str = "Student",
 ) -> Dict[str, Any]:
@@ -329,8 +340,9 @@ async def _evaluate_with_ollama(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Use 1.5s connect timeout so cloud servers (like Render) fail fast if Ollama is only on localhost
-    timeout_cfg = httpx.Timeout(timeout=60.0, connect=1.5)
+    # Use 10s connect timeout for cloud endpoints (e.g. ollama.com), but fast 1.5s if pointing to localhost
+    conn_timeout = 1.5 if ("127.0.0.1" in base_url or "localhost" in base_url) else 10.0
+    timeout_cfg = httpx.Timeout(timeout=75.0, connect=conn_timeout)
     async with httpx.AsyncClient(timeout=timeout_cfg) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/chat",
