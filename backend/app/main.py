@@ -97,6 +97,8 @@ async def sanitize_empty_query_params(request: Request, call_next):
     return await call_next(request)
 
 
+from fastapi.encoders import jsonable_encoder
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     # Log the raw body so we can see exactly what was sent
@@ -108,7 +110,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     print(f"[VALIDATION ERROR] details: {exc.errors()}", flush=True)
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": jsonable_encoder(exc.errors())},
     )
 
 

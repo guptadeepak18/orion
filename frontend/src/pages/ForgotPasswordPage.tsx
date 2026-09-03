@@ -12,6 +12,8 @@ import {
   EyeOff,
   RotateCcw,
   ShieldCheck,
+  Check,
+  X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { CosmicBackground } from '../components/CosmicBackground';
@@ -136,18 +138,31 @@ export const ForgotPasswordPage: React.FC = () => {
     }
   };
 
+  // Password Policy Rules Evaluation (Identical to Orion Platform Registration)
+  const pwdRules = {
+    minLength: newPassword.length >= 8,
+    hasUpper: /[A-Z]/.test(newPassword),
+    hasLower: /[a-z]/.test(newPassword),
+    hasNumber: /[0-9]/.test(newPassword),
+    hasSpecial: /[^A-Za-z0-9]/.test(newPassword),
+    matches: Boolean(newPassword && confirmPassword && newPassword === confirmPassword),
+  };
+
+  const isPasswordValid =
+    pwdRules.minLength &&
+    pwdRules.hasUpper &&
+    pwdRules.hasLower &&
+    pwdRules.hasNumber &&
+    pwdRules.hasSpecial &&
+    pwdRules.matches;
+
   // Handle Step 3: Set New Password
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match. Please re-enter.');
+    if (!isPasswordValid) {
+      setError('Please satisfy all password complexity requirements and ensure passwords match.');
       return;
     }
 
@@ -348,7 +363,7 @@ export const ForgotPasswordPage: React.FC = () => {
                     autoFocus
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder="Create new password"
                     className="w-full bg-slate-50/90 dark:bg-slate-950/80 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                   />
                   <button
@@ -372,7 +387,7 @@ export const ForgotPasswordPage: React.FC = () => {
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
+                    placeholder="Repeat new password"
                     className="w-full bg-slate-50/90 dark:bg-slate-950/80 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                   />
                   <button
@@ -385,9 +400,115 @@ export const ForgotPasswordPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Visual Password Policy Checklist */}
+              <div className="p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 space-y-2">
+                <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                  Password Requirements
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+                  {/* 1. Min 8 chars */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.minLength
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.minLength ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>Min 8 characters</span>
+                  </div>
+
+                  {/* 2. One uppercase */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.hasUpper
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.hasUpper ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>One capital letter (A-Z)</span>
+                  </div>
+
+                  {/* 3. One lowercase */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.hasLower
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.hasLower ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>One small letter (a-z)</span>
+                  </div>
+
+                  {/* 4. One number */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.hasNumber
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.hasNumber ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>One numeric digit (0-9)</span>
+                  </div>
+
+                  {/* 5. One special char */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.hasSpecial
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.hasSpecial ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>One special character</span>
+                  </div>
+
+                  {/* 6. Passwords match */}
+                  <div
+                    className={`flex items-center gap-1.5 transition-colors ${
+                      pwdRules.matches
+                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : confirmPassword
+                        ? 'text-rose-500 dark:text-rose-400 font-semibold'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {pwdRules.matches ? (
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span>Passwords match</span>
+                  </div>
+                </div>
+              </div>
+
               <button
                 type="submit"
-                disabled={loading || !newPassword || !confirmPassword}
+                disabled={loading || !isPasswordValid}
                 className="w-full mt-2 py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
                 {loading ? 'Updating Password...' : 'Save New Password & Sign In'}

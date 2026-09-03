@@ -6,6 +6,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    validate_password_policy,
 )
 from app.schemas.auth import LoginRequest, TokenResponse, UserSummary
 from app.services.user_service import get_user_by_email, get_user_by_id
@@ -246,8 +247,7 @@ async def verify_password_reset_otp(db: AsyncSession, raw_email: str, code: str)
 
 async def reset_password_with_otp(db: AsyncSession, raw_email: str, code: str, new_password: str) -> bool:
     """Verifies OTP and updates the user's password."""
-    if len(new_password) < 6:
-        raise ValueError("Password must be at least 6 characters.")
+    validate_password_policy(new_password)
 
     clean_email = raw_email.strip().lower()
     clean_code = code.strip()
@@ -331,8 +331,7 @@ async def request_change_password_otp(db: AsyncSession, user_id_str: str) -> boo
 
 async def confirm_change_password(db: AsyncSession, user_id_str: str, code: str, new_password: str) -> bool:
     """Authenticated user confirms OTP and sets new password."""
-    if len(new_password) < 6:
-        raise ValueError("Password must be at least 6 characters.")
+    validate_password_policy(new_password)
 
     user = await get_user_by_id(db, user_id_str)
     if not user:

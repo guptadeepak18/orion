@@ -48,13 +48,28 @@ class ForgotPasswordVerifyRequest(BaseModel):
     code: str
 
 
+from pydantic import field_validator
+from app.core.security import validate_password_policy
+
+
 class ForgotPasswordResetRequest(BaseModel):
     email: EmailStr
     code: str
     new_password: str
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_policy(v)
+
 
 class ChangePasswordConfirmRequest(BaseModel):
     code: str
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_policy(v)
+
 
