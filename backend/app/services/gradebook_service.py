@@ -391,6 +391,13 @@ class GradebookService:
             hb_max_total = round(len(subj_acts) * 100.0, 1) if subj_acts else 100.0
             hb_average = round(sum(hb_scores) / len(hb_scores), 1) if hb_scores else None
 
+            released_acts = [a for a in subj_acts if getattr(a, "is_released", True)]
+            if not released_acts:
+                released_acts = subj_acts
+            total_rel = len(released_acts)
+            completed_cnt = len(hb_scores)
+            ratio_str = f"{completed_cnt} / {total_rel}"
+
             # 3. CCE calculations
             cce_subs = cce_subs_by_subject.get(subj.id, [])
             if recorded_grade and recorded_grade.cce_score is not None:
@@ -438,8 +445,11 @@ class GradebookService:
                 "hyperbuild_max_total": hb_max_total,
                 "hyperbuild_score": hb_average,
                 "hyperbuild_average": hb_average,
-                "hyperbuild_submissions_count": len(hb_scores),
-                "hyperbuild_total_activities": len(subj_acts),
+                "activities_completed": completed_cnt,
+                "total_released_activities": total_rel,
+                "completion_ratio": ratio_str,
+                "hyperbuild_submissions_count": completed_cnt,
+                "hyperbuild_total_activities": total_rel,
                 "term_end_score": term_end_obtained,
                 "term_end_max_marks": term_end_max,
                 "total_percentage": total_pct,
@@ -543,6 +553,15 @@ class GradebookService:
         grade_records_res = await db.execute(select(StudentSubjectGrade).where(StudentSubjectGrade.subject_id.in_(subj_ids)))
         grades_map = {(g.student_id, g.subject_id): g for g in grade_records_res.scalars().all()}
 
+        # Count released activities per subject
+        subj_released_counts: Dict[uuid.UUID, int] = {}
+        for act in activities:
+            if getattr(act, "is_released", True):
+                subj_released_counts[act.subject_id] = subj_released_counts.get(act.subject_id, 0) + 1
+        for s_id in subj_ids:
+            if subj_released_counts.get(s_id, 0) == 0:
+                subj_released_counts[s_id] = sum(1 for a in activities if a.subject_id == s_id)
+
         cohort_rows = []
         scores_for_stats = []
 
@@ -561,6 +580,10 @@ class GradebookService:
                 hb_total = round(sum(hb_scores), 1) if hb_scores else None
                 hb_avg = round(sum(hb_scores) / len(hb_scores), 1) if hb_scores else None
                 
+                total_rel = subj_released_counts.get(subj.id, 0)
+                completed_cnt = len(hb_scores)
+                ratio_str = f"{completed_cnt} / {total_rel}"
+
                 cce = grade_rec.cce_score if grade_rec else None
                 term_end = grade_rec.term_end_score if grade_rec else None
 
@@ -594,12 +617,15 @@ class GradebookService:
                     "hyperbuild_total_score": hb_total,
                     "hyperbuild_score": hb_avg,
                     "hyperbuild_average": hb_avg,
+                    "activities_completed": completed_cnt,
+                    "total_released_activities": total_rel,
+                    "completion_ratio": ratio_str,
                     "term_end_score": term_end,
                     "term_end_max_marks": term_end_max,
                     "total_percentage": tot,
                     "grade_letter": g_letter,
                     "performance_tier": g_tier,
-                    "submitted_activities_count": len(hb_scores),
+                    "submitted_activities_count": completed_cnt,
                 })
 
             st_avg = round(sum(st_overall_scores) / len(st_overall_scores), 1) if st_overall_scores else None
@@ -607,6 +633,8 @@ class GradebookService:
                 "student_id": str(st.id),
                 "prn": st.prn_number or "N/A",
                 "name": f"{st.first_name} {st.last_name}",
+                "email": st.email_official or st.email or st.email_personal or "—",
+                "program": st.program.name if st.program else "—",
                 "division": div_names,
                 "batch": st.batch.name if st.batch else "Cohort",
                 "overall_average": st_avg,
@@ -1277,6 +1305,152 @@ Generate a strategic pedagogical report. Return ONLY valid JSON with this exact 
             "failed_count": failed_count,
             "message": f"Processed {len(rows)} notifications ({sent_count} sent, {failed_count} pending/failed).",
         }
+
+
+async def send_automated_activity_grade_email(submission_id: uuid.UUID) -> bool:
+    """
+    Automated notification dispatched when faculty grades an activity submission on LMS.
+    Sends an engaging, sectioned result email with marks, rubric tier, feedback, and direct portal link.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.models.lms import ActivitySubmission
+    from app.models.activity import SubjectActivity
+
+    async with AsyncSessionLocal() as db:
+        sub = await db.get(ActivitySubmission, submission_id)
+        if not sub:
+            return False
+
+        activity = await db.get(SubjectActivity, sub.activity_id)
+        if not activity:
+            return False
+
+        subj = await db.get(Subject, activity.subject_id)
+        student = await db.get(Student, sub.student_id)
+        if not student:
+            return False
+
+        target_email = student.email_official or student.email or student.email_personal
+        if not target_email:
+            logger.info(f"Student {student.id} has no registered email. Skipping grade notification.")
+            return False
+
+        student_name = f"{student.first_name} {student.last_name or ''}".strip()
+        prn = student.prn_number or "N/A"
+        course_name = subj.name if subj else "Academic Course"
+        course_code = subj.code if subj else "LMS"
+        score_val = sub.score if sub.score is not None else 0.0
+        tier_val = sub.grade or "Graded"
+        feedback_val = sub.feedback or "Evaluation completed by faculty."
+        portal_url = f"https://crc-one.onrender.com/academic/subjects/{activity.subject_id}"
+
+        eval_data = sub.ai_evaluation or {}
+        strengths = eval_data.get("strengths", [])
+        gaps = eval_data.get("areas_for_improvement", [])
+        
+        strengths_html = "".join([f"<li style='margin-bottom: 4px;'>{s}</li>" for s in strengths[:3]]) if strengths else ""
+        gaps_html = "".join([f"<li style='margin-bottom: 4px;'>{g}</li>" for g in gaps[:3]]) if gaps else ""
+
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Activity Grade Notification</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 28px 12px; color: #1e293b;">
+  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);">
+    
+    <!-- Header -->
+    <div style="background: #0f172a; padding: 24px 28px; border-bottom: 3px solid #4f46e5;">
+      <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #818cf8; margin-bottom: 4px;">
+        Orion LMS • Official Evaluation Notification
+      </div>
+      <h1 style="margin: 0; font-size: 19px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
+        Activity Evaluation Completed
+      </h1>
+      <p style="margin: 4px 0 0; font-size: 12.5px; color: #94a3b8;">
+        {course_code} — {course_name}
+      </p>
+    </div>
+
+    <!-- Student Credentials Box -->
+    <div style="padding: 18px 28px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td>
+            <div style="font-size: 14.5px; font-weight: 800; color: #0f172a;">{student_name}</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+              PRN: <span style="font-family: monospace; font-weight: 700; color: #4f46e5;">{prn}</span>
+            </div>
+          </td>
+          <td style="text-align: right; vertical-align: middle;">
+            <span style="display: inline-block; padding: 4px 12px; background: #e0e7ff; color: #3730a3; border-radius: 9999px; font-size: 12px; font-weight: 700;">
+              Act {activity.activity_no}
+            </span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Main Body -->
+    <div style="padding: 24px 28px;">
+      <p style="font-size: 13.5px; line-height: 1.6; color: #334155; margin: 0 0 18px;">
+        Dear <strong>{student_name}</strong>,<br/><br/>
+        Your submission for <strong>Act {activity.activity_no}: {activity.title}</strong> has been evaluated and graded by faculty.
+      </p>
+
+      <!-- Grade Card Table -->
+      <div style="margin-bottom: 22px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; text-align: center;">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px;">
+          Marks Awarded
+        </div>
+        <div style="font-size: 38px; font-weight: 900; color: #4338ca; margin: 4px 0;">
+          {score_val} <span style="font-size: 18px; color: #94a3b8; font-weight: 700;">/ 100</span>
+        </div>
+        <span style="display: inline-block; padding: 4px 12px; border-radius: 9999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 700;">
+          Tier: {tier_val}
+        </span>
+      </div>
+
+      <!-- Evaluator Feedback Section -->
+      <div style="margin-bottom: 22px; padding: 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #475569; margin-bottom: 8px;">
+          Faculty & Evaluator Feedback
+        </div>
+        <p style="font-size: 13px; color: #334155; line-height: 1.6; margin: 0 0 10px; font-style: italic;">
+          "{feedback_val}"
+        </p>
+        {f'''<div style="margin-top: 10px;"><strong style="font-size: 11px; color: #166534; text-transform: uppercase;">Key Strengths:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{strengths_html}</ul></div>''' if strengths_html else ''}
+        {f'''<div style="margin-top: 10px;"><strong style="font-size: 11px; color: #991b1b; text-transform: uppercase;">Areas for Improvement:</strong><ul style="margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: #334155;">{gaps_html}</ul></div>''' if gaps_html else ''}
+      </div>
+
+      <!-- CTA Button -->
+      <div style="text-align: center; padding: 20px 0 12px; border-top: 1px solid #e2e8f0;">
+        <a href="{portal_url}" style="display: inline-block; background: #4f46e5; color: #ffffff; font-weight: 700; font-size: 13.5px; padding: 12px 28px; text-decoration: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);">
+          View Activity Scorecard in Orion &rarr;
+        </a>
+        <p style="margin: 10px 0 0; font-size: 11px; color: #64748b;">
+          Log in to inspect criterion-by-criterion rubric scoring and step-by-step audit reports.
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f8fafc; padding: 18px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+      Office of the Academic Registrar • Orion LMS Evaluation Engine<br/>
+      Automated grade notification issued upon evaluation completion.
+    </div>
+
+  </div>
+</body>
+</html>"""
+
+        subject_line = f"Grade Published: Act {activity.activity_no} ({course_code}) — {score_val}/100 Marks"
+        return send_custom_html_email(
+            to_email=target_email,
+            subject=subject_line,
+            html_content=html_body,
+        )
 
 
 gradebook_service = GradebookService()

@@ -680,6 +680,15 @@ class LMSService:
         sub.graded_at = datetime.utcnow()
         await db.commit()
         await db.refresh(sub)
+
+        # Automated grade notification to student upon faculty evaluation
+        try:
+            import asyncio
+            from app.services.gradebook_service import send_automated_activity_grade_email
+            asyncio.create_task(send_automated_activity_grade_email(sub.id))
+        except Exception as e:
+            logger.warning(f"Could not queue automated student grade notification email: {e}")
+
         return sub
 
     # --- Subject Attendance Calculation ---
