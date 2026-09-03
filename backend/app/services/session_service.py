@@ -278,6 +278,26 @@ async def format_single_session_response(db: AsyncSession, session_id: UUID) -> 
         r.program_name = s.program.name
     if s.batch:
         r.batch_name = s.batch.name
+    if s.session_type == "hyperbuild" and getattr(s, "hyperbuild_activities", None):
+        r.hyperbuild_activities = [
+            {
+                "id": str(act.id),
+                "activity_no": act.activity_no,
+                "title": act.title,
+                "start_time": act.start_time.strftime("%H:%M") if hasattr(act.start_time, "strftime") else str(act.start_time)[:5],
+                "end_time": act.end_time.strftime("%H:%M") if hasattr(act.end_time, "strftime") else str(act.end_time)[:5],
+                "subject_id": str(act.subject_id) if act.subject_id else None,
+                "subject_name": act.subject.name if act.subject else None,
+                "subject_code": act.subject.code if act.subject else None,
+                "duration_minutes": act.duration_minutes,
+                "submission_type": act.submission_type,
+                "status": act.status,
+            }
+            for act in s.hyperbuild_activities
+            if not getattr(act, "is_deleted", False)
+        ]
+    else:
+        r.hyperbuild_activities = []
     return r
 
 
