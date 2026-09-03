@@ -10,17 +10,25 @@ import {
   Layers,
   FileCheck,
   AlertCircle,
+  Check,
+  AlertTriangle,
+  Bot,
+  FileText,
+  ExternalLink,
+  User,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
 interface StudentGradebookViewProps {
-  studentId?: string; // If provided, fetches this student's gradebook (for faculty preview)
+  studentId?: string | null; // If provided, fetches this student's gradebook (for faculty preview)
   onBackToCohort?: () => void;
+  onSelectStudentId?: (studentId: string) => void;
 }
 
 export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
   studentId,
   onBackToCohort,
+  onSelectStudentId,
 }) => {
   const [viewMode, setViewMode] = useState<'combined' | 'subject'>('combined');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
@@ -35,6 +43,18 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
       return res.data;
     },
   });
+
+  // Query all students for preview selector
+  const { data: studentsResponse } = useQuery({
+    queryKey: ['students-list-preview'],
+    queryFn: async () => {
+      const res = await api.get('/students');
+      return res.data?.data || res.data || [];
+    },
+    enabled: Boolean(onBackToCohort || onSelectStudentId),
+  });
+
+  const allStudents = Array.isArray(studentsResponse) ? studentsResponse : [];
 
   if (isLoading) {
     return (
@@ -79,83 +99,109 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Back Button (if previewed by faculty) */}
-      {onBackToCohort && (
-        <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-          <button
-            onClick={onBackToCohort}
-            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 cursor-pointer"
-          >
-            ← Back to Cohort Gradebook
-          </button>
-          <span className="text-[11px] px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-800">
-            Previewing Student Transcript
-          </span>
+      {/* Faculty Preview Bar with Student Selector */}
+      {(onBackToCohort || onSelectStudentId) && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-3 flex-wrap">
+            {onBackToCohort && (
+              <button
+                onClick={onBackToCohort}
+                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 cursor-pointer"
+              >
+                ← Back to Cohort Gradebook
+              </button>
+            )}
+            <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-800">
+              Preview Mode
+            </span>
+          </div>
+
+          {/* Student Selector Dropdown */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0 flex items-center gap-1">
+              <User className="w-3.5 h-3.5 text-indigo-600" /> Select Student:
+            </label>
+            <select
+              value={studentId || student?.id || ''}
+              onChange={(e) => {
+                if (onSelectStudentId) {
+                  onSelectStudentId(e.target.value);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white max-w-xs sm:max-w-sm truncate"
+            >
+              {allStudents.map((st: any) => (
+                <option key={st.id} value={st.id}>
+                  {st.full_name || `${st.first_name} ${st.last_name || ''}`} — PRN: {st.prn_number || st.roll_no || 'N/A'}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
-      {/* Student Profile Header & Overall KPIs */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 text-white p-6 sm:p-8 shadow-xl">
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      {/* Clean Student Profile Header & Overall KPIs */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-black tracking-wide border border-indigo-500/30">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold font-mono border border-indigo-200 dark:border-indigo-800">
                 PRN: {student.prn || 'N/A'}
               </span>
               {student.divisions?.map((div: string) => (
-                <span key={div} className="px-2.5 py-1 rounded-full bg-white/10 text-slate-200 text-xs font-semibold">
+                <span key={div} className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium">
                   Div: {div}
                 </span>
               ))}
-              <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-medium border border-emerald-200 dark:border-emerald-800">
                 {student.batch}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{student.name}</h1>
-            <p className="text-xs sm:text-sm text-slate-300 font-medium">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{student.name}</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
               {student.program} • Trimester Academic Transcript & Continuous Evaluation
             </p>
           </div>
 
-          {/* Quick Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-            <div className="text-center p-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">CGPA (10 pt)</p>
-              <p className="text-2xl font-black text-indigo-400 mt-0.5">
+          {/* Clean Quick Metrics Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">CGPA (10 pt)</span>
+              <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-0.5 block">
                 {kpis.cgpa !== null ? kpis.cgpa : '—'}
-              </p>
+              </span>
             </div>
-            <div className="text-center p-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Overall Score</p>
-              <p className="text-2xl font-black text-emerald-400 mt-0.5">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Overall Score</span>
+              <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block">
                 {kpis.overall_percentage !== null ? `${kpis.overall_percentage}%` : '—'}
-              </p>
+              </span>
             </div>
-            <div className="text-center p-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Credits Earned</p>
-              <p className="text-2xl font-black text-white mt-0.5">{kpis.total_credits}</p>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Credits</span>
+              <span className="text-xl font-black text-slate-900 dark:text-white mt-0.5 block">{kpis.total_credits}</span>
             </div>
-            <div className="text-center p-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Enrolled Courses</p>
-              <p className="text-2xl font-black text-purple-400 mt-0.5">{kpis.subjects_enrolled}</p>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">Courses</span>
+              <span className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5 block">{kpis.subjects_enrolled}</span>
             </div>
           </div>
         </div>
 
         {/* Tier Distribution Badges */}
-        <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center gap-3">
-          <span className="text-xs text-slate-400 font-semibold">Performance Distribution:</span>
-          <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-200 border border-purple-500/30 text-xs font-bold">
-            🌟 Distinction: {kpis.tier_counts?.Distinction || 0}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-400 font-semibold mr-1">Distribution:</span>
+          <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800/40">
+            Distinction: {kpis.tier_counts?.Distinction || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-200 border border-indigo-500/30 text-xs font-bold">
-            ✨ Merit: {kpis.tier_counts?.Merit || 0}
+          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/40">
+            Merit: {kpis.tier_counts?.Merit || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 text-xs font-bold">
-            ✅ Pass: {kpis.tier_counts?.Pass || 0}
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800/40">
+            Pass: {kpis.tier_counts?.Pass || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-500/30 text-xs font-bold">
-            ⚠️ Needs Work: {kpis.tier_counts?.['Needs Work'] || 0}
+          <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 font-bold border border-rose-200 dark:border-rose-800/40">
+            Needs Work: {kpis.tier_counts?.['Needs Work'] || 0}
           </span>
         </div>
       </div>
@@ -515,49 +561,277 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
                           </div>
                         </div>
 
-                        {/* Expanded Micro-Audit Protocol Checklist */}
+                        {/* Expanded Full HyperBuild Feedback & Evaluation Scorecard */}
                         {isExpanded && (
-                          <div className="p-4 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] uppercase font-black tracking-wider text-slate-700 dark:text-slate-300">
-                                📋 Activity Protocol Micro-Audit Checklist
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-semibold">
-                                Granular Step-by-Step Verification
-                              </span>
+                          <div className="p-5 bg-slate-50/80 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                            {/* Scorecard Header Bar */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+                              <div className="flex items-center gap-2">
+                                <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                  <Sparkles className="w-4 h-4" />
+                                </span>
+                                <div>
+                                  <h5 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                                    AI Rubric Evaluation Scorecard & Academic Audit
+                                  </h5>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Evaluator Model: {act.ai_evaluation?.model_used || 'HyperBuild Assessment Engine'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-slate-900 dark:text-white">
+                                  Score: {act.score !== null ? `${act.score} / 100` : 'Pending'}
+                                </span>
+                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getTierColor(act.performance_tier)}`}>
+                                  {act.performance_tier || 'Pending'}
+                                </span>
+                              </div>
                             </div>
 
-                            {act.micro_compliance_audit ? (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                {Object.entries(act.micro_compliance_audit).map(([key, val]: [string, any]) => {
-                                  const isPassed = String(val).toLowerCase().startsWith('passed');
-                                  const formattedKey = key.replace(/_/g, ' ').replace(/^step\s*(\d+)/i, 'Step $1:');
-                                  return (
-                                    <div
-                                      key={key}
-                                      className={`p-2.5 rounded-xl border flex items-start gap-2 ${
-                                        isPassed
-                                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200'
-                                          : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
-                                      }`}
-                                    >
-                                      <span className="text-xs shrink-0 mt-0.5">{isPassed ? '✅' : '❌'}</span>
-                                      <div className="min-w-0">
-                                        <strong className="capitalize block text-[10.5px] font-bold text-slate-700 dark:text-slate-300">
-                                          {formattedKey}
-                                        </strong>
-                                        <span className="line-clamp-2 text-[11px]">{String(val)}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                            {/* AI Assistance & Academic Integrity Banner */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* AI Support Percentage */}
+                              <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start gap-3 shadow-xs">
+                                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                  <Bot className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <span className="text-[10.5px] uppercase font-bold text-slate-400 block">
+                                    AI Assistance Diagnostic
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                    {act.ai_evaluation?.ai_support_percentage ?? act.ai_support_percentage ?? 20}% AI Support
+                                    <span className="ml-1 text-[11px] font-normal text-slate-500">
+                                      ({act.ai_evaluation?.ai_support_level || 'Bounded Support'})
+                                    </span>
+                                  </span>
+                                  {act.ai_evaluation?.ai_audit_findings?.[0] && (
+                                    <p className="text-[10.5px] text-slate-500 mt-0.5 line-clamp-1">
+                                      {act.ai_evaluation.ai_audit_findings[0]}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            ) : (
-                              <p className="text-xs text-slate-400 italic">
-                                {hasGraded
-                                  ? 'No micro-audit checklist recorded for this activity.'
-                                  : 'Submit this activity to trigger the AI assessment engine and micro-audit.'}
-                              </p>
+
+                              {/* Academic Integrity / Collusion Check */}
+                              <div
+                                className={`p-3.5 rounded-2xl border flex items-start gap-3 shadow-xs ${
+                                  act.ai_evaluation?.plagiarism_flag
+                                    ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                                  <FileCheck className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <span className="text-[10.5px] uppercase font-bold text-slate-400 block">
+                                    Academic Integrity Audit
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                    {act.ai_evaluation?.plagiarism_flag
+                                      ? 'Peer Collusion / Template Detected'
+                                      : 'Original Submission Verified'}
+                                  </span>
+                                  {act.ai_evaluation?.collusion_details?.[0] ? (
+                                    <p className="text-[10.5px] text-rose-600 dark:text-rose-300 mt-0.5 line-clamp-1">
+                                      {act.ai_evaluation.collusion_details[0]}
+                                    </p>
+                                  ) : (
+                                    <p className="text-[10.5px] text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                      No unauthorized code or peer duplication detected
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Micro-Compliance Protocol Checklist (Steps 1 to 8) */}
+                            {(act.ai_evaluation?.micro_compliance_audit || act.micro_compliance_audit) && (
+                              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    📋 Activity Protocol Micro-Audit Checklist
+                                  </span>
+                                  <span className="text-[10.5px] text-slate-400 font-semibold">
+                                    Granular Requirements Compliance
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                  {Object.entries(act.ai_evaluation?.micro_compliance_audit || act.micro_compliance_audit).map(
+                                    ([stepKey, val]: [string, any]) => {
+                                      const isPassed = String(val).toLowerCase().startsWith('passed');
+                                      const formattedKey = stepKey.replace(/_/g, ' ').replace(/^step\s*(\d+)/i, 'Step $1:');
+                                      return (
+                                        <div
+                                          key={stepKey}
+                                          className={`p-2.5 rounded-xl border flex items-start gap-2 ${
+                                            isPassed
+                                              ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-900/30 text-emerald-900 dark:text-emerald-200'
+                                              : 'bg-rose-50/40 dark:bg-rose-950/10 border-rose-200/60 dark:border-rose-900/30 text-rose-900 dark:text-rose-200'
+                                          }`}
+                                        >
+                                          <span className="text-xs shrink-0 mt-0.5">{isPassed ? '✅' : '❌'}</span>
+                                          <div className="min-w-0">
+                                            <strong className="capitalize block text-[10.5px] font-bold text-slate-700 dark:text-slate-300">
+                                              {formattedKey}
+                                            </strong>
+                                            <span className="line-clamp-2 text-[11px] leading-snug">{String(val)}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Executive Summary */}
+                            {act.ai_evaluation?.executive_summary && (
+                              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950/80 text-xs sm:text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                <span className="font-bold text-indigo-900 dark:text-indigo-300 block mb-1">
+                                  Executive Summary:
+                                </span>
+                                {act.ai_evaluation.executive_summary}
+                              </div>
+                            )}
+
+                            {/* Strengths & Areas for Improvement (2 Columns) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {act.ai_evaluation?.strengths && act.ai_evaluation.strengths.length > 0 && (
+                                <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/40 space-y-2">
+                                  <h6 className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                                    <Check className="h-3.5 w-3.5" /> Key Strengths
+                                  </h6>
+                                  <ul className="space-y-1.5 text-xs text-emerald-950 dark:text-emerald-200 font-medium">
+                                    {act.ai_evaluation.strengths.map((s: string, i: number) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <span className="text-emerald-500 font-bold">•</span>
+                                        <span>{s}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {act.ai_evaluation?.areas_for_improvement && act.ai_evaluation.areas_for_improvement.length > 0 && (
+                                <div className="p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/80 dark:border-rose-900/40 space-y-2">
+                                  <h6 className="text-xs font-black uppercase tracking-wider text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                                    <AlertTriangle className="h-3.5 w-3.5" /> Areas for Improvement
+                                  </h6>
+                                  <ul className="space-y-1.5 text-xs text-rose-950 dark:text-rose-200 font-medium">
+                                    {act.ai_evaluation.areas_for_improvement.map((s: string, i: number) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <span className="text-rose-500 font-bold">•</span>
+                                        <span>{s}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Criterion-by-Criterion Rubric Scorecard Table */}
+                            {act.ai_evaluation?.criteria_breakdown && act.ai_evaluation.criteria_breakdown.length > 0 && (
+                              <div className="space-y-2">
+                                <h6 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                  Criterion-by-Criterion Rubric Scorecard
+                                </h6>
+                                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                                  <table className="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                      <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-[11px] font-black uppercase text-slate-500">
+                                        <th className="py-2.5 px-4">Criterion</th>
+                                        <th className="py-2.5 px-4 text-center">Score</th>
+                                        <th className="py-2.5 px-4">Tier</th>
+                                        <th className="py-2.5 px-4">Evaluator Rationale</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                      {act.ai_evaluation.criteria_breakdown.map((cb: any, i: number) => (
+                                        <tr key={i} className="align-top">
+                                          <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                                            {cb.criterion}
+                                          </td>
+                                          <td className="py-3 px-4 font-black text-center text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                                            {cb.marks_awarded} / {cb.max_marks}
+                                          </td>
+                                          <td className="py-3 px-4 font-semibold text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold">
+                                              {cb.tier}
+                                            </span>
+                                          </td>
+                                          <td className="py-3 px-4 text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                                            <p>{cb.rationale}</p>
+                                            {cb.evidence && (
+                                              <p className="text-[11px] text-slate-500 italic mt-1 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg">
+                                                <strong className="text-slate-700 dark:text-slate-300 not-italic font-bold">Evidence: </strong>
+                                                {cb.evidence}
+                                              </p>
+                                            )}
+                                            {cb.gap_identified && (
+                                              <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-1 bg-rose-50/60 dark:bg-rose-950/30 p-2 rounded-lg font-medium">
+                                                <strong>Deficiency / Gap: </strong>
+                                                {cb.gap_identified}
+                                              </p>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* In-depth Critical Masterclass Appraisal */}
+                            {(act.ai_evaluation?.critical_feedback || act.feedback) && (
+                              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                                <h6 className="text-xs font-black uppercase tracking-wider text-indigo-900 dark:text-indigo-300">
+                                  Comprehensive Critical Masterclass Appraisal
+                                </h6>
+                                <p className="text-xs sm:text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium whitespace-pre-line">
+                                  {act.ai_evaluation?.critical_feedback || act.feedback}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Submitted Student Deliverables & Files */}
+                            {(act.submission_text || (act.files && act.files.length > 0)) && (
+                              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
+                                  Submitted Deliverables & Solution Artifacts
+                                </span>
+
+                                {act.files && act.files.length > 0 && (
+                                  <div className="flex flex-wrap gap-2">
+                                    {act.files.map((f: any, idx: number) => (
+                                      <a
+                                        key={idx}
+                                        href={f.file_url || '#'}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
+                                      >
+                                        <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>{f.file_name || `File ${idx + 1}`}</span>
+                                        <ExternalLink className="w-3 h-3 text-slate-400" />
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {act.submission_text && (
+                                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                                    <span className="font-bold block text-slate-900 dark:text-white mb-1">
+                                      Student Notes / Methodology:
+                                    </span>
+                                    <p className="whitespace-pre-line leading-relaxed">{act.submission_text}</p>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}

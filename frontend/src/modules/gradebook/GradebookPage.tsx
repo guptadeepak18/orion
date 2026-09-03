@@ -7,6 +7,7 @@ import { Award, User, Users } from 'lucide-react';
 export const GradebookPage: React.FC = () => {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'admin' | 'student_preview'>('admin');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   const isStudent = user?.roles?.includes('student') && !user?.roles?.some(r => ['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external'].includes(r));
 
@@ -16,49 +17,57 @@ export const GradebookPage: React.FC = () => {
 
   // Admin / Faculty View with Preview Toggle
   return (
-    <div className="space-y-6">
-      {/* Top Banner with Toggle for Faculty/Admin */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-4 rounded-2xl border border-indigo-900/50 shadow-md text-white">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-            <Award className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-black tracking-tight">Academic Gradebook Management System</h2>
-            <p className="text-[11px] text-slate-300">
-              Institutional Grading • Continuous Comprehensive Evaluation (CCE) • AI HyperBuild Labs • Term End Marks
-            </p>
-          </div>
+    <div className="space-y-6 animate-fadeIn pb-14">
+      {/* Clean, Non-Fancy Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+            <Award className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            Academic Gradebook
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Continuous Comprehensive Evaluation (CCE), HyperBuild Practical Labs & Term End Examination
+          </p>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-black/30 p-1 rounded-xl border border-white/10 shrink-0">
+        {/* Clean Segmented Control Tabs */}
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl inline-flex items-center space-x-1 border border-slate-200 dark:border-slate-700 self-start sm:self-auto">
           <button
             onClick={() => setActiveTab('admin')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'admin'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Users className="w-3.5 h-3.5" /> Cohort Analytics & Marks
+            <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Cohort Analytics & Marks
           </button>
           <button
             onClick={() => setActiveTab('student_preview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'student_preview'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <User className="w-3.5 h-3.5" /> Preview Student View
+            <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Preview Student View
           </button>
         </div>
       </div>
 
       {activeTab === 'admin' ? (
-        <AdminGradebookDashboard />
+        <AdminGradebookDashboard
+          onViewStudentTranscript={(stId) => {
+            setSelectedStudentId(stId);
+            setActiveTab('student_preview');
+          }}
+        />
       ) : (
-        <StudentGradebookView onBackToCohort={() => setActiveTab('admin')} />
+        <StudentGradebookView
+          studentId={selectedStudentId}
+          onSelectStudentId={(id) => setSelectedStudentId(id)}
+          onBackToCohort={() => setActiveTab('admin')}
+        />
       )}
     </div>
   );
