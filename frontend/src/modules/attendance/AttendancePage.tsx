@@ -1997,7 +1997,9 @@ export const AttendancePage: React.FC = () => {
                           </td>
                           <td className="p-3.5 text-slate-700 dark:text-slate-300 font-medium">{st.batch_name}</td>
                           <td className="p-3.5 text-center font-black text-rose-600 text-sm">
-                            {st.attendance_percentage}%
+                            {st.total_sessions > 0
+                              ? `${Math.round((st.attended_sessions / st.total_sessions) * 1000) / 10}%`
+                              : `${st.attendance_percentage}%`}
                           </td>
                           <td className="p-3.5 text-center font-semibold text-slate-600 dark:text-slate-400">
                             {st.attended_sessions} / {st.total_sessions}
@@ -2008,8 +2010,8 @@ export const AttendancePage: React.FC = () => {
                             </span>
                           </td>
                           <td className="p-3.5 text-right">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 uppercase">
-                              Low Attendance (&lt;75%)
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 uppercase">
+                              Low Attendance (&lt;{debarmentThreshold}%)
                             </span>
                           </td>
                         </tr>

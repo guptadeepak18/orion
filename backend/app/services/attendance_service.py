@@ -1112,13 +1112,11 @@ async def get_debarment_risk_students(
         )
         .where(
             Student.is_deleted == False,
-            Student.attendance_percentage < threshold_pct,
         )
     )
     if batch_id:
         query = query.where(Student.batch_id == batch_id)
 
-    query = query.order_by(Student.attendance_percentage.asc(), Student.full_name.asc())
     res = await db.execute(query)
     students = res.scalars().all()
 
@@ -1127,29 +1125,54 @@ async def get_debarment_risk_students(
     att_counts_map: Dict[UUID, Dict[str, int]] = {st.id: {"total": 0, "attended": 0} for st in students}
 
     if student_ids:
-        att_stmt = select(
-            StudentAttendance.student_id,
-            StudentAttendance.status,
-        ).where(StudentAttendance.student_id.in_(student_ids))
+        att_stmt = (
+            select(
+                StudentAttendance.student_id,
+                StudentAttendance.status,
+            )
+            .join(Session, StudentAttendance.session_id == Session.id)
+            .where(
+                StudentAttendance.student_id.in_(student_ids),
+                Session.is_deleted == False,
+                Session.status != "cancelled",
+            )
+        )
         att_res = await db.execute(att_stmt)
         for s_id, status in att_res.all():
             if s_id in att_counts_map:
                 att_counts_map[s_id]["total"] += 1
-                if status in ["present", "late"]:
+                if status in PRESENT_STATUSES:
                     att_counts_map[s_id]["attended"] += 1
 
     for st in students:
         counts = att_counts_map.get(st.id, {"total": 0, "attended": 0})
         total_conducted = counts["total"]
         attended = counts["attended"]
-        
-        # Calculate classes needed to reach 75%
-        # (attended + x) / (total + x) >= 0.75 => x >= (0.75*total - attended) / 0.25
-        needed = 0
+
+        # Calculate dynamic attendance percentage
         if total_conducted > 0:
-            target = 0.75 * total_conducted
-            if attended < target:
-                needed = int((target - attended) / 0.25) + 1
+            calc_pct = round((attended / total_conducted * 100.0), 1)
+        elif st.attendance_percentage is not None and st.attendance_percentage > 0:
+            calc_pct = round(st.attendance_percentage, 1)
+        else:
+            calc_pct = 100.0
+
+        # Synchronize stored attendance_percentage if sessions exist
+        if total_conducted > 0 and st.attendance_percentage != calc_pct:
+            st.attendance_percentage = calc_pct
+
+        # Debarment risk: only students who actually have conducted sessions and whose attendance is below threshold
+        if total_conducted == 0 or calc_pct >= threshold_pct:
+            continue
+
+        # Calculate classes needed to reach threshold
+        # (attended + x) / (total + x) >= (threshold / 100)
+        needed = 0
+        target = (threshold_pct / 100.0) * total_conducted
+        if attended < target:
+            shortfall_rate = 1.0 - (threshold_pct / 100.0)
+            if shortfall_rate > 0:
+                needed = int((target - attended) / shortfall_rate) + 1
 
         output.append(
             DebarredStudentItemResponse(
@@ -1159,13 +1182,14 @@ async def get_debarment_risk_students(
                 roll_no=st.roll_no,
                 program_name=st.program.name if st.program else "PGDM",
                 batch_name=st.batch.name if st.batch else "Batch 2026",
-                attendance_percentage=round(st.attendance_percentage or 0.0, 1),
+                attendance_percentage=calc_pct,
                 total_sessions=total_conducted,
                 attended_sessions=attended,
                 shortfall_sessions=max(0, needed),
             )
         )
 
+    output.sort(key=lambda x: (x.attendance_percentage, x.student_name))
     return output
 
 
