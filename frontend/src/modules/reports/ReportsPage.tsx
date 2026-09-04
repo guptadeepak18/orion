@@ -128,7 +128,7 @@ export const ReportsPage: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 overflow-x-auto">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 overflow-x-auto no-scrollbar scroll-smooth">
         {canSeeRemuneration && (
           <button
             onClick={() => setReportType('remuneration')}

@@ -634,12 +634,12 @@ export const SubjectLMSHub: React.FC = () => {
     { id: 'overview', label: 'Overview', icon: Layers, count: null },
     { id: 'syllabus', label: 'Syllabus', icon: BookOpen, count: null },
     { id: 'session_plan', label: 'Session Plan', icon: Calendar, count: null },
-    { id: 'activities', label: 'HyperBuild AI Labs', icon: Sparkles, count: isStudent ? (activities?.length ? `${activities.length}` : '0') : activities?.length },
-    { id: 'resources', label: 'Files & Resources', icon: FileText, count: resources?.length },
+    { id: 'activities', label: 'AI Labs', icon: Sparkles, count: isStudent ? (activities?.length ? `${activities.length}` : '0') : activities?.length },
+    { id: 'resources', label: 'Resources', icon: FileText, count: resources?.length },
     { id: 'recordings', label: 'Recordings', icon: Video, count: recordings?.length },
     { id: 'assessments', label: 'Assessments', icon: CheckSquare, count: assessments?.length },
     { id: 'attendance', label: 'Attendance', icon: CalendarCheck, count: attendance ? `${attendance.attendance_percentage}%` : null },
-    { id: 'gradebook', label: 'Subject Gradebook', icon: Award, count: null },
+    { id: 'gradebook', label: 'Gradebook', icon: Award, count: null },
   ];
 
   return (
@@ -729,7 +729,7 @@ export const SubjectLMSHub: React.FC = () => {
       </div>
 
       {/* Persistent Course Navigation Bar */}
-      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-x-auto no-scrollbar scroll-smooth">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -737,13 +737,13 @@ export const SubjectLMSHub: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => navigateToTab(tab.id as TabId)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/25'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{tab.label}</span>
               {tab.count !== null && (
                 <span

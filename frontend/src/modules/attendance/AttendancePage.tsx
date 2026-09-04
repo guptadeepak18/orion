@@ -665,36 +665,46 @@ export const AttendancePage: React.FC = () => {
       </div>
 
       {/* ── WORKSPACE TABS NAVIGATION ──────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto no-scrollbar scroll-smooth">
         {(isStudent
           ? [
-              { id: 'students', label: 'My Attendance Record', icon: UserCheck },
-              { id: 'approvals', label: 'My Dispute Requests', icon: FileCheck2 },
-              { id: 'compliance', label: 'My Compliance & Standing', icon: ShieldCheck },
+              { id: 'students', label: 'My Attendance', icon: UserCheck },
+              { id: 'approvals', label: 'My Disputes', icon: FileCheck2 },
+              { id: 'compliance', label: 'Compliance Status', icon: ShieldCheck },
             ]
           : [
-              { id: 'sessions', label: 'Take Class Attendance', icon: CheckCircle2 },
-              { id: 'register', label: 'Class Attendance Register', icon: FileSpreadsheet },
-              { id: 'matrix', label: 'Subject Cumulative Matrix', icon: Layers },
-              { id: 'students', label: 'Student Attendance Records', icon: Users },
-              { id: 'approvals', label: 'Dispute Requests & Approvals', icon: FileCheck2 },
-              { id: 'compliance', label: 'Low Attendance Watchlist (< 75%)', icon: AlertTriangle },
+              { id: 'sessions', label: 'Take Attendance', icon: CheckCircle2 },
+              { id: 'register', label: 'Class Register', icon: FileSpreadsheet },
+              { id: 'matrix', label: 'Subject Matrix', icon: Layers },
+              { id: 'students', label: 'Student Records', icon: Users },
+              { id: 'approvals', label: 'Dispute Approvals', icon: FileCheck2 },
+              { id: 'compliance', label: 'Debarment Watchlist', icon: AlertTriangle, badge: '< 75%' },
             ]
         ).map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;
+          const badge = 'badge' in t ? (t as any).badge : undefined;
           return (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer shrink-0 ${
                 isActive
                   ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-900/50'
               }`}
             >
-              <Icon className={`h-4 w-4 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+              <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
               <span>{t.label}</span>
+              {badge && (
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+                  isActive
+                    ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {badge}
+                </span>
+              )}
             </button>
           );
         })}

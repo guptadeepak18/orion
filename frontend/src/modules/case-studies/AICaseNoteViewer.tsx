@@ -470,7 +470,7 @@ export const AICaseNoteViewer: React.FC<AICaseNoteViewerProps> = ({
           </div>
 
           {/* Section Quick Nav Filter */}
-          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto">
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto no-scrollbar scroll-smooth">
             {[
               { id: 'all', label: 'Complete Teaching Note' },
               { id: 'overview', label: '1. Overview & Protagonists' },

@@ -368,7 +368,7 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
       {viewMode === 'subject' && currentSubject && (
         <div className="space-y-6">
           {/* Subject Tab Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar scroll-smooth">
             {subjects.map((sub: any) => {
               const isSelected = sub.subject_id === currentSubject.subject_id;
               return (
