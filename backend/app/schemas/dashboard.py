@@ -7,6 +7,20 @@ class DashboardSummaryResponse(BaseModel):
     faculty_count: int
     scheduled_sessions_count: int
     pending_approvals_count: int
+    today_sessions_count: int = 0
+    pending_registrations_count: int = 0
+    upcoming_events_count: int = 0
+
+
+class FacultyDashboardSummaryResponse(BaseModel):
+    faculty_id: Optional[str] = None
+    faculty_name: str = "Faculty"
+    faculty_type: str = "internal"
+    today_sessions_count: int = 0
+    upcoming_sessions_count: int = 0
+    active_hyperbuild_count: int = 0
+    assigned_subjects_count: int = 0
+    upcoming_events_count: int = 0
 
 
 class ThoughtOfTheDayResponse(BaseModel):
@@ -29,5 +43,6 @@ class StudentDashboardSummaryResponse(BaseModel):
     attendance_standing: str = "Good Standing"
     enrolled_subjects_count: int = 0
     upcoming_sessions_count: int = 0
+    today_sessions_count: int = 0
     case_studies_count: int = 0
     cgpa: Optional[float] = None
