@@ -337,7 +337,7 @@ async def get_hyperbuild_session_details(
 async def trigger_activity_challenge_key(
     db: AsyncSession,
     activity_id: uuid.UUID,
-    validity_seconds: int = 60,
+    validity_seconds: int = 180,
     faculty_user: Optional[User] = None,
 ) -> HyperbuildChallengeKeyTriggerResponse:
     stmt = (
@@ -365,7 +365,7 @@ async def trigger_activity_challenge_key(
         faculty_id=faculty_user.id if faculty_user else None,
         faculty_name=faculty_user.full_name if faculty_user else "Faculty",
         action="key_triggered",
-        reason=f"Generated live 60s transition challenge key: '{key}'",
+        reason=f"Generated live {validity_seconds}s transition challenge key: '{key}'",
         window_open_until=active_until,
     )
     db.add(audit_log)
@@ -703,17 +703,19 @@ async def verify_student_activity_presence(
         raise ValueError("The verification key entered does not match the active classroom code. Please check the screen or ask your faculty for the current key.")
     
     if activity.challenge_key_active_until and now_utc > activity.challenge_key_active_until:
-        if now_utc > (activity.challenge_key_active_until + timedelta(seconds=15)):
+        if now_utc > (activity.challenge_key_active_until + timedelta(seconds=20)):
             raise ValueError("The verification key has expired. Please ask your faculty to refresh the classroom key.")
 
-    # 6. Geolocation Validation
+    # 6. Geolocation Validation (Bypassed: Location tracking disabled as faculty conducts manual roll call)
     dist_meters = None
     is_geo_ok = True
     if req.latitude is not None and req.longitude is not None:
-        dist_meters = haversine_distance(req.latitude, req.longitude, CAMPUS_LAT, CAMPUS_LNG)
-        if dist_meters > MAX_CAMPUS_RADIUS_METERS:
-            is_geo_ok = False
-            raise ValueError("Campus presence could not be confirmed at your current location. Please ensure location services are enabled on your laptop, or contact your faculty in class.")
+        try:
+            dist_meters = haversine_distance(req.latitude, req.longitude, CAMPUS_LAT, CAMPUS_LNG)
+        except Exception:
+            dist_meters = None
+        # Note: Geofence enforcement temporarily disabled per faculty roll call mapping workflow
+        is_geo_ok = True
 
     # 7. Save or Update Verification Record
     v_stmt = select(HyperbuildActivityVerification).where(

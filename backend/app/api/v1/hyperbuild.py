@@ -77,11 +77,11 @@ async def get_session_activities_endpoint(
     "/activities/{activity_id}/trigger-key",
     response_model=HyperbuildChallengeKeyTriggerResponse,
     dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]))],
-    summary="Generate a 60-second live Challenge Key for classroom display",
+    summary="Generate a 180-second live Challenge Key for classroom display",
 )
 async def trigger_challenge_key_endpoint(
     activity_id: uuid.UUID,
-    validity_seconds: int = Query(60, ge=15, le=300),
+    validity_seconds: int = Query(180, ge=15, le=600),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

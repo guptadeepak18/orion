@@ -152,14 +152,14 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
     },
   });
 
-  // 9. Trigger 60s Challenge Key Mutation
+  // 9. Trigger 180s Challenge Key Mutation
   const triggerKeyMutation = useMutation({
     mutationFn: async (activityId: string) => {
-      const res = await api.post(`/hyperbuild/activities/${activityId}/trigger-key?validity_seconds=60`);
+      const res = await api.post(`/hyperbuild/activities/${activityId}/trigger-key?validity_seconds=180`);
       return res.data;
     },
     onSuccess: () => {
-      setKeyRemainingSeconds(60);
+      setKeyRemainingSeconds(180);
       refetchDetails();
       refetchRoster();
       refetchAudit();
@@ -250,6 +250,18 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
       queryClient.invalidateQueries({ queryKey: ['hyperbuild-details'] });
     },
   });
+
+  // Synchronize key countdown timer with active_until
+  useEffect(() => {
+    if (currentActivity?.challenge_key_active_until) {
+      const activeUntil = new Date(currentActivity.challenge_key_active_until).getTime();
+      const now = Date.now();
+      const diffSecs = Math.max(0, Math.floor((activeUntil - now) / 1000));
+      setKeyRemainingSeconds(diffSecs);
+    } else if (!currentActivity?.challenge_key) {
+      setKeyRemainingSeconds(0);
+    }
+  }, [currentActivity?.challenge_key, currentActivity?.challenge_key_active_until]);
 
   // Countdown timer for Challenge Key
   useEffect(() => {
@@ -432,9 +444,9 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                       <div>
                         <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
                           <KeyRound className="h-4 w-4 text-amber-500" />
-                          <span>Screen Transition Key</span>
+                          <span>Screen Transition Key (180s)</span>
                         </div>
-                        <p className="text-[11px] text-slate-500">Students enter this key to verify presence & submit.</p>
+                        <p className="text-[11px] text-slate-500">Students enter this key within 180s to verify presence & submit.</p>
                       </div>
 
                       <div className="flex items-center space-x-3">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, CheckCircle2, AlertCircle,
@@ -18,7 +18,6 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
   const [submissionText, setSubmissionText] = useState('');
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ file_name: string; file_url: string; file_size?: number } | null>(null);
-  const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [verifError, setVerifError] = useState<string | null>(null);
   const [verifSuccess, setVerifSuccess] = useState<string | null>(null);
 
@@ -34,23 +33,6 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
     },
     staleTime: 10000,
   });
-
-  // Silent background geolocation (no UI prompts or errors)
-  useEffect(() => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setGeoCoords({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            acc: pos.coords.accuracy,
-          });
-        },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000 }
-      );
-    }
-  }, []);
 
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
 
@@ -132,9 +114,9 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
       setVerifSuccess(null);
       const payload = {
         challenge_key: enteredKey,
-        latitude: geoCoords?.lat || null,
-        longitude: geoCoords?.lng || null,
-        accuracy_meters: geoCoords?.acc || null,
+        latitude: null,
+        longitude: null,
+        accuracy_meters: null,
         submission_url: uploadedFile?.file_url || (submissionUrl.trim() ? submissionUrl.trim() : null),
         submission_text: submissionText.trim() ? submissionText.trim() : null,
       };
