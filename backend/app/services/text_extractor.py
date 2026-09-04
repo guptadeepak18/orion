@@ -94,21 +94,83 @@ def _extract_pptx_from_bytes(data: bytes) -> str:
 
 def _extract_spreadsheet_from_bytes(data: bytes, ext: str) -> str:
     if ext == ".csv":
+        # Try multiple encodings for CSV
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                return data.decode(encoding)
+            except (UnicodeDecodeError, ValueError):
+                continue
         return data.decode("utf-8", errors="ignore")
 
+    if ext == ".xls":
+        return _extract_xls_from_bytes(data)
+
+    # .xlsx — use openpyxl
+    return _extract_xlsx_from_bytes(data)
+
+
+def _extract_xlsx_from_bytes(data: bytes) -> str:
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     sheets_text = []
     for sheet_name in wb.sheetnames:
         sheet = wb[sheet_name]
         rows_text = []
+        row_count = 0
         for row in sheet.iter_rows(values_only=True):
+            row_count += 1
+            if row_count > 5000:
+                rows_text.append(f"... (truncated after {row_count} rows)")
+                break
             cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
             if cells:
                 rows_text.append(" | ".join(cells))
         if rows_text:
             sheets_text.append(f"=== Sheet: {sheet_name} ===\n" + "\n".join(rows_text))
-    return "\n\n".join(sheets_text)
+    wb.close()
+    return "\n\n".join(sheets_text) if sheets_text else "[Excel file contained no readable cell data]"
+
+
+def _extract_xls_from_bytes(data: bytes) -> str:
+    try:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=data)
+        sheets_text = []
+        for sheet_name in wb.sheet_names():
+            sheet = wb.sheet_by_name(sheet_name)
+            rows_text = []
+            max_rows = min(sheet.nrows, 5000)
+            for rx in range(max_rows):
+                cells = []
+                for cx in range(sheet.ncols):
+                    cell = sheet.cell(rx, cx)
+                    val = cell.value
+                    if val is None or (isinstance(val, str) and not val.strip()):
+                        continue
+                    # Format dates properly
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            dt_tuple = xlrd.xldate_as_tuple(val, wb.datemode)
+                            val = f"{dt_tuple[0]:04d}-{dt_tuple[1]:02d}-{dt_tuple[2]:02d}"
+                        except Exception:
+                            val = str(val)
+                    elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                        # Display integers without decimals
+                        val = int(val) if val == int(val) else val
+                    cells.append(str(val).strip())
+                if cells:
+                    rows_text.append(" | ".join(cells))
+            if sheet.nrows > 5000:
+                rows_text.append(f"... (truncated after 5000 of {sheet.nrows} rows)")
+            if rows_text:
+                sheets_text.append(f"=== Sheet: {sheet_name} ===\n" + "\n".join(rows_text))
+        return "\n\n".join(sheets_text) if sheets_text else "[XLS file contained no readable cell data]"
+    except ImportError:
+        logger.warning("[TextExtractor] xlrd not installed; cannot read .xls files. Install with: pip install xlrd")
+        return "[Error: .xls file format requires xlrd library which is not installed]"
+    except Exception as e:
+        logger.error(f"[TextExtractor] Failed to read .xls file: {e}")
+        return f"[Error reading .xls file: {str(e)}]"
 
 
 def _extract_text_from_bytes(data: bytes) -> str:
