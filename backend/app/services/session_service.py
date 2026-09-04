@@ -5,7 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_
 from sqlalchemy.orm import selectinload, joinedload
 
-from app.models.session import Session, Timetable, TimetableRevision, StudentAttendance, HyperbuildActivity
+from app.models.session import (
+    Session,
+    Timetable,
+    TimetableRevision,
+    StudentAttendance,
+    HyperbuildActivity,
+    HyperbuildActivityVerification,
+)
 from app.models.academic import Subject, Topic, Batch
 from app.models.student import Student
 from app.models.faculty import FacultyInternal, FacultyExternal
@@ -977,10 +984,13 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
     Recalculates and updates attendance_percentage for all students in a given batch
     based on all marked class session attendances, strictly reconciling Core vs. Elective eligibility.
     """
-    # Find all marked sessions for this batch with their subjects preloaded
+    # Find all marked sessions for this batch with their subjects and activities preloaded
     marked_sessions_stmt = (
         select(Session)
-        .options(selectinload(Session.subject))
+        .options(
+            selectinload(Session.subject),
+            selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
+        )
         .where(
             Session.batch_id == batch_id,
             Session.is_deleted == False,
@@ -1007,25 +1017,52 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
             if att.student_id in att_by_student:
                 att_by_student[att.student_id][att.session_id] = att.status
 
+    # Preload all HyperBuild activity verifications for these marked sessions
+    verifs_by_student_act: Dict[Tuple[UUID, UUID], str] = {}
+    if marked_session_ids:
+        v_stmt = select(
+            HyperbuildActivityVerification.student_id,
+            HyperbuildActivityVerification.activity_id,
+            HyperbuildActivityVerification.verification_status,
+        ).where(HyperbuildActivityVerification.session_id.in_(marked_session_ids))
+        v_res = await db.execute(v_stmt)
+        for st_id, act_id, v_st in v_res.all():
+            verifs_by_student_act[(st_id, act_id)] = v_st
+
     for student in students:
-        # Determine all marked sessions for which THIS student was eligible
-        eligible_sessions = [
-            s for s in all_marked_sessions
-            if is_student_eligible_for_subject(s.subject, student)
-        ]
-        total_eligible = len(eligible_sessions)
+        total_eligible = 0
+        attended_count = 0
+        student_records = att_by_student.get(student.id, {})
+
+        for s in all_marked_sessions:
+            if s.hyperbuild_activities and len(s.hyperbuild_activities) > 0:
+                for act in s.hyperbuild_activities:
+                    # Only conducted activities
+                    is_conducted = (act.status in ["active", "closed"]) or (act.challenge_key is not None) or ((student.id, act.id) in verifs_by_student_act)
+                    if not is_conducted:
+                        continue
+                    if not act.subject or not is_student_eligible_for_subject(act.subject, student):
+                        continue
+
+                    total_eligible += 1
+                    v_st = verifs_by_student_act.get((student.id, act.id))
+                    if v_st and v_st in ["verified_present", "late_submission", "present"]:
+                        attended_count += 1
+                    elif not v_st:
+                        parent_st = student_records.get(s.id)
+                        if parent_st and parent_st in PRESENT_STATUSES:
+                            attended_count += 1
+            else:
+                if not is_student_eligible_for_subject(s.subject, student):
+                    continue
+                total_eligible += 1
+                st_status = student_records.get(s.id)
+                if st_status and st_status in PRESENT_STATUSES:
+                    attended_count += 1
 
         if total_eligible == 0:
             student.attendance_percentage = 100.0
             continue
-
-        # Count attended sessions among eligible sessions
-        attended_count = 0
-        student_records = att_by_student.get(student.id, {})
-        for s in eligible_sessions:
-            st_status = student_records.get(s.id)
-            if st_status and st_status in PRESENT_STATUSES:
-                attended_count += 1
 
         pct = round((attended_count / total_eligible) * 100.0, 2)
         student.attendance_percentage = pct

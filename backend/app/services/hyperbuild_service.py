@@ -35,6 +35,8 @@ from app.schemas.hyperbuild import (
     HyperbuildWindowActionResponse,
     HyperbuildActivityAuditLogItem,
     HyperbuildAuditLogListResponse,
+    HyperbuildManualAttendanceUpdateRequest,
+    HyperbuildBulkAttendanceUpdateRequest,
 )
 from app.services.websocket_service import broadcast_session_event
 
@@ -886,3 +888,223 @@ async def get_activity_live_roster(
         total_verified_present=total_verified,
         roster=roster_items,
     )
+
+
+async def update_activity_student_attendance(
+    db: AsyncSession,
+    activity_id: uuid.UUID,
+    current_user: User,
+    req: HyperbuildManualAttendanceUpdateRequest,
+) -> HyperbuildLiveRosterResponse:
+    """
+    Manually update attendance status for an individual student in a specific HyperBuild activity.
+    Credits attendance for that activity's assigned academic subject.
+    """
+    act_stmt = (
+        select(HyperbuildActivity)
+        .options(
+            joinedload(HyperbuildActivity.subject),
+            joinedload(HyperbuildActivity.session),
+        )
+        .where(HyperbuildActivity.id == activity_id)
+    )
+    act_res = await db.execute(act_stmt)
+    activity = act_res.scalar_one_or_none()
+    if not activity:
+        raise ValueError("Activity not found")
+
+    st_stmt = select(Student).where(Student.id == req.student_id)
+    st_res = await db.execute(st_stmt)
+    student = st_res.scalar_one_or_none()
+    if not student:
+        raise ValueError("Student not found")
+
+    now_utc = datetime.now(timezone.utc)
+    clean_status = req.status.strip().lower()
+    is_present = clean_status in ["present", "late", "excused", "verified_present"]
+
+    v_stmt = select(HyperbuildActivityVerification).where(
+        HyperbuildActivityVerification.activity_id == activity.id,
+        HyperbuildActivityVerification.student_id == student.id,
+    )
+    v_res = await db.execute(v_stmt)
+    v_rec = v_res.scalar_one_or_none()
+
+    if not v_rec:
+        v_rec = HyperbuildActivityVerification(
+            activity_id=activity.id,
+            session_id=activity.session_id,
+            student_id=student.id,
+            subject_id=activity.subject_id,
+            challenge_key_entered="MANUAL_FACULTY",
+            is_key_valid=is_present,
+            is_geofence_valid=True,
+            verification_status="verified_present" if is_present else "unverified_absent",
+            verified_at=now_utc if is_present else None,
+        )
+        db.add(v_rec)
+    else:
+        v_rec.is_key_valid = is_present
+        v_rec.verification_status = "verified_present" if is_present else "unverified_absent"
+        v_rec.verified_at = now_utc if is_present else None
+        if not v_rec.challenge_key_entered:
+            v_rec.challenge_key_entered = "MANUAL_FACULTY"
+
+    # Synchronize parent session StudentAttendance
+    sess_id = activity.session_id
+    att_stmt = select(StudentAttendance).where(
+        StudentAttendance.session_id == sess_id,
+        StudentAttendance.student_id == student.id,
+    )
+    att_res = await db.execute(att_stmt)
+    att_rec = att_res.scalar_one_or_none()
+
+    if is_present:
+        if not att_rec:
+            att_rec = StudentAttendance(
+                session_id=sess_id,
+                student_id=student.id,
+                status="present",
+                remarks=req.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
+            )
+            db.add(att_rec)
+        else:
+            att_rec.status = "present"
+            if req.remarks:
+                att_rec.remarks = req.remarks
+    else:
+        # Check if student is verified in any other activity for this session
+        other_v_stmt = select(HyperbuildActivityVerification).where(
+            HyperbuildActivityVerification.session_id == sess_id,
+            HyperbuildActivityVerification.student_id == student.id,
+            HyperbuildActivityVerification.activity_id != activity.id,
+            HyperbuildActivityVerification.verification_status.in_(["verified_present", "late_submission", "present"]),
+        )
+        other_v_res = await db.execute(other_v_stmt)
+        has_other_present = len(other_v_res.scalars().all()) > 0
+        if not has_other_present and att_rec:
+            att_rec.status = "absent"
+
+    await db.commit()
+
+    # Recalculate batch attendance %
+    if activity.session and activity.session.batch_id:
+        from app.services.session_service import recalculate_batch_student_attendance
+        await recalculate_batch_student_attendance(db, activity.session.batch_id)
+
+    # Broadcast event
+    await broadcast_session_event(
+        activity.session_id,
+        "roster_updated",
+        {
+            "activity_id": str(activity.id),
+            "student_id": str(student.id),
+            "status": v_rec.verification_status,
+            "updated_by": current_user.email,
+        },
+    )
+
+    return await get_activity_live_roster(db, activity_id)
+
+
+async def bulk_update_activity_attendance(
+    db: AsyncSession,
+    activity_id: uuid.UUID,
+    current_user: User,
+    req: HyperbuildBulkAttendanceUpdateRequest,
+) -> HyperbuildLiveRosterResponse:
+    """
+    Bulk update attendance status for multiple students in a specific HyperBuild activity.
+    """
+    act_stmt = (
+        select(HyperbuildActivity)
+        .options(
+            joinedload(HyperbuildActivity.subject),
+            joinedload(HyperbuildActivity.session),
+        )
+        .where(HyperbuildActivity.id == activity_id)
+    )
+    act_res = await db.execute(act_stmt)
+    activity = act_res.scalar_one_or_none()
+    if not activity:
+        raise ValueError("Activity not found")
+
+    now_utc = datetime.now(timezone.utc)
+    sess_id = activity.session_id
+
+    # Preload existing verifications
+    student_ids = [u.student_id for u in req.updates]
+    v_stmt = select(HyperbuildActivityVerification).where(
+        HyperbuildActivityVerification.activity_id == activity.id,
+        HyperbuildActivityVerification.student_id.in_(student_ids),
+    )
+    v_res = await db.execute(v_stmt)
+    existing_verifs = {v.student_id: v for v in v_res.scalars().all()}
+
+    # Preload existing session attendance
+    att_stmt = select(StudentAttendance).where(
+        StudentAttendance.session_id == sess_id,
+        StudentAttendance.student_id.in_(student_ids),
+    )
+    att_res = await db.execute(att_stmt)
+    existing_atts = {a.student_id: a for a in att_res.scalars().all()}
+
+    for item in req.updates:
+        clean_status = item.status.strip().lower()
+        is_present = clean_status in ["present", "late", "excused", "verified_present"]
+        v_rec = existing_verifs.get(item.student_id)
+
+        if not v_rec:
+            v_rec = HyperbuildActivityVerification(
+                activity_id=activity.id,
+                session_id=sess_id,
+                student_id=item.student_id,
+                subject_id=activity.subject_id,
+                challenge_key_entered="MANUAL_FACULTY",
+                is_key_valid=is_present,
+                is_geofence_valid=True,
+                verification_status="verified_present" if is_present else "unverified_absent",
+                verified_at=now_utc if is_present else None,
+            )
+            db.add(v_rec)
+        else:
+            v_rec.is_key_valid = is_present
+            v_rec.verification_status = "verified_present" if is_present else "unverified_absent"
+            v_rec.verified_at = now_utc if is_present else None
+            if not v_rec.challenge_key_entered:
+                v_rec.challenge_key_entered = "MANUAL_FACULTY"
+
+        att_rec = existing_atts.get(item.student_id)
+        if is_present:
+            if not att_rec:
+                att_rec = StudentAttendance(
+                    session_id=sess_id,
+                    student_id=item.student_id,
+                    status="present",
+                    remarks=item.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
+                )
+                db.add(att_rec)
+                existing_atts[item.student_id] = att_rec
+            else:
+                att_rec.status = "present"
+        else:
+            if att_rec:
+                att_rec.status = "absent"
+
+    await db.commit()
+
+    if activity.session and activity.session.batch_id:
+        from app.services.session_service import recalculate_batch_student_attendance
+        await recalculate_batch_student_attendance(db, activity.session.batch_id)
+
+    await broadcast_session_event(
+        activity.session_id,
+        "roster_updated",
+        {
+            "activity_id": str(activity.id),
+            "bulk_count": len(req.updates),
+            "updated_by": current_user.email,
+        },
+    )
+
+    return await get_activity_live_roster(db, activity_id)

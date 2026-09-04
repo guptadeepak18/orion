@@ -92,6 +92,7 @@ async def _get_subject_lms_data(db: AsyncSession, subject: Subject, current_user
 
     activities_out = []
     for act in activities_raw:
+        is_unreleased_for_student = is_student and not act.is_released
         act_dict = {
             "id": act.id,
             "activity_no": act.activity_no,
@@ -100,19 +101,20 @@ async def _get_subject_lms_data(db: AsyncSession, subject: Subject, current_user
             "estimated_time": act.estimated_time,
             "mode": act.mode,
             "file_naming": act.file_naming,
-            "why_this_activity": act.why_this_activity,
-            "instructions": act.instructions,
-            "ai_tools": act.ai_tools,
-            "learning_outcomes": act.learning_outcomes,
-            "submission_requirements": act.submission_requirements,
-            "rubric": act.rubric,
+            "why_this_activity": None if is_unreleased_for_student else act.why_this_activity,
+            "instructions": None if is_unreleased_for_student else act.instructions,
+            "ai_tools": None if is_unreleased_for_student else act.ai_tools,
+            "learning_outcomes": None if is_unreleased_for_student else act.learning_outcomes,
+            "submission_requirements": None if is_unreleased_for_student else act.submission_requirements,
+            "rubric": None if is_unreleased_for_student else act.rubric,
             "is_released": act.is_released,
+            "scheduled_release_at": getattr(act, "scheduled_release_at", None),
             "is_locked": getattr(act, "is_locked", False),
             "locked_at": getattr(act, "locked_at", None),
             "locked_by": getattr(act, "locked_by", None),
             "lock_reason": getattr(act, "lock_reason", None),
-            "case_study_id": act.case_study_id,
-            "case_studies": act.case_studies or [],
+            "case_study_id": None if is_unreleased_for_student else act.case_study_id,
+            "case_studies": [] if is_unreleased_for_student else (act.case_studies or []),
             "my_submission": None,
         }
         if student:

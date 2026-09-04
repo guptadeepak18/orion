@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../lib/store';
 import { api } from '../lib/api';
 import { Card } from '../components/Card';
@@ -27,7 +27,11 @@ import {
   ShieldCheck,
   AlertTriangle,
   Award,
+  MapPin,
+  Eye,
 } from 'lucide-react';
+import { AcademicEventDetailModal } from '../modules/sessions/AcademicEventDetailModal';
+import { AcademicEventItem, EVENT_CATEGORIES } from '../modules/sessions/AcademicEventModal';
 
 interface SessionItem {
   id: string;
@@ -39,6 +43,9 @@ interface SessionItem {
   venue: string;
   mode: string;
   status: string;
+  subject_name?: string;
+  subject_code?: string;
+  faculty_name?: string;
 }
 
 interface PendingApproval {
@@ -90,12 +97,15 @@ interface StudentDashboardSummary {
 }
 
 export const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user, updateUser } = useAuthStore();
 
   const isStudent = Boolean(user?.roles?.includes('student') && !user?.roles?.includes('crc_admin'));
 
   // Real-time live clock state
   const [currentTime, setCurrentTime] = React.useState(new Date());
+  const [scheduleTab, setScheduleTab] = React.useState<'all' | 'classes' | 'events'>('all');
+  const [selectedEventForDetail, setSelectedEventForDetail] = React.useState<AcademicEventItem | null>(null);
 
   React.useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -172,6 +182,18 @@ export const DashboardPage: React.FC = () => {
     },
   });
 
+  const { data: academicEvents = [] } = useQuery<AcademicEventItem[]>({
+    queryKey: ['dashboard_academic_events'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/academic-events');
+        return (res.data.data || []) as AcademicEventItem[];
+      } catch {
+        return [] as AcademicEventItem[];
+      }
+    },
+  });
+
   const { data: pendingApprovals } = useQuery({
     queryKey: ['dashboard_pending_approvals'],
     queryFn: async () => {
@@ -243,7 +265,87 @@ export const DashboardPage: React.FC = () => {
     hour12: true,
   });
 
-  const upcomingSessions = (sessions || []).slice(0, 4);
+  const canManageEvents = !isStudent && Boolean(
+    user?.roles?.some((r: string) => ['super_admin', 'admin', 'crc_admin', 'crc_coordinator', 'director', 'faculty_internal'].includes(r))
+  );
+
+  const getCategoryLabel = (category: string) => {
+    const c = EVENT_CATEGORIES.find((cat) => cat.value === category);
+    return c?.label || (category || 'other').replace(/_/g, ' ');
+  };
+
+  const getCategoryBadgeClass = (category: string) => {
+    switch (category) {
+      case 'celebration':
+        return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20';
+      case 'guest_lecture':
+        return 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20';
+      case 'workshop':
+        return 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20';
+      case 'exam_midterm':
+      case 'exam_endterm':
+        return 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20';
+      case 'placement_drive':
+        return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20';
+      case 'conclave':
+        return 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20';
+      default:
+        return 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20';
+    }
+  };
+
+  const todayIso = currentTime.toISOString().split('T')[0];
+
+  const upcomingClassesList = (sessions || [])
+    .filter((s) => s.status !== 'cancelled' && (!s.session_date || s.session_date >= todayIso))
+    .sort((a, b) => a.session_date.localeCompare(b.session_date) || (a.start_time || '').localeCompare(b.start_time || ''));
+
+  const upcomingEventsList = (academicEvents || [])
+    .filter((ev) => ev.status !== 'cancelled' && (!ev.start_date || (ev.end_date || ev.start_date) >= todayIso))
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || (a.start_time || '').localeCompare(b.start_time || ''));
+
+  type FeedItem =
+    | { kind: 'session'; id: string; date: string; time: string; session: SessionItem }
+    | { kind: 'event'; id: string; date: string; time: string; event: AcademicEventItem };
+
+  const allUpcomingFeed: FeedItem[] = [
+    ...upcomingClassesList.map((s) => ({
+      kind: 'session' as const,
+      id: `session-${s.id}`,
+      date: s.session_date,
+      time: s.start_time || '00:00',
+      session: s,
+    })),
+    ...upcomingEventsList.map((ev) => ({
+      kind: 'event' as const,
+      id: `event-${ev.id}`,
+      date: ev.start_date,
+      time: ev.start_time || '00:00',
+      event: ev,
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
+  const displayedFeed: FeedItem[] = (
+    scheduleTab === 'classes'
+      ? upcomingClassesList.map((s) => ({
+          kind: 'session' as const,
+          id: `session-${s.id}`,
+          date: s.session_date,
+          time: s.start_time || '00:00',
+          session: s,
+        }))
+      : scheduleTab === 'events'
+      ? upcomingEventsList.map((ev) => ({
+          kind: 'event' as const,
+          id: `event-${ev.id}`,
+          date: ev.start_date,
+          time: ev.start_time || '00:00',
+          event: ev,
+        }))
+      : allUpcomingFeed
+  ).slice(0, 6);
+
+  const upcomingSessions = upcomingClassesList.slice(0, 4);
   const activeSyllabus = (syllabusList || []).slice(0, 3);
   const topVenues = (venueList || []).slice(0, 3);
 
@@ -499,66 +601,261 @@ export const DashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Upcoming Classes & Quick Actions */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Upcoming Academic Classes */}
+          {/* Upcoming Academic Classes & Events */}
           <Card
-            title={isStudent ? "My Upcoming Classes" : "Upcoming Academic Sessions"}
-            subtitle={isStudent ? "Real-time class schedule, faculty & classroom details" : "Real-time schedule & venue allocation"}
+            title={isStudent ? "My Upcoming Classes & Events" : "Upcoming Sessions & Academic Events"}
+            subtitle={isStudent ? "Real-time class schedule, campus events & celebrations" : "Master academic timetable & scheduled institute events"}
             action={
-              <Link
-                to="/sessions?view=calendar"
-                className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center space-x-1"
-              >
-                <span>View Full Schedule & Calendar</span>
-                <ArrowRight className="h-3 w-3" />
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/sessions?view=calendar"
+                  className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center space-x-1"
+                >
+                  <span className="hidden sm:inline">Calendar View</span>
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
             }
           >
-            {upcomingSessions.length === 0 ? (
+            {/* Filter Pills & Shortcuts */}
+            <div className="flex items-center justify-between gap-2 mb-3.5 pb-3 border-b border-slate-100 dark:border-slate-800/80 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setScheduleTab('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    scheduleTab === 'all'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  All ({allUpcomingFeed.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleTab('classes')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    scheduleTab === 'classes'
+                      ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400'
+                  }`}
+                >
+                  Classes ({upcomingClassesList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleTab('events')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    scheduleTab === 'events'
+                      ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400'
+                  }`}
+                >
+                  Events ({upcomingEventsList.length})
+                </button>
+              </div>
+
+              <Link
+                to="/sessions"
+                className="text-xs font-semibold text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1"
+              >
+                <span>View Full Schedule</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+
+            {displayedFeed.length === 0 ? (
               <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm">
                 <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>{isStudent ? "No upcoming lectures scheduled today. Check back later or view the calendar." : "No upcoming sessions scheduled yet."}</p>
+                <p>
+                  {scheduleTab === 'classes'
+                    ? (isStudent ? "No upcoming lectures scheduled. Check back later or view the calendar." : "No upcoming class sessions scheduled yet.")
+                    : scheduleTab === 'events'
+                    ? "No upcoming academic events or milestones scheduled."
+                    : (isStudent ? "No upcoming classes or events scheduled today. Check back later." : "No upcoming sessions or events scheduled yet.")}
+                </p>
                 {!isStudent && (
-                  <Link
-                    to="/sessions"
-                    className="mt-3 inline-flex items-center space-x-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-                  >
-                    <CalendarPlus className="h-3.5 w-3.5" />
-                    <span>Import or schedule a session</span>
-                  </Link>
+                  <div className="mt-3 flex items-center justify-center gap-3 text-xs">
+                    <Link
+                      to="/sessions"
+                      className="inline-flex items-center space-x-1 font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                    >
+                      <CalendarPlus className="h-3.5 w-3.5" />
+                      <span>Schedule a session</span>
+                    </Link>
+                  </div>
                 )}
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {upcomingSessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 px-2 rounded-xl transition-colors"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          {s.venue || 'Classroom / Auditorium'}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 capitalize font-medium">
-                          {s.mode || 'offline'}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 capitalize font-medium">
-                          {s.faculty_type || 'Faculty'}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
-                        <Clock className="h-3.5 w-3.5 text-slate-400" />
-                        <span>{s.session_date}</span>
-                        <span>•</span>
-                        <span className="font-mono">{s.start_time} - {s.end_time}</span>
-                      </div>
-                    </div>
+                {displayedFeed.map((item) => {
+                  if (item.kind === 'session') {
+                    const s = item.session;
+                    return (
+                      <div
+                        key={item.id}
+                        className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 px-3 rounded-2xl transition-colors border border-transparent hover:border-slate-200/80 dark:hover:border-slate-800/80"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="h-11 w-11 rounded-xl bg-cyan-500/10 dark:bg-cyan-400/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <BookOpen className="h-5 w-5" />
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 font-bold border border-cyan-200/60 dark:border-cyan-800/40">
+                                Class
+                              </span>
+                              <span className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                                {s.subject_name || s.venue || 'Classroom Session'}
+                              </span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 capitalize font-medium">
+                                {s.mode || 'offline'}
+                              </span>
+                              {s.faculty_type && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-50/80 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 capitalize font-medium">
+                                  {s.faculty_name || s.faculty_type}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{s.session_date}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                <span className="font-mono">{s.start_time} - {s.end_time}</span>
+                              </div>
+                              {s.venue && (
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                  <span className="truncate">{s.venue}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
 
-                    <div className="flex items-center space-x-3 shrink-0">
-                      <StatusBadge status={s.status} />
+                        <div className="flex items-center gap-2 sm:self-center shrink-0">
+                          <StatusBadge status={s.status} />
+                          <Link
+                            to="/sessions"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 transition-colors"
+                            title="View Timetable"
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const ev = item.event;
+                  const catLabel = getCategoryLabel(ev.event_category);
+                  const isMultiDay = ev.end_date && ev.end_date !== ev.start_date;
+                  const posterFullUrl = ev.poster_url
+                    ? ev.poster_url.startsWith('http')
+                      ? ev.poster_url
+                      : `${api.defaults.baseURL || ''}${ev.poster_url}`
+                    : null;
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedEventForDetail(ev)}
+                      className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-purple-50/40 dark:hover:bg-purple-950/20 px-3 rounded-2xl transition-all border border-transparent hover:border-purple-200/80 dark:hover:border-purple-800/60 cursor-pointer group"
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        {/* Event Thumbnail or Creative Icon */}
+                        {posterFullUrl ? (
+                          <div className="relative h-12 w-12 rounded-xl overflow-hidden shrink-0 border border-purple-200/80 dark:border-purple-800/80 shadow-2xs group-hover:scale-105 transition-transform bg-purple-950/20">
+                            <img
+                              src={posterFullUrl}
+                              alt={ev.title}
+                              className="w-full h-full object-cover"
+                              onError={(e: any) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Eye className="h-3.5 w-3.5 text-white" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-11 w-11 rounded-xl bg-purple-500/10 dark:bg-purple-400/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                            <Sparkles className="h-5 w-5" />
+                          </div>
+                        )}
+
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${getCategoryBadgeClass(ev.event_category)}`}>
+                              {catLabel}
+                            </span>
+                            {ev.is_mandatory && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-extrabold uppercase tracking-wide border border-rose-500/20">
+                                Mandatory
+                              </span>
+                            )}
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
+                              {ev.title}
+                            </h4>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 capitalize font-medium">
+                              {ev.mode || 'offline'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {ev.start_date}
+                                {isMultiDay ? ` to ${ev.end_date}` : ''}
+                              </span>
+                            </div>
+
+                            {ev.is_all_day ? (
+                              <span className="font-semibold text-purple-600 dark:text-purple-400">All Day</span>
+                            ) : ev.start_time ? (
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                <span className="font-mono">{ev.start_time}{ev.end_time ? ` - ${ev.end_time}` : ''}</span>
+                              </div>
+                            ) : null}
+
+                            {ev.venue && (
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                <span className="truncate">{ev.venue}</span>
+                              </div>
+                            )}
+
+                            {ev.speaker_guest_details && (
+                              <span className="text-purple-600 dark:text-purple-400 font-medium truncate max-w-xs">
+                                • {ev.speaker_guest_details}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 sm:self-center shrink-0">
+                        <StatusBadge status={ev.status} />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEventForDetail(ev);
+                          }}
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/50 px-2.5 py-1.5 rounded-xl border border-purple-200 dark:border-purple-800/80 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>View Details</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -890,6 +1187,22 @@ export const DashboardPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ── MODAL: ACADEMIC EVENT COMPLETE DETAILS ────────────────────────── */}
+      <AcademicEventDetailModal
+        isOpen={!!selectedEventForDetail}
+        onClose={() => setSelectedEventForDetail(null)}
+        event={selectedEventForDetail}
+        canManage={canManageEvents}
+        onEdit={() => {
+          setSelectedEventForDetail(null);
+          navigate('/sessions');
+        }}
+        onDelete={() => {
+          setSelectedEventForDetail(null);
+          navigate('/sessions');
+        }}
+      />
     </div>
   );
 };

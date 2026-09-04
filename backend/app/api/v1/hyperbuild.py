@@ -18,6 +18,8 @@ from app.schemas.hyperbuild import (
     HyperbuildReopenWindowRequest,
     HyperbuildWindowActionResponse,
     HyperbuildAuditLogListResponse,
+    HyperbuildManualAttendanceUpdateRequest,
+    HyperbuildBulkAttendanceUpdateRequest,
 )
 from app.services.hyperbuild_service import (
     configure_hyperbuild_activities,
@@ -29,6 +31,8 @@ from app.services.hyperbuild_service import (
     get_activity_audit_logs,
     verify_student_activity_presence,
     get_activity_live_roster,
+    update_activity_student_attendance,
+    bulk_update_activity_attendance,
 )
 
 router = APIRouter()
@@ -227,3 +231,39 @@ async def hyperbuild_evaluation_progress_endpoint(
     if not prog:
         return {"status": "idle", "activity_id": str(activity_id), "total_submissions": 0, "processed_count": 0}
     return prog
+
+
+@router.post(
+    "/activities/{activity_id}/attendance",
+    response_model=HyperbuildLiveRosterResponse,
+    dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]))],
+    summary="Manually update attendance status for a student in a HyperBuild activity/subject",
+)
+async def update_activity_attendance_endpoint(
+    activity_id: uuid.UUID,
+    req: HyperbuildManualAttendanceUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return await update_activity_student_attendance(db, activity_id, current_user, req)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/activities/{activity_id}/attendance/bulk",
+    response_model=HyperbuildLiveRosterResponse,
+    dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "faculty_internal", "faculty_external"]))],
+    summary="Bulk update attendance status for students in a HyperBuild activity/subject",
+)
+async def bulk_update_activity_attendance_endpoint(
+    activity_id: uuid.UUID,
+    req: HyperbuildBulkAttendanceUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return await bulk_update_activity_attendance(db, activity_id, current_user, req)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

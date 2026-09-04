@@ -1,10 +1,11 @@
+import logging
 import os
 import re
 import uuid
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -18,6 +19,8 @@ from app.schemas.academic_event import (
     AcademicEventResponse,
 )
 from app.services import academic_event_service
+
+logger = logging.getLogger("crc_one.academic_events")
 
 router = APIRouter(prefix="/academic-events", tags=["Academic Events & Milestones"])
 
@@ -49,10 +52,49 @@ async def upload_event_poster(
         f.write(content)
 
     ext = os.path.splitext(file.filename)[1].lower().replace('.', '')
+    media_types = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+        "gif": "image/gif",
+        "svg": "image/svg+xml",
+        "pdf": "application/pdf",
+    }
+    c_type = media_types.get(ext, "application/octet-stream")
+
+    file_url = f"/academic-events/posters/{stored_filename}"
+
+    # Sync to Cloudflare R2 if configured
+    if settings.R2_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID and settings.R2_SECRET_ACCESS_KEY and settings.R2_BUCKET_NAME:
+        try:
+            import boto3
+            from botocore.config import Config
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                region_name="auto",
+                config=Config(signature_version="s3v4")
+            )
+            r2_key = f"academic_events/{stored_filename}"
+            s3.put_object(
+                Bucket=settings.R2_BUCKET_NAME,
+                Key=r2_key,
+                Body=content,
+                ContentType=c_type,
+                ContentDisposition="inline"
+            )
+            logger.info(f"[AcademicEvents] Uploaded poster {r2_key} to Cloudflare R2")
+            if settings.R2_PUBLIC_URL:
+                file_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{r2_key}"
+        except Exception as e:
+            logger.error(f"[AcademicEvents] Failed to sync poster to Cloudflare R2: {e}")
 
     return ResponseEnvelope(
         data={
-            "file_url": f"/academic-events/posters/{stored_filename}",
+            "file_url": file_url,
             "file_name": file.filename,
             "file_size": len(content),
             "file_type": ext,
@@ -74,6 +116,10 @@ async def stream_event_poster(
     file_path = os.path.join(upload_dir, filename)
 
     if not os.path.exists(file_path):
+        # Fallback redirect to Cloudflare R2 if available
+        if settings.R2_PUBLIC_URL:
+            r2_target = f"{settings.R2_PUBLIC_URL.rstrip('/')}/academic_events/{filename}"
+            return RedirectResponse(url=r2_target, status_code=307)
         raise HTTPException(status_code=404, detail="Event creative poster not found on server")
 
     download_name = original_name or filename
@@ -196,3 +242,27 @@ async def delete_event_endpoint(
         return ResponseEnvelope(data={"message": "Academic event deleted successfully"})
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/{event_id}/notify",
+    dependencies=[Depends(require_role(["super_admin", "admin", "crc_admin", "crc_coordinator", "faculty_internal", "director"]))],
+    summary="Dispatch or re-send email notifications to targeted students for this academic event",
+)
+async def notify_event_endpoint(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ev = await academic_event_service.get_academic_event(db, event_id)
+    if not ev:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic event not found")
+
+    count = await academic_event_service.notify_event_students(event_id)
+    return ResponseEnvelope(
+        data={
+            "event_id": str(event_id),
+            "notified_count": count,
+            "message": f"Successfully dispatched notification emails to {count} student(s)",
+        }
+    )

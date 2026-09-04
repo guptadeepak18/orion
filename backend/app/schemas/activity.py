@@ -84,6 +84,7 @@ class ActivityResponse(BaseModel):
     lock_reason: Optional[str] = None
     case_study_id: Optional[UUID] = None
     case_studies: Optional[Any] = None
+    scheduled_release_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

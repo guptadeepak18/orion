@@ -123,6 +123,10 @@ class ActivityService:
             except Exception:
                 await db.rollback()
 
+        for a in activities:
+            if a.activity_no in release_schedule:
+                setattr(a, "scheduled_release_at", release_schedule[a.activity_no])
+
         return activities
 
     async def get_activity(self, db: AsyncSession, activity_id: UUID) -> Optional[SubjectActivity]:

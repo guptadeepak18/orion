@@ -30,7 +30,21 @@ async def list_subject_activities(
         is_student=is_student, 
         current_user_id=current_user.id
     )
-    return ResponseEnvelope(data=[ActivityResponse.model_validate(a) for a in activities])
+    out_list = []
+    for a in activities:
+        d = ActivityResponse.model_validate(a).model_dump()
+        d["scheduled_release_at"] = getattr(a, "scheduled_release_at", None)
+        if is_student and not a.is_released:
+            d["why_this_activity"] = None
+            d["instructions"] = None
+            d["ai_tools"] = None
+            d["learning_outcomes"] = None
+            d["submission_requirements"] = None
+            d["rubric"] = None
+            d["case_studies"] = []
+            d["case_study_id"] = None
+        out_list.append(ActivityResponse(**d))
+    return ResponseEnvelope(data=out_list)
 
 
 @router.post(

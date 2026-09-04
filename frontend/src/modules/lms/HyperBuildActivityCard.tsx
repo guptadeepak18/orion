@@ -571,8 +571,9 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               </button>
             </div>
           ) : !isReleased ? (
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 text-slate-500" /> UNRELEASED
+            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-xs">
+              <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              {activity.scheduled_release_at ? 'RELEASES AT CLASS TIME' : 'UNRELEASED'}
             </span>
           ) : isLocked ? (
             <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5">
@@ -626,7 +627,50 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
       {/* ─── Collapsible Body ────────────────────────────────────────────── */}
       {isExpanded && (
         <div className="p-5 sm:p-6 border-t border-slate-100 dark:border-slate-800 space-y-6 bg-slate-50/40 dark:bg-slate-900/40 animate-fadeIn">
-          {/* 1. WHY THIS ACTIVITY (Amber Callout Box) */}
+          {isStudent && !isReleased ? (
+            /* Student Locked Banner: Prevent seeing prompt/case study before class time */
+            <div className="p-8 sm:p-10 rounded-3xl border border-amber-200/90 dark:border-amber-800/60 bg-gradient-to-b from-amber-50/60 via-amber-50/20 to-transparent dark:from-amber-950/30 dark:via-amber-950/10 dark:to-transparent text-center space-y-4">
+              <div className="h-14 w-14 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-sm">
+                <Lock className="h-7 w-7" />
+              </div>
+              <div className="max-w-lg mx-auto space-y-2">
+                <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                  Activity Content Locked Until Class Schedule
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Detailed task instructions, business case scenarios, prompt guides, rubrics, and the submission portal will automatically become available when your scheduled class session begins on the timetable, or when released live by your faculty.
+                </p>
+              </div>
+
+              {activity.scheduled_release_at ? (
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-xs font-bold text-amber-900 dark:text-amber-300 shadow-xs">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Scheduled Session:{' '}
+                    {new Date(activity.scheduled_release_at).toLocaleString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-xs">
+                  <Clock className="h-4 w-4 text-slate-500" />
+                  <span>Will unlock automatically when your scheduled class session begins</span>
+                </div>
+              )}
+
+              <div className="pt-2 text-[11px] font-bold text-amber-700/80 dark:text-amber-400/80">
+                🔒 In-Class HyperBuild Activity · Deliverables are accepted only during the active class session
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* 1. WHY THIS ACTIVITY (Amber Callout Box) */}
           {activity.why_this_activity && (
             <div className="p-5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/90 dark:border-amber-800/60 space-y-2.5">
               <h5 className="font-black text-amber-950 dark:text-amber-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
@@ -1749,6 +1793,8 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               </form>
             </div>
           ) : null}
+            </>
+          )}
         </div>
       )}
 

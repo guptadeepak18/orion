@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, KeyRound, Users, RefreshCw, CheckCircle2,
   X, ExternalLink, Lock, Unlock, History, Clock, Radio,
@@ -14,6 +14,7 @@ interface HyperbuildLiveConsoleModalProps {
 }
 
 export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProps> = ({ session, onClose }) => {
+  const queryClient = useQueryClient();
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'roster' | 'submissions'>('roster');
   const [keyRemainingSeconds, setKeyRemainingSeconds] = useState<number>(0);
@@ -211,6 +212,42 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
       setReopenReasonInput('');
       refetchDetails();
       refetchAudit();
+    },
+  });
+
+  // 13. Manual Student Attendance Update Mutation
+  const updateAttendanceMutation = useMutation({
+    mutationFn: async ({ studentId, status, remarks }: { studentId: string; status: string; remarks?: string }) => {
+      if (!selectedActivityId) return null;
+      const res = await api.post(`/hyperbuild/activities/${selectedActivityId}/attendance`, {
+        student_id: studentId,
+        status,
+        remarks,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      refetchRoster();
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['student-dossier'] });
+      queryClient.invalidateQueries({ queryKey: ['hyperbuild-details'] });
+    },
+  });
+
+  // 14. Bulk Attendance Update Mutation
+  const bulkAttendanceMutation = useMutation({
+    mutationFn: async (updates: Array<{ student_id: string; status: string; remarks?: string }>) => {
+      if (!selectedActivityId) return null;
+      const res = await api.post(`/hyperbuild/activities/${selectedActivityId}/attendance/bulk`, {
+        updates,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      refetchRoster();
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['student-dossier'] });
+      queryClient.invalidateQueries({ queryKey: ['hyperbuild-details'] });
     },
   });
 
@@ -534,58 +571,110 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
                   {/* Tab 1: Attendance Roster */}
                   {activeTab === 'roster' && (
-                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1 text-xs">
-                      {rosterData?.roster?.map((st: any) => {
-                        return (
-                          <div
-                            key={st.student_id}
-                            className={`p-3 rounded-2xl border transition-all ${
-                              st.is_verified
-                                ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
-                                : st.is_eligible
-                                ? 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/30'
-                                : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40 opacity-50'
-                            }`}
+                    <div className="space-y-3 text-xs">
+                      {/* Sub-header with Subject Context & Bulk Actions */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 text-slate-500">
+                        <div className="text-xs">
+                          Attributing to: <strong className="font-semibold text-slate-800 dark:text-slate-200">{currentActivity.subject_name} ({currentActivity.subject_code})</strong>
+                        </div>
+                        {rosterData?.roster?.some((s: any) => s.is_eligible && !s.is_verified) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const eligibleUnverified = (rosterData?.roster || [])
+                                .filter((s: any) => s.is_eligible && !s.is_verified)
+                                .map((s: any) => ({ student_id: s.student_id, status: 'present' }));
+                              if (eligibleUnverified.length > 0) {
+                                bulkAttendanceMutation.mutate(eligibleUnverified);
+                              }
+                            }}
+                            disabled={bulkAttendanceMutation.isPending}
+                            className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start sm:self-auto"
                           >
-                            <div className="flex items-center justify-between">
-                              <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{st.full_name}</p>
-                              {st.is_verified ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  <span>Verified</span>
-                                </span>
-                              ) : st.is_eligible ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
-                                  Pending Key
-                                </span>
-                              ) : (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-900">
-                                  Ineligible (Domain)
-                                </span>
+                            <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>Mark All Eligible Present ({rosterData?.roster?.filter((s: any) => s.is_eligible && !s.is_verified).length})</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                        {rosterData?.roster?.map((st: any) => {
+                          return (
+                            <div
+                              key={st.student_id}
+                              className={`p-3 rounded-2xl border transition-all ${
+                                st.is_verified
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
+                                  : st.is_eligible
+                                  ? 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/30'
+                                  : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40 opacity-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{st.full_name}</p>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {st.is_verified ? (
+                                    <>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        <span>Verified</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'absent' })}
+                                        disabled={updateAttendanceMutation.isPending}
+                                        className="px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                        title="Mark absent for this activity/subject"
+                                      >
+                                        Mark Absent
+                                      </button>
+                                    </>
+                                  ) : st.is_eligible ? (
+                                    <>
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
+                                        Pending
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'present' })}
+                                        disabled={updateAttendanceMutation.isPending}
+                                        className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                                        title="Manually verify student present for this activity/subject"
+                                      >
+                                        <Check className="h-2.5 w-2.5" />
+                                        <span>Mark Present</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-900">
+                                      Ineligible (Domain)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 font-mono">
+                                <span>{st.prn_no || st.email}</span>
+                                <span>{st.major_specialization ? `${st.major_specialization}` : 'General'}</span>
+                              </div>
+
+                              {st.submission_url && (
+                                <div className="mt-2 pt-1 border-t border-slate-200 dark:border-slate-800 text-[11px]">
+                                  <a
+                                    href={st.submission_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-medium"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                    <span className="truncate">View Output Artifact</span>
+                                  </a>
+                                </div>
                               )}
                             </div>
-
-                            <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 font-mono">
-                              <span>{st.prn_no || st.email}</span>
-                              <span>{st.major_specialization ? `${st.major_specialization}` : 'General'}</span>
-                            </div>
-
-                            {st.submission_url && (
-                              <div className="mt-2 pt-1 border-t border-slate-200 dark:border-slate-800 text-[11px]">
-                                <a
-                                  href={st.submission_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-medium"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                  <span className="truncate">View Output Artifact</span>
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

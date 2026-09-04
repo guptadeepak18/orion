@@ -7,7 +7,9 @@ from app.core.config import settings
 db_url = settings.DATABASE_URL
 connect_args = {}
 
-if db_url.startswith("postgresql://"):
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&sslmode=prefer", "?ssl=require", "&ssl=require", "?ssl=prefer", "&ssl=prefer"]:
@@ -15,7 +17,7 @@ for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&s
         db_url = db_url.replace(ssl_param, "")
         connect_args["ssl"] = "require"
 
-# For asyncpg + Neon PgBouncer pooler, disable prepared statement cache and add command timeout
+# For asyncpg + PgBouncer / cloud poolers, disable prepared statement cache and add command timeout
 if "asyncpg" in db_url:
     connect_args["statement_cache_size"] = 0
     connect_args["command_timeout"] = 60
@@ -30,13 +32,13 @@ if db_url.startswith("sqlite"):
         connect_args=connect_args,
     )
 else:
-    # High-concurrency async connection pool for PostgreSQL (100+ concurrent users)
+    # Optimized connection pool for cloud PostgreSQL
     engine = create_async_engine(
         db_url,
         echo=False,
         future=True,
-        pool_size=50,
-        max_overflow=100,
+        pool_size=10,
+        max_overflow=5,
         pool_timeout=30.0,
         pool_recycle=1800,
         pool_pre_ping=True,

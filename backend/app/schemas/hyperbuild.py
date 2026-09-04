@@ -228,3 +228,13 @@ class HyperbuildLiveRosterResponse(BaseModel):
     total_eligible_students: int
     total_verified_present: int
     roster: List[HyperbuildLiveRosterStudentItem]
+
+
+class HyperbuildManualAttendanceUpdateRequest(BaseModel):
+    student_id: UUID
+    status: str = Field(..., description="'present' | 'absent' | 'late' | 'excused'")
+    remarks: Optional[str] = None
+
+
+class HyperbuildBulkAttendanceUpdateRequest(BaseModel):
+    updates: List[HyperbuildManualAttendanceUpdateRequest]

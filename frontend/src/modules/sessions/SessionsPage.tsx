@@ -17,6 +17,7 @@ import { useAuthStore } from '../../lib/store';
 import { HyperbuildLiveConsoleModal } from './HyperbuildLiveConsoleModal';
 import { StudentHyperbuildModal } from './StudentHyperbuildModal';
 import { AcademicEventModal, AcademicEventItem, EVENT_CATEGORIES } from './AcademicEventModal';
+import { AcademicEventDetailModal } from './AcademicEventDetailModal';
 import {
   Mic, ExternalLink, Eye
 } from 'lucide-react';
@@ -241,6 +242,7 @@ export const SessionsPage: React.FC = () => {
   const [eventStatusFilter, setEventStatusFilter] = useState('all');
   const [eventSearchQuery, setEventSearchQuery] = useState('');
   const [selectedPosterEvent, setSelectedPosterEvent] = useState<AcademicEventItem | null>(null);
+  const [selectedDetailEvent, setSelectedDetailEvent] = useState<AcademicEventItem | null>(null);
 
   const { data: academicEvents = [], isLoading: isAcademicEventsLoading } = useQuery<AcademicEventItem[]>({
     queryKey: ['academic_events', eventCategoryFilter, eventBatchFilter, eventStatusFilter],
@@ -2191,13 +2193,17 @@ export const SessionsPage: React.FC = () => {
                   return (
                     <div
                       key={ev.id}
-                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
+                      onClick={() => setSelectedDetailEvent(ev)}
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-800/80 transition-all flex flex-col justify-between group cursor-pointer"
                     >
                       <div className="space-y-3">
                         {/* Poster Banner / Creative Thumbnail */}
                         {ev.poster_url && (
                           <div
-                            onClick={() => setSelectedPosterEvent(ev)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDetailEvent(ev);
+                            }}
                             className="relative group/poster cursor-pointer overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-black/10 h-36 flex items-center justify-center -mx-1 -mt-1 shadow-sm"
                           >
                             <img
@@ -2300,42 +2306,61 @@ export const SessionsPage: React.FC = () => {
                         </div>
 
                         <div className="flex items-center justify-between gap-2 pt-1">
-                          {ev.registration_link ? (
-                            <a
-                              href={ev.registration_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline"
-                            >
-                              <span>Join / Register</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-medium">
-                              {ev.organizer_name || 'Academic Cell'}
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDetailEvent(ev);
+                            }}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline cursor-pointer"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>View Details</span>
+                          </button>
 
-                          {canScheduleSessions && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => handleOpenEditEvent(ev)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors cursor-pointer"
-                                title="Edit Academic Event"
+                          <div className="flex items-center gap-1">
+                            {ev.registration_link && (
+                              <a
+                                href={ev.registration_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+                                title="Join / Register"
                               >
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </button>
-                              {isAdmin && (
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+
+                            {canScheduleSessions && (
+                              <>
                                 <button
-                                  onClick={() => handleDeleteEvent(ev)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                                  title="Delete / Cancel Event"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditEvent(ev);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors cursor-pointer"
+                                  title="Edit Academic Event"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Edit3 className="h-3.5 w-3.5" />
                                 </button>
-                              )}
-                            </div>
-                          )}
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteEvent(ev);
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                    title="Delete / Cancel Event"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3586,6 +3611,16 @@ export const SessionsPage: React.FC = () => {
         programs={programs}
         batches={allBatches}
         divisions={allDivisions}
+      />
+
+      {/* ── MODAL: ACADEMIC EVENT COMPLETE DETAILS ────────────────────────── */}
+      <AcademicEventDetailModal
+        isOpen={!!selectedDetailEvent}
+        onClose={() => setSelectedDetailEvent(null)}
+        event={selectedDetailEvent}
+        canManage={canScheduleSessions}
+        onEdit={(ev) => handleOpenEditEvent(ev)}
+        onDelete={(ev) => handleDeleteEvent(ev)}
       />
 
       {/* ── MODAL: DELETE ACADEMIC EVENT CONFIRMATION ──────────────────────── */}

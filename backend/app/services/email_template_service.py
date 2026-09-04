@@ -850,6 +850,203 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 </body>
 </html>""",
     },
+    {
+        "event_key": "academic_event_scheduled",
+        "name": "Academic Event & Milestone Scheduled Announcement",
+        "category": "Academic Operations & Calendar",
+        "description": "Sent to students when an academic event, workshop, conclave, guest lecture, or celebration is scheduled.",
+        "subject": "Orion — Academic Event: {{event_title}} ({{event_date}})",
+        "variables": [
+            "full_name",
+            "event_title",
+            "event_category",
+            "event_date",
+            "event_time",
+            "venue",
+            "mode",
+            "is_mandatory",
+            "badge_bg",
+            "badge_color",
+            "badge_border",
+            "speaker_guest_details",
+            "description_html",
+            "organizer_name",
+            "poster_section",
+            "registration_btn",
+            "app_name",
+            "support_email",
+        ],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{event_title}}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+      <td align="center">
+        <div style="max-width: 600px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1);">
+          
+          <!-- BRAND HEADER -->
+          <div style="background: linear-gradient(135deg, #312e81 0%, #4338ca 40%, #6366f1 75%, #06b6d4 100%); padding: 32px 36px 28px;">
+            <table width="100%" border="0" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="vertical-align: middle;">
+                  <div style="display: inline-block; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.35); margin-bottom: 10px;">
+                    <span style="color: #ffffff; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">
+                      📢 ACADEMIC ANNOUNCEMENT
+                    </span>
+                  </div>
+                  <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.2;">
+                    Campus Event Scheduled
+                  </h1>
+                  <p style="color: #e0e7ff; margin: 6px 0 0; font-size: 13px; font-weight: 500;">
+                    Lexicon MILE — Academic Operations &amp; Student Life
+                  </p>
+                </td>
+                <td style="vertical-align: middle; text-align: right; width: 130px;">
+                  <div style="display: inline-block; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 8px 14px; text-align: center;">
+                    <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1.5px; color: #ffffff; display: block; line-height: 1;">
+                      ✨ ORION
+                    </span>
+                    <span style="font-size: 8.5px; font-weight: 800; letter-spacing: 1.8px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 3px;">
+                      LEXICON MILE
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- BODY CONTENT -->
+          <div style="padding: 36px 36px 28px;">
+            <p style="font-size: 15px; line-height: 1.6; color: #1e293b; margin: 0 0 20px;">
+              Dear <strong>{{full_name}}</strong>,
+            </p>
+            <p style="font-size: 14.5px; line-height: 1.6; color: #475569; margin: 0 0 24px;">
+              A new institutional event has been officially scheduled on the academic calendar. Please find the program schedule, venue, and participation details below:
+            </p>
+
+            <!-- EVENT HIGHLIGHT CARD -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 24px; margin-bottom: 24px;">
+              
+              <!-- CATEGORY & MANDATORY TAGS -->
+              <div style="margin-bottom: 14px;">
+                <span style="display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; margin-right: 8px;">
+                  {{event_category}}
+                </span>
+                <span style="display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: {{badge_bg}}; color: {{badge_color}}; border: 1px solid {{badge_border}};">
+                  {{is_mandatory}}
+                </span>
+              </div>
+
+              <!-- EVENT TITLE -->
+              <h2 style="margin: 0 0 16px; font-size: 20px; font-weight: 900; color: #0f172a; line-height: 1.35;">
+                {{event_title}}
+              </h2>
+
+              <!-- DETAILS TABLE -->
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 13.5px; border-collapse: separate; border-spacing: 0 8px;">
+                <tr>
+                  <td width="120" style="color: #64748b; font-weight: 700; vertical-align: top;">
+                    📅 Date:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 700; vertical-align: top;">
+                    {{event_date}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; vertical-align: top;">
+                    ⏰ Time:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 700; vertical-align: top;">
+                    {{event_time}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; vertical-align: top;">
+                    📍 Venue:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 700; vertical-align: top;">
+                    {{venue}} <span style="display: inline-block; font-size: 11px; font-weight: 700; background: #e2e8f0; color: #334155; padding: 2px 7px; border-radius: 5px; margin-left: 6px; text-transform: uppercase;">{{mode}}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; vertical-align: top;">
+                    🏛 Organizer:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 600; vertical-align: top;">
+                    {{organizer_name}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; vertical-align: top;">
+                    🎤 Guest / Speaker:
+                  </td>
+                  <td style="color: #4338ca; font-weight: 700; vertical-align: top;">
+                    {{speaker_guest_details}}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- DESCRIPTION CALLOUT -->
+              <div style="margin-top: 18px; padding: 16px 18px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 13.5px; line-height: 1.7; color: #334155;">
+                {{description_html}}
+              </div>
+
+            </div>
+
+            <!-- PROMOTIONAL CREATIVE POSTER (IF ATTACHED) -->
+            {{poster_section}}
+
+            <!-- ACTION BUTTONS -->
+            <div style="text-align: center; margin: 30px 0 10px;">
+              <a href="https://orion.mile.education/sessions?view=calendar" style="display: inline-block; background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); color: #ffffff !important; padding: 13px 32px; border-radius: 12px; font-weight: 800; text-decoration: none; font-size: 13.5px; box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35); margin: 6px 4px;">
+                View in Orion Academic Calendar →
+              </a>
+              {{registration_btn}}
+            </div>
+
+            <!-- ADVISORY / GUIDELINES -->
+            <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #f1f5f9; font-size: 12.5px; line-height: 1.6; color: #64748b;">
+              <p style="margin: 0 0 8px;">
+                📌 <strong>Academic Notice:</strong> All students are requested to report punctually and follow campus dress code and discipline guidelines during institutional events.
+              </p>
+              <p style="margin: 0;">
+                For queries or support, reach out to Academic Operations at <a href="mailto:{{support_email}}" style="color: #4f46e5; text-decoration: none; font-weight: 600;">{{support_email}}</a>.
+              </p>
+            </div>
+
+            <!-- SIGN-OFF -->
+            <div style="margin-top: 24px; font-size: 13.5px; line-height: 1.5; color: #1e293b;">
+              Warm regards,<br />
+              <strong>Academic Operations &amp; Student Welfare</strong><br />
+              <span style="color: #64748b; font-size: 12.5px;">Lexicon Management Institute of Leadership &amp; Excellence (MILE)</span>
+            </div>
+
+          </div>
+
+          <!-- FOOTER -->
+          <div style="background: #f8fafc; padding: 22px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+            <p style="margin: 0 0 4px; font-weight: 600; color: #64748b;">
+              Lexicon MILE · Orion Academic Management Platform
+            </p>
+            <p style="margin: 0;">
+              Gate No. 726, Pune-Nagar Road, Wagholi, Pune, Maharashtra 412207
+            </p>
+          </div>
+
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>""",
+    },
 ]
 
 def render_placeholders(template_str: str, context: Dict[str, Any]) -> str:
@@ -888,8 +1085,13 @@ async def seed_default_templates(db: AsyncSession) -> None:
             )
             db.add(tmpl)
         else:
-            # Update description / variables if newly expanded
-            if not existing.variables:
+            # Update description / variables / html_content if system default
+            if existing.is_system:
+                existing.name = item["name"]
+                existing.category = item["category"]
+                existing.description = item["description"]
+                existing.subject = item["subject"]
+                existing.html_content = item["html_content"]
                 existing.variables = item["variables"]
     await db.commit()
 
@@ -1012,6 +1214,15 @@ async def render_email(
         rendered_html = render_placeholders(tmpl.html_content, context)
         return rendered_subject, rendered_html, True
     
+    # Check DEFAULT_TEMPLATES in memory if template has not yet been seeded to DB
+    for d in DEFAULT_TEMPLATES:
+        if d["event_key"] == event_key:
+            if not d.get("is_active", True):
+                return "", "", False
+            rendered_subject = render_placeholders(d["subject"], context)
+            rendered_html = render_placeholders(d["html_content"], context)
+            return rendered_subject, rendered_html, True
+
     # Fallback to defaults
     rendered_subject = render_placeholders(fallback_subject, context)
     rendered_html = render_placeholders(fallback_html, context)
@@ -1045,7 +1256,8 @@ async def trigger_activity_email(
             return False
 
         logger.info(f"Dispatching activity email '{event_key}' to {recipient_email} (Subject: {sub})")
-        send_custom_html_email(recipient_email, sub, html)
+        import asyncio
+        await asyncio.to_thread(send_custom_html_email, recipient_email, sub, html)
         return True
     except Exception as e:
         logger.error(f"Failed to dispatch activity email '{event_key}' to {recipient_email}: {e}")

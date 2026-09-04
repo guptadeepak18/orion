@@ -30,7 +30,7 @@ class AcademicEventBase(BaseModel):
 
 
 class AcademicEventCreate(AcademicEventBase):
-    pass
+    notify_students: bool = True
 
 
 class AcademicEventUpdate(BaseModel):

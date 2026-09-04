@@ -8,7 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models.academic import Program, Batch, Subject, SubjectBatch
 from app.models.faculty import FacultyInternal, FacultyExternal
-from app.models.session import Session, StudentAttendance, AttendanceCorrectionRequest
+from app.models.session import (
+    Session,
+    StudentAttendance,
+    AttendanceCorrectionRequest,
+    HyperbuildActivity,
+    HyperbuildActivityVerification,
+)
 from app.models.student import Student
 from app.models.auth import User
 from app.schemas.session import SessionAttendanceBulkRequest, SessionAttendanceSheetResponse
@@ -349,8 +355,37 @@ async def get_subject_wise_attendance(
     total_scheduled = len(all_sessions)
     total_delivered_hours = sum((s.duration_minutes or 60) / 60.0 for s in conducted_sessions)
 
+    # Fetch conducted HyperBuild activities tied to this subject
+    hb_stmt = (
+        select(HyperbuildActivity)
+        .options(
+            selectinload(HyperbuildActivity.session).selectinload(Session.batch),
+            selectinload(HyperbuildActivity.session).selectinload(Session.faculty_internal),
+            selectinload(HyperbuildActivity.session).selectinload(Session.faculty_external),
+            selectinload(HyperbuildActivity.verifications),
+        )
+        .where(
+            HyperbuildActivity.subject_id == subject_id,
+            HyperbuildActivity.is_deleted == False,
+        )
+    )
+    hb_res = await db.execute(hb_stmt)
+    conducted_hb_activities = [
+        act for act in hb_res.scalars().all()
+        if act.session and (not batch_id or act.session.batch_id == batch_id)
+        and ((act.status in ["active", "closed"]) or (act.challenge_key is not None) or len(act.verifications) > 0)
+    ]
+    total_conducted += len(conducted_hb_activities)
+    total_scheduled += len(conducted_hb_activities)
+    total_delivered_hours += sum((act.duration_minutes or 60) / 60.0 for act in conducted_hb_activities)
+
     # Determine batch IDs
     relevant_batch_ids = list(set([s.batch_id for s in all_sessions]))
+    for act in conducted_hb_activities:
+        if act.session and act.session.batch_id:
+            relevant_batch_ids.append(act.session.batch_id)
+    relevant_batch_ids = list(set(relevant_batch_ids))
+
     if not relevant_batch_ids and subject.batch_allocations:
         relevant_batch_ids = [ba.batch_id for ba in subject.batch_allocations]
 
@@ -366,7 +401,7 @@ async def get_subject_wise_attendance(
         all_batch_students = list(st_res.scalars().all())
         students = [st for st in all_batch_students if is_student_eligible_for_subject(subject, st)]
 
-    # Preload all attendance records for conducted sessions of this subject
+    # Preload all attendance records for conducted regular sessions of this subject
     conducted_session_ids = [s.id for s in conducted_sessions]
     student_att_counts: Dict[UUID, Dict[str, int]] = {st.id: {"present": 0, "absent": 0, "excused": 0} for st in students}
 
@@ -384,6 +419,32 @@ async def get_subject_wise_attendance(
                     student_att_counts[st_id]["absent"] += 1
                 else:
                     student_att_counts[st_id]["excused"] += 1
+
+    # Preload parent session attendance for HyperBuild fallback
+    hb_parent_session_ids = [act.session_id for act in conducted_hb_activities if act.session_id]
+    parent_sess_att_map: Dict[Tuple[UUID, UUID], str] = {}
+    if hb_parent_session_ids:
+        p_att_stmt = select(StudentAttendance.session_id, StudentAttendance.student_id, StudentAttendance.status).where(
+            StudentAttendance.session_id.in_(hb_parent_session_ids)
+        )
+        p_att_res = await db.execute(p_att_stmt)
+        for s_id, st_id, st_st in p_att_res.all():
+            parent_sess_att_map[(s_id, st_id)] = st_st
+
+    # Aggregate attendance for HyperBuild activities of this subject
+    for act in conducted_hb_activities:
+        for st in students:
+            v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+            if v_rec and v_rec.verification_status in ["verified_present", "late_submission", "present"]:
+                student_att_counts[st.id]["present"] += 1
+            elif not v_rec:
+                parent_status = parent_sess_att_map.get((act.session_id, st.id))
+                if parent_status and parent_status in PRESENT_STATUSES:
+                    student_att_counts[st.id]["present"] += 1
+                else:
+                    student_att_counts[st.id]["absent"] += 1
+            else:
+                student_att_counts[st.id]["absent"] += 1
 
     # Compute students summary
     students_summary: List[SubjectStudentAttendanceItem] = []
@@ -449,18 +510,49 @@ async def get_subject_wise_attendance(
                 SubjectSessionAttendanceItem(
                     session_id=sess.id,
                     session_date=sess.session_date,
-                    start_time=sess.start_time.strftime("%H:%M") if sess.start_time else "",
-                    end_time=sess.end_time.strftime("%H:%M") if sess.end_time else "",
-                    topic_delivered=sess.notes or (sess.topic.name if sess.topic else None),
+                    start_time=sess.start_time.strftime("%H:%M") if sess.start_time else "09:00",
+                    end_time=sess.end_time.strftime("%H:%M") if sess.end_time else "10:30",
                     venue=sess.venue,
                     faculty_name=fac_name,
+                    topic_title=sess.topic.title if sess.topic else None,
+                    status=sess.status,
                     attendance_status=sess.attendance_status or "marked",
-                    is_locked=stt["is_locked"],
+                    total_students=stt["total"],
                     present_count=stt["present"],
                     absent_count=stt["absent"],
-                    total_students=stt["total"],
+                    is_locked=stt["is_locked"],
                 )
             )
+
+    # Also add HyperBuild activities to recent session items
+    for act in conducted_hb_activities[:10]:
+        act_sess = act.session
+        hb_present = sum(1 for v in act.verifications if v.verification_status in ["verified_present", "late_submission", "present"])
+        hb_fac_name = "Faculty"
+        if act_sess.faculty_internal:
+            hb_fac_name = act_sess.faculty_internal.full_name or "Internal Faculty"
+        elif act_sess.faculty_external:
+            hb_fac_name = act_sess.faculty_external.name or "External Faculty"
+
+        recent_session_items.append(
+            SubjectSessionAttendanceItem(
+                session_id=act.session_id,
+                session_date=act_sess.session_date,
+                start_time=act.start_time.strftime("%H:%M") if act.start_time else (act_sess.start_time.strftime("%H:%M") if act_sess.start_time else "14:00"),
+                end_time=act.end_time.strftime("%H:%M") if act.end_time else (act_sess.end_time.strftime("%H:%M") if act_sess.end_time else "17:00"),
+                venue=f"{act_sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
+                faculty_name=hb_fac_name,
+                topic_title=act.title,
+                status="completed",
+                attendance_status="marked",
+                total_students=len(students),
+                present_count=hb_present,
+                absent_count=max(0, len(students) - hb_present),
+                is_locked=act.is_submission_locked,
+            )
+        )
+
+    recent_session_items.sort(key=lambda x: x.session_date, reverse=True)
 
     first_batch = subject.batch_allocations[0].batch if subject.batch_allocations else None
 
@@ -508,12 +600,26 @@ async def get_student_attendance_dossier(
             selectinload(StudentAttendance.session).selectinload(Session.subject),
             selectinload(StudentAttendance.session).selectinload(Session.faculty_internal),
             selectinload(StudentAttendance.session).selectinload(Session.faculty_external),
+            selectinload(StudentAttendance.session).selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
         )
         .where(StudentAttendance.student_id == student_id)
         .order_by(StudentAttendance.created_at.desc())
     )
     att_res = await db.execute(att_stmt)
     records = list(att_res.scalars().all())
+
+    # Fetch all HyperBuild activity verifications for this student
+    hb_v_stmt = (
+        select(HyperbuildActivityVerification)
+        .options(
+            selectinload(HyperbuildActivityVerification.activity).selectinload(HyperbuildActivity.subject),
+            selectinload(HyperbuildActivityVerification.session).selectinload(Session.faculty_internal),
+            selectinload(HyperbuildActivityVerification.session).selectinload(Session.faculty_external),
+        )
+        .where(HyperbuildActivityVerification.student_id == student_id)
+    )
+    hb_v_res = await db.execute(hb_v_stmt)
+    hb_verifs = {v.activity_id: v for v in hb_v_res.scalars().all()}
 
     # Fetch correction requests for this student
     corr_stmt = select(AttendanceCorrectionRequest).where(AttendanceCorrectionRequest.student_id == student_id)
@@ -528,67 +634,169 @@ async def get_student_attendance_dossier(
     attended_classes = 0
 
     for r in records:
-        if not r.session or not r.session.subject:
-            continue
-        if not is_student_eligible_for_subject(r.session.subject, student):
+        if not r.session:
             continue
 
         sess = r.session
-        sub = sess.subject
-        total_classes += 1
 
-        is_attended = r.status in PRESENT_STATUSES
-        if is_attended:
-            attended_classes += 1
+        # ── Case A: HyperBuild Session with Activities (Multi-Subject) ──
+        if sess.hyperbuild_activities and len(sess.hyperbuild_activities) > 0:
+            for act in sorted(sess.hyperbuild_activities, key=lambda a: a.activity_no):
+                # Only count conducted activities (active, closed, or has challenge_key/verifications)
+                is_conducted = (act.status in ["active", "closed"]) or (act.challenge_key is not None) or (act.id in hb_verifs)
+                if not is_conducted:
+                    continue
 
-        # Subject breakdown aggregation
-        if sub.id not in subjects_map:
-            subjects_map[sub.id] = {
-                "id": sub.id,
-                "name": sub.name,
-                "code": sub.code or sub.course_code,
-                "total": 0,
-                "attended": 0,
-                "absent": 0,
-                "excused": 0,
-            }
+                sub = act.subject
+                if not sub:
+                    continue
+                if not is_student_eligible_for_subject(sub, student):
+                    continue
 
-        subjects_map[sub.id]["total"] += 1
-        if is_attended:
-            subjects_map[sub.id]["attended"] += 1
-        elif r.status == "absent":
-            subjects_map[sub.id]["absent"] += 1
+                v_rec = hb_verifs.get(act.id)
+                if v_rec:
+                    is_att = v_rec.verification_status in ["verified_present", "late_submission", "present"]
+                    act_status = "present" if is_att else "absent"
+                else:
+                    is_att = r.status in PRESENT_STATUSES
+                    act_status = "present" if is_att else "absent"
+
+                total_classes += 1
+                if is_att:
+                    attended_classes += 1
+
+                sub_id = sub.id
+                sub_name = sub.name
+                sub_code = sub.code or sub.course_code or "SUB"
+
+                if sub_id not in subjects_map:
+                    subjects_map[sub_id] = {
+                        "id": sub_id,
+                        "name": sub_name,
+                        "code": sub_code,
+                        "total": 0,
+                        "attended": 0,
+                        "absent": 0,
+                        "excused": 0,
+                    }
+
+                subjects_map[sub_id]["total"] += 1
+                if is_att:
+                    subjects_map[sub_id]["attended"] += 1
+                else:
+                    subjects_map[sub_id]["absent"] += 1
+
+                fac_name = "Faculty"
+                if sess.faculty_internal:
+                    fac_name = sess.faculty_internal.full_name or "Internal Faculty"
+                elif sess.faculty_external:
+                    fac_name = sess.faculty_external.name or "External Faculty"
+
+                corr = corr_map.get(r.id)
+
+                s_time = act.start_time.strftime("%H:%M") if act.start_time else (sess.start_time.strftime("%H:%M") if sess.start_time else "")
+                e_time = act.end_time.strftime("%H:%M") if act.end_time else (sess.end_time.strftime("%H:%M") if sess.end_time else "")
+
+                session_items.append(
+                    StudentSessionAttendanceRecordItem(
+                        attendance_id=v_rec.id if v_rec else uuid.uuid5(uuid.NAMESPACE_DNS, f"{r.id}-{act.id}"),
+                        session_id=sess.id,
+                        subject_id=sub_id,
+                        subject_name=sub_name,
+                        subject_code=sub_code,
+                        faculty_name=fac_name,
+                        session_date=sess.session_date,
+                        start_time=s_time,
+                        end_time=e_time,
+                        venue=f"{sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
+                        status=act_status,
+                        remarks=f"HyperBuild: {act.title}",
+                        is_locked=r.is_locked,
+                        has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
+                        correction_request_id=corr.id if corr else None,
+                        correction_status=corr.status if corr else None,
+                    )
+                )
+
+        # ── Case B: Standard Lecture / Class Session ──
         else:
-            subjects_map[sub.id]["excused"] += 1
+            sub = sess.subject
 
-        fac_name = "Faculty"
-        if sess.faculty_internal:
-            fac_name = sess.faculty_internal.full_name or "Internal Faculty"
-        elif sess.faculty_external:
-            fac_name = sess.faculty_external.name or "External Faculty"
+            if sub and not is_student_eligible_for_subject(sub, student):
+                continue
+            if not sub and sess.batch_id and student.batch_id and sess.batch_id != student.batch_id:
+                continue
 
-        corr = corr_map.get(r.id)
+            total_classes += 1
 
-        session_items.append(
-            StudentSessionAttendanceRecordItem(
-                attendance_id=r.id,
-                session_id=sess.id,
-                subject_id=sub.id,
-                subject_name=sub.name,
-                subject_code=sub.code or sub.course_code,
-                faculty_name=fac_name,
-                session_date=sess.session_date,
-                start_time=sess.start_time.strftime("%H:%M") if sess.start_time else "",
-                end_time=sess.end_time.strftime("%H:%M") if sess.end_time else "",
-                venue=sess.venue,
-                status=r.status,
-                remarks=r.remarks,
-                is_locked=r.is_locked,
-                has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
-                correction_request_id=corr.id if corr else None,
-                correction_status=corr.status if corr else None,
+            is_attended = r.status in PRESENT_STATUSES
+            if is_attended:
+                attended_classes += 1
+
+            # Determine subject ID, name, and code (handling fallback for standalone sessions)
+            if sub:
+                sub_id = sub.id
+                sub_name = sub.name
+                sub_code = sub.code or sub.course_code or "SUB"
+            else:
+                if sess.session_type == "hyperbuild" or (sess.venue and "hyperbuild" in sess.venue.lower()):
+                    sub_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+                    sub_name = "HyperBuild Practical Lab"
+                    sub_code = "HYPERBUILD"
+                else:
+                    stype = (sess.session_type or "General").replace("_", " ").title()
+                    sub_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"session-type-{sess.session_type or 'general'}")
+                    sub_name = f"{stype} Session"
+                    sub_code = (sess.session_type or "GEN").upper()[:10]
+
+            # Subject breakdown aggregation
+            if sub_id not in subjects_map:
+                subjects_map[sub_id] = {
+                    "id": sub_id,
+                    "name": sub_name,
+                    "code": sub_code,
+                    "total": 0,
+                    "attended": 0,
+                    "absent": 0,
+                    "excused": 0,
+                }
+
+            subjects_map[sub_id]["total"] += 1
+            if is_attended:
+                subjects_map[sub_id]["attended"] += 1
+            elif r.status == "absent":
+                subjects_map[sub_id]["absent"] += 1
+            else:
+                subjects_map[sub_id]["excused"] += 1
+
+            fac_name = "Faculty"
+            if sess.faculty_internal:
+                fac_name = sess.faculty_internal.full_name or "Internal Faculty"
+            elif sess.faculty_external:
+                fac_name = sess.faculty_external.name or "External Faculty"
+
+            corr = corr_map.get(r.id)
+
+            session_items.append(
+                StudentSessionAttendanceRecordItem(
+                    attendance_id=r.id,
+                    session_id=sess.id,
+                    subject_id=sub_id,
+                    subject_name=sub_name,
+                    subject_code=sub_code,
+                    faculty_name=fac_name,
+                    session_date=sess.session_date,
+                    start_time=sess.start_time.strftime("%H:%M") if sess.start_time else "",
+                    end_time=sess.end_time.strftime("%H:%M") if sess.end_time else "",
+                    venue=sess.venue or "Campus",
+                    status=r.status,
+                    remarks=r.remarks,
+                    is_locked=r.is_locked,
+                    has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
+                    correction_request_id=corr.id if corr else None,
+                    correction_status=corr.status if corr else None,
+                )
             )
-        )
 
     # Convert subjects map to list
     subjects_breakdown: List[StudentSubjectAttendanceBreakdown] = []
@@ -1181,7 +1389,7 @@ async def get_subject_attendance_matrix(
     if not subject:
         raise ValueError("Subject not found")
 
-    # Fetch marked/completed sessions
+    # Fetch marked/completed regular sessions
     sess_stmt = (
         select(Session)
         .options(
@@ -1201,7 +1409,7 @@ async def get_subject_attendance_matrix(
     sess_res = await db.execute(sess_stmt)
     all_sessions = sess_res.scalars().all()
 
-    # Preload all attendance records
+    # Preload all attendance records for regular sessions
     session_ids = [s.id for s in all_sessions]
     att_map: Dict[tuple[UUID, UUID], StudentAttendance] = {}
     if session_ids:
@@ -1213,49 +1421,154 @@ async def get_subject_attendance_matrix(
         for a in att_res.scalars().all():
             att_map[(a.student_id, a.session_id)] = a
 
+    # Fetch conducted HyperBuild activities tied to this subject
+    hb_stmt = (
+        select(HyperbuildActivity)
+        .options(
+            selectinload(HyperbuildActivity.session).selectinload(Session.batch),
+            selectinload(HyperbuildActivity.session).selectinload(Session.faculty_internal),
+            selectinload(HyperbuildActivity.session).selectinload(Session.faculty_external),
+            selectinload(HyperbuildActivity.verifications),
+        )
+        .where(
+            HyperbuildActivity.subject_id == subject_id,
+            HyperbuildActivity.is_deleted == False,
+        )
+    )
+    hb_res = await db.execute(hb_stmt)
+    conducted_hb_activities = [
+        act for act in hb_res.scalars().all()
+        if act.session and (not batch_id or act.session.batch_id == batch_id)
+        and ((act.status in ["active", "closed"]) or (act.challenge_key is not None) or len(act.verifications) > 0)
+    ]
+
+    # Preload parent session attendance for HyperBuild fallback
+    hb_parent_session_ids = [act.session_id for act in conducted_hb_activities if act.session_id]
+    parent_sess_att_map: Dict[Tuple[UUID, UUID], str] = {}
+    if hb_parent_session_ids:
+        p_att_stmt = select(StudentAttendance.session_id, StudentAttendance.student_id, StudentAttendance.status).where(
+            StudentAttendance.session_id.in_(hb_parent_session_ids)
+        )
+        p_att_res = await db.execute(p_att_stmt)
+        for s_id, st_id, st_st in p_att_res.all():
+            parent_sess_att_map[(s_id, st_id)] = st_st
+
+    # Determine batch IDs
+    relevant_batch_ids = list(set([s.batch_id for s in all_sessions if s.batch_id]))
+    for act in conducted_hb_activities:
+        if act.session and act.session.batch_id:
+            relevant_batch_ids.append(act.session.batch_id)
+    relevant_batch_ids = list(set(relevant_batch_ids))
+
+    if not relevant_batch_ids and subject.batch_allocations:
+        relevant_batch_ids = [ba.batch_id for ba in subject.batch_allocations if ba.batch_id]
+
     # Fetch enrolled students
-    st_stmt = select(Student).where(Student.status == "active")
+    st_stmt = select(Student).where(Student.status == "active", Student.is_deleted == False)
     if batch_id:
         st_stmt = st_stmt.where(Student.batch_id == batch_id)
-    elif subject.batch_allocations:
-        b_ids = [ba.batch_id for ba in subject.batch_allocations if ba.batch_id]
-        if b_ids:
-            st_stmt = st_stmt.where(Student.batch_id.in_(b_ids))
+    elif relevant_batch_ids:
+        st_stmt = st_stmt.where(Student.batch_id.in_(relevant_batch_ids))
 
     st_stmt = st_stmt.order_by(Student.roll_no.asc().nullslast(), Student.first_name.asc())
     st_res = await db.execute(st_stmt)
-    students = st_res.scalars().all()
+    all_cand_students = st_res.scalars().all()
+    students = [st for st in all_cand_students if is_student_eligible_for_subject(subject, st)]
+
+    # Combine regular sessions and hyperbuild activities in chronological order
+    combined_sessions: List[Dict[str, Any]] = []
+    for s in all_sessions:
+        s_date = s.session_date or date.min
+        s_time = s.start_time or time.min
+        combined_sessions.append({
+            "type": "regular",
+            "date": s_date,
+            "time": s_time,
+            "obj": s,
+        })
+    for act in conducted_hb_activities:
+        s_date = act.session.session_date if act.session else date.min
+        s_time = act.start_time or (act.session.start_time if act.session else time.min)
+        combined_sessions.append({
+            "type": "hyperbuild",
+            "date": s_date,
+            "time": s_time,
+            "obj": act,
+        })
+
+    combined_sessions.sort(key=lambda x: (x["date"], x["time"]))
 
     # Build sessions header
     sessions_header = []
-    for idx, s in enumerate(all_sessions):
-        fac_name = "Faculty"
-        if s.faculty_internal:
-            fac_name = s.faculty_internal.full_name
-        elif s.faculty_external:
-            fac_name = s.faculty_external.name
+    for idx, item in enumerate(combined_sessions):
+        if item["type"] == "regular":
+            s = item["obj"]
+            fac_name = "Faculty"
+            if s.faculty_internal:
+                fac_name = s.faculty_internal.full_name
+            elif s.faculty_external:
+                fac_name = s.faculty_external.name
 
-        # Calculate session presence
-        p_count = sum(
-            1 for st in students if (st.id, s.id) in att_map and att_map[(st.id, s.id)].status in PRESENT_STATUSES
-        )
-        pct = round((p_count / len(students) * 100), 1) if students else 0.0
+            p_count = sum(
+                1 for st in students if (st.id, s.id) in att_map and att_map[(st.id, s.id)].status in PRESENT_STATUSES
+            )
+            pct = round((p_count / len(students) * 100), 1) if students else 0.0
 
-        sessions_header.append({
-            "id": str(s.id),
-            "session_no": idx + 1,
-            "session_date": s.session_date.isoformat() if s.session_date else "",
-            "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
-            "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
-            "venue": s.venue or "Room",
-            "faculty_name": fac_name,
-            "present_count": p_count,
-            "total_students": len(students),
-            "percentage": pct,
-        })
+            sessions_header.append({
+                "id": str(s.id),
+                "session_no": idx + 1,
+                "session_date": s.session_date.isoformat() if s.session_date else "",
+                "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
+                "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
+                "venue": s.venue or "Room",
+                "faculty_name": fac_name,
+                "present_count": p_count,
+                "total_students": len(students),
+                "percentage": pct,
+            })
+        else:
+            act = item["obj"]
+            sess = act.session
+            fac_name = "Faculty"
+            if sess.faculty_internal:
+                fac_name = sess.faculty_internal.full_name
+            elif sess.faculty_external:
+                fac_name = sess.faculty_external.name
+
+            # Calculate presence for this activity
+            act_verif_map = {v.student_id: v for v in act.verifications}
+            p_count = 0
+            for st in students:
+                v_rec = act_verif_map.get(st.id)
+                if v_rec and v_rec.verification_status in ["verified_present", "late_submission", "present"]:
+                    p_count += 1
+                elif not v_rec:
+                    p_st = parent_sess_att_map.get((act.session_id, st.id))
+                    if p_st and p_st in PRESENT_STATUSES:
+                        p_count += 1
+
+            pct = round((p_count / len(students) * 100), 1) if students else 0.0
+
+            s_time_str = act.start_time.strftime("%H:%M") if act.start_time else (sess.start_time.strftime("%H:%M") if sess.start_time else "")
+            e_time_str = act.end_time.strftime("%H:%M") if act.end_time else (sess.end_time.strftime("%H:%M") if sess.end_time else "")
+
+            sessions_header.append({
+                "id": str(act.id),
+                "session_no": idx + 1,
+                "session_date": sess.session_date.isoformat() if sess.session_date else "",
+                "start_time": s_time_str,
+                "end_time": e_time_str,
+                "venue": f"{sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
+                "faculty_name": fac_name,
+                "present_count": p_count,
+                "total_students": len(students),
+                "percentage": pct,
+                "is_hyperbuild": True,
+                "activity_title": act.title,
+            })
 
     # Build students matrix rows
-    total_conducted = len(all_sessions)
+    total_conducted = len(combined_sessions)
     students_matrix = []
     safe_count = 0
     warning_count = 0
@@ -1264,14 +1577,33 @@ async def get_subject_attendance_matrix(
     for st in students:
         attended = 0
         records: Dict[str, str] = {}
-        for s in all_sessions:
-            rec = att_map.get((st.id, s.id))
-            if rec:
-                records[str(s.id)] = rec.status
-                if rec.status in PRESENT_STATUSES:
-                    attended += 1
+
+        for item in combined_sessions:
+            if item["type"] == "regular":
+                s = item["obj"]
+                rec = att_map.get((st.id, s.id))
+                if rec:
+                    records[str(s.id)] = rec.status
+                    if rec.status in PRESENT_STATUSES:
+                        attended += 1
+                else:
+                    records[str(s.id)] = "unmarked"
             else:
-                records[str(s.id)] = "unmarked"
+                act = item["obj"]
+                v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+                if v_rec:
+                    if v_rec.verification_status in ["verified_present", "late_submission", "present"]:
+                        records[str(act.id)] = "present"
+                        attended += 1
+                    else:
+                        records[str(act.id)] = "absent"
+                else:
+                    p_st = parent_sess_att_map.get((act.session_id, st.id))
+                    if p_st and p_st in PRESENT_STATUSES:
+                        records[str(act.id)] = "present"
+                        attended += 1
+                    else:
+                        records[str(act.id)] = "absent"
 
         pct = round((attended / total_conducted * 100), 1) if total_conducted > 0 else 100.0
 
@@ -1286,7 +1618,6 @@ async def get_subject_attendance_matrix(
             debarred_count += 1
 
         # Needed classes formula to reach 75%
-        # (attended + x) / (total_conducted + x) >= 0.75 => x >= (0.75 * total_conducted - attended) / 0.25
         needed = 0
         if pct < 75.0 and total_conducted > 0:
             target = 0.75 * total_conducted

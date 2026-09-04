@@ -109,6 +109,7 @@ export const AcademicEventModal: React.FC<AcademicEventModalProps> = ({
   const [showPosterPreview, setShowPosterPreview] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [notifyStudents, setNotifyStudents] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -240,6 +241,7 @@ export const AcademicEventModal: React.FC<AcademicEventModalProps> = ({
         status,
         poster_url: posterUrl || null,
         poster_filename: posterFilename || null,
+        notify_students: notifyStudents,
       };
 
       if (isEditing && event) {
@@ -669,6 +671,26 @@ export const AcademicEventModal: React.FC<AcademicEventModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Email Notification Option for New Events */}
+          {!isEditing && (
+            <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyStudents}
+                onChange={(e) => setNotifyStudents(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer"
+              />
+              <div className="text-xs space-y-0.5">
+                <span className="font-bold text-slate-900 dark:text-white">
+                  Notify targeted students via official email on schedule
+                </span>
+                <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                  Automatically sends announcement emails with date, timings, venue & creative banner to targeted cohort.
+                </p>
+              </div>
+            </label>
+          )}
 
           {/* Lightbox Modal Preview */}
           {showPosterPreview && posterUrl && (
