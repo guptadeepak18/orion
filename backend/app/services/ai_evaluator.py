@@ -28,13 +28,17 @@ async def evaluate_submission_against_rubric(
         content_chunks.append(submission_text.strip())
 
     if files:
-        for f in files:
+        for idx, f in enumerate(files):
             file_url = f.get("file_url") or f.get("file_path") or f.get("saved_path")
             file_name = f.get("file_name") or f.get("filename")
             if file_url:
                 extracted = extract_text_from_file(file_url, file_name)
                 if extracted and extracted.strip():
-                    content_chunks.append(f"=== Content from attached file: {file_name or 'file'} ===\n{extracted.strip()}")
+                    # Allow up to 30,000 characters per file so secondary files (like Excel sheets) are never starved
+                    truncated_file_text = extracted.strip()[:30000]
+                    content_chunks.append(
+                        f"=== ATTACHED FILE [{idx+1}/{len(files)}]: {file_name or 'file'} ===\n{truncated_file_text}"
+                    )
 
     full_submission_text = "\n\n".join(content_chunks).strip()
     if not full_submission_text:
@@ -231,8 +235,12 @@ Mode: {mode}
 === RUBRIC ===
 {rubric_str}
 
-=== STUDENT'S SUBMITTED DELIVERABLE ===
-{student_text[:8000]}
+=== STUDENT'S SUBMITTED DELIVERABLE (EXAMINE ALL ATTACHED FILES THOROUGHLY) ===
+NOTE ON MULTI-FILE DELIVERABLES:
+The student may submit multiple attachments (e.g. a written report in PDF/DOCX AND an Excel workbook in XLSX/XLS/CSV).
+You MUST review every attached file section below. Do NOT claim an Excel workbook or practical calculation is missing if it is contained in one of the attached file blocks below.
+
+{student_text[:50000]}
 
 === OUTPUT REQUIREMENTS ===
 Return ONLY a valid JSON object matching this exact schema (no markdown fences, no extra text):
