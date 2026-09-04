@@ -1502,7 +1502,7 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
             <form onSubmit={handleSaveSyllabus} className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col border-t border-slate-100 dark:border-slate-800 lg:flex-row lg:border-t-0">
                 {/* Section navigation stays visible so users can move through the syllabus without losing context. */}
-                <nav aria-label="Syllabus sections" className="flex shrink-0 gap-1 overflow-x-auto no-scrollbar scroll-smooth border-b border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/30 lg:w-60 lg:flex-col lg:overflow-y-auto lg:border-b-0 lg:border-r">
+                <nav aria-label="Syllabus sections" className="flex flex-wrap shrink-0 gap-1 border-b border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/30 lg:w-60 lg:flex-col lg:overflow-y-auto lg:border-b-0 lg:border-r">
                   {SYLLABUS_SECTIONS.map((section) => {
                     const isActive = syllabusSubTab === section.id;
                     const Icon = section.icon;

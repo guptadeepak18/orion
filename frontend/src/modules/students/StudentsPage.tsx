@@ -815,7 +815,7 @@ export const StudentsPage: React.FC = () => {
             )}
 
             {/* Modal Navigation Tabs */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 space-x-2 overflow-x-auto no-scrollbar scroll-smooth">
+            <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 mb-6 space-x-2">
               <button
                 type="button"
                 onClick={() => {

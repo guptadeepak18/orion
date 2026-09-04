@@ -729,7 +729,7 @@ export const SubjectLMSHub: React.FC = () => {
       </div>
 
       {/* Persistent Course Navigation Bar */}
-      <div className="flex items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-x-auto no-scrollbar scroll-smooth">
+      <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -737,7 +737,7 @@ export const SubjectLMSHub: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => navigateToTab(tab.id as TabId)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/25'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'

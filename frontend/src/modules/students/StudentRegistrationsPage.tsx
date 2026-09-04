@@ -405,7 +405,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth w-full sm:w-auto p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
+        <div className="flex flex-wrap items-center gap-1 w-full sm:w-auto p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
           {[
             { id: 'pending_review', label: 'Pending Review' },
             { id: 'approved', label: 'Approved' },
