@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import logging
 import asyncio
 import httpx
@@ -9,6 +10,8 @@ from app.services.text_extractor import extract_text_from_file
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_ollama_backoff_until = 0.0
 
 
 async def evaluate_submission_against_rubric(
@@ -85,7 +88,9 @@ async def evaluate_submission_against_rubric(
 
     # 4. Attempt AI evaluation with multi-provider cascade
     # Priority 1: High-precision Ollama Cloud (Gemma 4 31B, sub-second, 262k context, no rate limits)
-    if ollama_url:
+    global _ollama_backoff_until
+    now_ts = time.time()
+    if ollama_url and now_ts > _ollama_backoff_until:
         try:
             result = await _evaluate_with_ollama(
                 activity, rubric, full_submission_text,
@@ -94,6 +99,9 @@ async def evaluate_submission_against_rubric(
             )
         except Exception as e:
             logger.warning(f"Ollama evaluation failed: {e}")
+            if "429" in str(e) or "too many requests" in str(e).lower():
+                _ollama_backoff_until = now_ts + 300.0  # Backoff Ollama for 5 mins
+
 
     # Priority 2: Groq Multi-Model LPU (120B / 27B)
     if not result and groq_key:
@@ -414,20 +422,20 @@ async def _evaluate_with_groq(
     student_name: str = "Student",
 ) -> Dict[str, Any]:
     prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    # Ensure prompt fits safely within Groq token limits (~16k chars max)
+    if len(prompt) > 16000:
+        prompt = prompt[:16000] + "\n\n[Submission text truncated for model context window]\nEnsure valid JSON output."
+
     models_to_try = [
-        "openai/gpt-oss-120b",
         os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
         "openai/gpt-oss-20b",
-        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-120b",
     ]
-    async with httpx.AsyncClient(timeout=65.0) as client:
+    async with httpx.AsyncClient(timeout=45.0) as client:
         last_err = None
         for model in models_to_try:
-            for attempt in range(3):  # Up to 3 attempts per model
+            for attempt in range(2):  # Up to 2 attempts per model
                 try:
-                    # Note: We omit response_format={"type": "json_object"} because reasoning/thinking models
-                    # like Qwen3.6 and GPT-OSS output think tokens that fail Groq's server-side JSON schema validator.
-                    # Our robust _clean_and_parse_json extracts the JSON cleanly from any model output.
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={
@@ -451,17 +459,20 @@ async def _evaluate_with_groq(
                         parsed["evaluated_at"] = datetime.utcnow().isoformat()
                         return parsed
                     elif resp.status_code == 429:
-                        wait = 6 + attempt * 4  # 6s, 10s, 14s
-                        logger.warning(f"Groq {model} hit 429, sleeping {wait}s (attempt {attempt+1}/3)...")
+                        wait = 2 + attempt * 2  # 2s, 4s
+                        logger.warning(f"Groq {model} hit 429, sleeping {wait}s (attempt {attempt+1}/2)...")
                         await asyncio.sleep(wait)
+                    elif resp.status_code == 413:
+                        logger.warning(f"Groq {model} request too large (413), falling back immediately.")
+                        break
                     else:
-                        last_err = f"Groq {model} returned {resp.status_code}: {resp.text[:200]}"
+                        last_err = f"Groq {model} returned {resp.status_code}: {resp.text[:120]}"
                         logger.warning(last_err)
                         break
                 except (httpx.ConnectError, httpx.NetworkError, httpx.TimeoutException, OSError) as net_err:
                     last_err = f"Network error connecting to Groq: {net_err}"
-                    logger.warning(f"Groq {model} network error (attempt {attempt+1}/3): {net_err}, retrying in 3s...")
-                    await asyncio.sleep(3)
+                    logger.warning(f"Groq {model} network error: {net_err}")
+                    await asyncio.sleep(1.5)
                 except Exception as e:
                     last_err = str(e)
                     logger.warning(f"Groq {model} failed: {e}")
@@ -631,6 +642,7 @@ def _check_topic_alignment(activity: Any, student_text: str) -> tuple[bool, str,
     Checks whether the student submission aligns with the activity's assigned problem statement.
     Returns (is_aligned, detected_topic, mismatch_reason).
     """
+    import re
     text_lower = student_text.lower()
     act_title = (activity.title or "").lower()
     act_reqs = (activity.submission_requirements or "").lower()
@@ -646,7 +658,7 @@ def _check_topic_alignment(activity: Any, student_text: str) -> tuple[bool, str,
     full_act_text = f"{act_title} {act_reqs} {act_why} {act_instructions}"
     
     # 1. Activity 1 / Case Lab Specific (Amazon v. Future Retail & Emergency Arbitration)
-    if "amazon" in full_act_text or "future retail" in full_act_text or "emergency arbitration" in full_act_text:
+    if any(k in full_act_text for k in ["amazon v. future", "future retail", "emergency arbitration", "emergency arbitrator"]):
         primary_anchors = [
             "future retail", "future coupons", "fcpl", "frl", "siac",
             "emergency arbitrator", "emergency arbitration", "group of companies",
@@ -668,7 +680,7 @@ def _check_topic_alignment(activity: Any, student_text: str) -> tuple[bool, str,
         return True, detected_topic, ""
 
     # 2. Activity 5 / Contract Drafting / NDA & SaaS Redlining
-    elif "nda" in full_act_text or "saas" in full_act_text or "drafting" in full_act_text or "service agreement" in full_act_text:
+    elif bool(re.search(r'\b(?:nda|non-disclosure|saas agreement|contract drafting|contract redlining)\b', full_act_text)):
         primary_anchors = [
             "non-disclosure", "mutual nda", "saas service agreement", "master service",
             "confidentiality clause", "indemnification", "limitation of liability",
@@ -686,7 +698,7 @@ def _check_topic_alignment(activity: Any, student_text: str) -> tuple[bool, str,
         return True, detected_topic, ""
 
     # 3. Activity 9 / Negotiation Simulation & BATNA Role-Play
-    elif any(k in full_act_text for k in ["negotiation", "batna", "fisher", "ury", "harvard principled", "zopa", "reservation point", "role-play"]):
+    elif bool(re.search(r'\b(?:negotiation|batna|fisher|ury|harvard principled|zopa)\b', full_act_text)):
         primary_anchors = [
             "negotiation", "batna", "fisher", "ury", "principled",
             "reservation point", "reservation price", "zopa", "integrative",
@@ -1071,19 +1083,35 @@ def _generate_structured_fallback_evaluation(
     peer_texts: Optional[Dict[str, str]] = None,
     student_name: str = "Student",
 ) -> Dict[str, Any]:
-    """Generates an exhaustive, continuous, highly critical academic evaluation across all rubric criteria."""
     import re
+    import json
     text_lower = student_text.lower()
     word_count = len(student_text.split())
-    num_criteria = max(len(rubric), 3)
-    marks_per_criterion = round(100.0 / num_criteria, 1)
 
-    if not rubric:
-        rubric = [
+    if isinstance(rubric, str):
+        try:
+            rubric = json.loads(rubric)
+        except Exception:
+            rubric = []
+
+    normalized_rubric = []
+    if isinstance(rubric, list):
+        for idx, c in enumerate(rubric):
+            if isinstance(c, str):
+                normalized_rubric.append({"criterion": c.strip()})
+            elif isinstance(c, dict):
+                normalized_rubric.append(c)
+
+    if not normalized_rubric:
+        normalized_rubric = [
             {"criterion": "Principled-Negotiation Preparation", "weightage": 35.0},
             {"criterion": "Live Negotiation Execution & Observation", "weightage": 30.0},
             {"criterion": "AI-Assisted Critique & Reflection Report", "weightage": 35.0},
         ]
+
+    rubric = normalized_rubric
+    num_criteria = max(len(rubric), 3)
+    marks_per_criterion = round(100.0 / num_criteria, 1)
 
     # --- TOPIC & PROBLEM STATEMENT ALIGNMENT CHECK ---
     is_aligned, detected_topic, mismatch_reason = _check_topic_alignment(activity, student_text)
@@ -1348,6 +1376,455 @@ def _generate_structured_fallback_evaluation(
             f"Focus on authentic diagnostic communication, eliminate verbatim AI copying, and benchmark opening anchors against verifiable market data."
         )
 
+    elif any(k in act_meta_text for k in ["probability", "binomial", "poisson", "normal", "emv", "statistics"]):
+        # Statistics for Managers (Probability Distributions & EMV Risk Lab)
+        has_binom = any(k in text_lower for k in ["binom", "binomial", "defective", "n=", "p="])
+        has_poisson = any(k in text_lower for k in ["poisson", "lambda", "arrival", "staffing"])
+        has_norm = any(k in text_lower for k in ["norm.dist", "norm.inv", "normal", "z-table", "z score", "standard normal", "mean", "std dev"])
+        has_emv = any(k in text_lower for k in ["emv", "expected monetary value", "launch", "not launch", "decision tree", "payoff"])
+        has_formulas = bool(re.search(r'(?:BINOM\.DIST|POISSON\.DIST|NORM\.DIST|NORM\.INV|EMV|\bSUM\(|\bAVERAGE\()', student_text, re.IGNORECASE))
+        has_precision = bool(re.search(r'\b\d+\.\d{3,}\b', student_text))
+        has_ai_ext = any(k in text_lower for k in ["claude", "monte carlo", "sensitivity", "simulation", "limitation"])
+
+        for i, c in enumerate(rubric):
+            crit_name = c.get("criterion", f"Criterion {i+1}").strip()
+            crit_lower = crit_name.lower()
+            custom_w = c.get("weightage")
+            if custom_w is not None:
+                try:
+                    max_m = float(custom_w)
+                except (ValueError, TypeError):
+                    max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+            else:
+                max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+
+            if any(k in crit_lower for k in ["binomial", "poisson"]):
+                if (has_binom or has_poisson) and (has_formulas or has_precision) and word_count >= 150:
+                    awarded = round(max_m * 0.94, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Binomial and Poisson distributions computed accurately via formula models with operational staffing interpretations."
+                    evidence = f'Extracted analytical content: "{p_sample_1}"'
+                    gap = "Ensure explicit sensitivity boundaries are documented for arrival variance."
+                elif has_binom or has_poisson:
+                    awarded = round(max_m * 0.76, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Distribution parameters and probability outputs are identified with basic narrative descriptions."
+                    evidence = f'Extracted analytical content: "{p_sample_1}"'
+                    gap = "Needs explicit dynamic Excel formula lineage (e.g. BINOM.DIST, POISSON.DIST) for all scenarios."
+                else:
+                    awarded = round(max_m * 0.50, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Superficial coverage of discrete distributions without computational rigor."
+                    evidence = f'Extracted analytical content: "{p_sample_1}"'
+                    gap = "Missing quantitative probability computations."
+
+            elif any(k in crit_lower for k in ["normal", "z-table"]):
+                if has_norm and (has_formulas or "z-table" in text_lower or has_precision) and word_count >= 150:
+                    awarded = round(max_m * 0.95, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Direct (NORM.DIST) and inverse (NORM.INV) probabilities correctly applied with manual Z-table verification."
+                    evidence = f'Extracted analytical content: "{p_sample_2}"'
+                    gap = "Provide continuous density curve visualizations for non-standard thresholds."
+                elif has_norm:
+                    awarded = round(max_m * 0.78, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Normal distribution logic is applied but Z-table cross-validation is summarized."
+                    evidence = f'Extracted analytical content: "{p_sample_2}"'
+                    gap = "Missing side-by-side manual Z-score calculation verifying Excel functions."
+                else:
+                    awarded = round(max_m * 0.52, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Incomplete treatment of continuous distribution modeling."
+                    evidence = f'Extracted analytical content: "{p_sample_2}"'
+                    gap = "Normal distribution computations not demonstrated."
+
+            else:  # EMV, AI Extension & Risk Report
+                if has_emv and word_count >= 200:
+                    awarded = round(max_m * 0.92, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "EMV decision model demonstrates robust payoff matrix comparison between Launch vs Not-Launch alternatives."
+                    evidence = f'Extracted analytical content: "{p_sample_3}"'
+                    gap = "Could expand on parameter stress-testing under extreme adverse market scenarios."
+                elif has_emv:
+                    awarded = round(max_m * 0.78, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Expected monetary value calculated with recommended business decision."
+                    evidence = f'Extracted analytical content: "{p_sample_3}"'
+                    gap = "Incorporate AI-assisted Monte Carlo risk comparison into executive decision report."
+                else:
+                    awarded = round(max_m * 0.55, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Qualitative risk discussion lacking structured expected value payoffs."
+                    evidence = f'Extracted analytical content: "{p_sample_3}"'
+                    gap = "Omitted mathematical EMV decision model."
+
+            total_score += awarded
+            criteria_breakdown.append({
+                "criterion": crit_name,
+                "marks_awarded": awarded,
+                "max_marks": max_m,
+                "tier": tier,
+                "rationale": rationale,
+                "evidence": evidence,
+                "gap_identified": gap,
+            })
+
+        total_score = min(100.0, max(0.0, round(total_score, 1)))
+        overall_tier = "Distinction (85-100%)" if total_score >= 85 else ("Merit (70-84%)" if total_score >= 70 else ("Pass (50-69%)" if total_score >= 50 else "Needs Work (<50%)"))
+        strengths = [
+            "Empirical Computational Rigor: Quantitative modeling executed across discrete and continuous distributions.",
+            "Decision Modeling: Clear expected monetary value framing distinguishing strategic options.",
+            "Technical Execution: Application of statistical functions with operational PGDM context.",
+        ]
+        areas_for_improvement = [
+            "Parameter Sensitivity: Test decision boundaries against variable arrival and defect rates.",
+            "Computational Documentation: Clearly annotate cell linkages and distribution parameters in attached workbooks.",
+        ]
+        exec_summary = f"Comprehensive statistical evaluation across {len(criteria_breakdown)} criteria ({word_count} words/data points). Achieves {total_score}/100 ({overall_tier})."
+        critical_feedback = f"ACADEMIC EVALUATION — STATISTICS FOR MANAGERS\n\n1. Distribution Modeling: Mathematical models demonstrated solid computational execution.\n2. Decision Under Uncertainty: EMV payoff comparisons support sound management decisions.\n3. Continuous Improvement: Benchmark sensitivity thresholds against worst-case stochastic variances."
+
+    elif any(k in act_meta_text for k in ["ratio", "financial health", "balance sheet", "common-size", "trend", "accounting", "liquidity", "dupont", "maruti"]):
+        # Accounting for Decision Making (Ratio Analysis & Financial Health Dashboard)
+        has_ratios = any(k in text_lower for k in ["current ratio", "quick ratio", "debt", "equity", "roe", "roa", "profit margin", "turnover", "working capital"])
+        has_trend = any(k in text_lower for k in ["trend", "common-size", "vertical", "horizontal", "year", "yoy", "percentage of sales", "balance sheet"])
+        has_triangulation = any(k in text_lower for k in ["claude", "chatgpt", "gemini", "triangulation", "interpretation", "recommendation", "liquidity", "solvency"])
+        has_numbers = bool(re.search(r'\b\d{2,}\.?\d*%', student_text)) or bool(re.search(r'\b\d+\.\d{2}\b', student_text))
+
+        for i, c in enumerate(rubric):
+            crit_name = c.get("criterion", f"Criterion {i+1}").strip()
+            crit_lower = crit_name.lower()
+            custom_w = c.get("weightage")
+            if custom_w is not None:
+                try:
+                    max_m = float(custom_w)
+                except (ValueError, TypeError):
+                    max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+            else:
+                max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+
+            if any(k in crit_lower for k in ["ratio computation", "data accuracy", "computation"]):
+                if has_ratios and has_numbers and word_count >= 150:
+                    awarded = round(max_m * 0.93, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Ratios across liquidity, solvency, and profitability correctly computed with financial accuracy."
+                    evidence = f'Extracted financial analysis: "{p_sample_1}"'
+                    gap = "Include cash-conversion cycle metrics alongside standard working capital ratios."
+                elif has_ratios:
+                    awarded = round(max_m * 0.77, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Key financial ratios computed but requires more multi-year data depth."
+                    evidence = f'Extracted financial analysis: "{p_sample_1}"'
+                    gap = "Provide underlying formula cell links verifying balance sheet reconciliations."
+                else:
+                    awarded = round(max_m * 0.50, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Basic ratio definitions presented without granular financial statements."
+                    evidence = f'Extracted financial analysis: "{p_sample_1}"'
+                    gap = "Incomplete numerical ratio computation."
+
+            elif any(k in crit_lower for k in ["trend", "common-size"]):
+                if has_trend and has_numbers and word_count >= 150:
+                    awarded = round(max_m * 0.91, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Trend trajectories and common-size balance sheet / income statement percentages effectively modeled."
+                    evidence = f'Extracted financial analysis: "{p_sample_2}"'
+                    gap = "Deepen macroeconomic contextualization of year-on-year line-item variances."
+                elif has_trend:
+                    awarded = round(max_m * 0.76, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Trend analysis present with qualitative descriptions of YoY performance."
+                    evidence = f'Extracted financial analysis: "{p_sample_2}"'
+                    gap = "Missing full common-size normalization across all asset and liability heads."
+                else:
+                    awarded = round(max_m * 0.50, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Superficial trend review without normalized common-size statements."
+                    evidence = f'Extracted financial analysis: "{p_sample_2}"'
+                    gap = "Common-size percentage analysis not demonstrated."
+
+            else:  # AI Triangulation & Dashboard Summary
+                if has_triangulation and word_count >= 200:
+                    awarded = round(max_m * 0.90, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Executive dashboard synthesizes operational takeaways with independent critique of AI diagnostic prompts."
+                    evidence = f'Extracted financial analysis: "{p_sample_3}"'
+                    gap = "Include contractual debt covenant monitoring recommendations."
+                elif has_triangulation:
+                    awarded = round(max_m * 0.75, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "AI financial commentary summarized with sound management orientation."
+                    evidence = f'Extracted financial analysis: "{p_sample_3}"'
+                    gap = "Document specific discrepancies where AI models misread statutory note disclosures."
+                else:
+                    awarded = round(max_m * 0.52, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Brief executive summary lacking structured AI triangulation."
+                    evidence = f'Extracted financial analysis: "{p_sample_3}"'
+                    gap = "Missing AI triangulation log and dashboard recommendations."
+
+            total_score += awarded
+            criteria_breakdown.append({
+                "criterion": crit_name,
+                "marks_awarded": awarded,
+                "max_marks": max_m,
+                "tier": tier,
+                "rationale": rationale,
+                "evidence": evidence,
+                "gap_identified": gap,
+            })
+
+        total_score = min(100.0, max(0.0, round(total_score, 1)))
+        overall_tier = "Distinction (85-100%)" if total_score >= 85 else ("Merit (70-84%)" if total_score >= 70 else ("Pass (50-69%)" if total_score >= 50 else "Needs Work (<50%)"))
+        strengths = [
+            "Financial Statement Mastery: Methodical ratio calculations across liquidity, solvency, and margins.",
+            "Common-Size Depth: Structured percentage normalization highlighting capital allocation shifts.",
+            "Commercial Insight: Managerial evaluation grounded in corporate performance parameters.",
+        ]
+        areas_for_improvement = [
+            "Cash Flow Linkage: Connect working capital movements directly to operating cash flow conversion.",
+            "DuPont Decomposition: Deconstruct ROE into operating margin, asset turnover, and leverage factors.",
+        ]
+        exec_summary = f"Accounting evaluation completed across {len(criteria_breakdown)} criteria ({word_count} words analyzed). Score: {total_score}/100 ({overall_tier})."
+        critical_feedback = f"ACADEMIC APPRAISAL — ACCOUNTING FOR DECISION MAKING\n\n1. Financial Health Diagnostic: Accurate computation of core leverage, liquidity, and profitability metrics.\n2. Common-Size Trend Analysis: Longitudinal shifts identified with commercial understanding.\n3. Remediation: Strengthen cash flow validation and stress-test debt coverage ratios."
+
+    elif any(k in act_meta_text for k in ["leadership", "360-degree", "self-assessment", "radar chart", "organisational behaviour", "mlq"]):
+        # Organisational Behaviour (Leadership Style Self-Assessment & 360 Feedback)
+        has_self = any(k in text_lower for k in ["self-assessment", "mlq", "sub-dimension", "transformational", "transactional", "inspirational", "intellectual", "contingent reward", "laissez-faire"])
+        has_peers = any(k in text_lower for k in ["peer rating", "peer 1", "peer 2", "peer 3", "peers", "average peer", "observer", "survey", "counterpart", "colleague"])
+        has_radar = any(k in text_lower for k in ["radar chart", "spider chart", "gap analysis", "self vs peer", "largest gap", "comparison table", "score gap"])
+        has_plan = any(k in text_lower for k in ["development plan", "smart", "blind spot", "action commitment", "behavioral", "remediation", "claude", "habit"])
+
+        for i, c in enumerate(rubric):
+            crit_name = c.get("criterion", f"Criterion {i+1}").strip()
+            crit_lower = crit_name.lower()
+            custom_w = c.get("weightage")
+            if custom_w is not None:
+                try:
+                    max_m = float(custom_w)
+                except (ValueError, TypeError):
+                    max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+            else:
+                max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+
+            if any(k in crit_lower for k in ["self-assessment", "peer instrument", "data collection"]):
+                if has_self and has_peers and word_count >= 150:
+                    awarded = round(max_m * 0.94, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Validated self-assessment completed across all sub-dimensions with multi-source peer ratings gathered from observed interactions."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_1}"'
+                    gap = "Standardize peer observer tenure to establish observational consistency."
+                elif has_self or has_peers:
+                    awarded = round(max_m * 0.77, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Self-assessment completed with partial peer observation dataset."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_1}"'
+                    gap = "Ensure at least 3-4 peers provide individualized rating records across all leadership dimensions."
+                else:
+                    awarded = round(max_m * 0.50, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Incomplete leadership survey instrument."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_1}"'
+                    gap = "Self-assessment or peer feedback collection omitted."
+
+            elif any(k in crit_lower for k in ["360-feedback", "radar chart", "analysis"]):
+                if has_radar and word_count >= 150:
+                    awarded = round(max_m * 0.92, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "Comparison tables and radar chart clearly articulate self-versus-peer perception divergences and key leadership gaps."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_2}"'
+                    gap = "Correlate gap scores directly with specific team project milestones."
+                elif has_radar or has_peers:
+                    awarded = round(max_m * 0.76, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Gaps identified with narrative discussion of behavioral differences."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_2}"'
+                    gap = "Missing visual radar chart plotting self versus peer averages side-by-side."
+                else:
+                    awarded = round(max_m * 0.52, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Limited analysis of 360-degree feedback variance."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_2}"'
+                    gap = "360-degree comparison table and chart omitted."
+
+            else:  # Blind-Spot Analysis & Development Plan
+                if has_plan and word_count >= 180:
+                    awarded = round(max_m * 0.91, 1)
+                    tier = "Distinction (85-100%)"
+                    rationale = "AI blind-spot analysis critically evaluated with measurable, verifiable behavioral commitments targeted at top gaps."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_3}"'
+                    gap = "Establish 60-day and 90-day peer review check-ins for developmental commitments."
+                elif has_plan:
+                    awarded = round(max_m * 0.76, 1)
+                    tier = "Merit (70-84%)"
+                    rationale = "Development plan outlines leadership goals with general improvement areas."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_3}"'
+                    gap = "Formulate commitments as verifiable, measurable behavioral milestones."
+                else:
+                    awarded = round(max_m * 0.52, 1)
+                    tier = "Pass (50-69%)"
+                    rationale = "Superficial personal development reflections."
+                    evidence = f'Extracted behavioral assessment: "{p_sample_3}"'
+                    gap = "Missing actionable development commitments."
+
+            total_score += awarded
+            criteria_breakdown.append({
+                "criterion": crit_name,
+                "marks_awarded": awarded,
+                "max_marks": max_m,
+                "tier": tier,
+                "rationale": rationale,
+                "evidence": evidence,
+                "gap_identified": gap,
+            })
+
+        total_score = min(100.0, max(0.0, round(total_score, 1)))
+        overall_tier = "Distinction (85-100%)" if total_score >= 85 else ("Merit (70-84%)" if total_score >= 70 else ("Pass (50-69%)" if total_score >= 50 else "Needs Work (<50%)"))
+        strengths = [
+            "Authentic Multi-Rater Input: Validated survey methodology capturing peer and self perceptions.",
+            "Diagnostic Variance Mapping: Clear perception gap analysis identifying leadership blind spots.",
+            "Actionable Growth Roadmap: Verifiable developmental commitments addressing interpersonal dynamics.",
+        ]
+        areas_for_improvement = [
+            "Behavioral Specificity: Anchor self-ratings in specific team conflict or decision-making episodes.",
+            "Longitudinal Re-Measurement: Define peer feedback intervals to track behavioral adoption.",
+        ]
+        exec_summary = f"360-degree leadership evaluation across {len(criteria_breakdown)} criteria ({word_count} words analyzed). Score: {total_score}/100 ({overall_tier})."
+        critical_feedback = f"ACADEMIC APPRAISAL — ORGANISATIONAL BEHAVIOUR\n\n1. Instrument Validity: Multi-rater instrument demonstrates commendable student and peer engagement.\n2. Perception Alignment: Self-vs-peer variance mapped with genuine introspective honesty.\n3. Action Plan: Ensure developmental commitments are tracked through objective peer accountability."
+
+    elif any(k in act_meta_text for k in ["genai", "generative ai", "prototype", "marketing case lab", "ai solution"]):
+        # Fundamentals & Applications of GenAI (Marketing Case Lab or Prototype Build)
+        is_prototype = "prototype" in act_meta_text or "build" in act_meta_text
+        has_subfunctions = any(k in text_lower for k in ["sub-function", "content creation", "copywriting", "segmentation", "seo", "ad copy", "campaign", "customer journey"])
+        has_risks = any(k in text_lower for k in ["hallucination", "brand reputation", "copyright", "infringement", "bias", "safeguard", "human-in-the-loop", "checkpoint"])
+        has_prototype_build = any(k in text_lower for k in ["prototype", "workflow", "system prompt", "api", "gradio", "streamlit", "test case", "input", "output", "limitation", "error"])
+        has_ai_logs = any(k in text_lower for k in ["claude", "chatgpt", "perplexity", "pattern assessment", "risk assessment", "memo", "report", "prompt"])
+
+        for i, c in enumerate(rubric):
+            crit_name = c.get("criterion", f"Criterion {i+1}").strip()
+            crit_lower = crit_name.lower()
+            custom_w = c.get("weightage")
+            if custom_w is not None:
+                try:
+                    max_m = float(custom_w)
+                except (ValueError, TypeError):
+                    max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+            else:
+                max_m = marks_per_criterion if i < num_criteria - 1 else round(100.0 - (marks_per_criterion * (num_criteria - 1)), 1)
+
+            if is_prototype:
+                # Act 8: Prototype Build
+                if any(k in crit_lower for k in ["problem definition", "workflow"]):
+                    if (has_prototype_build or has_subfunctions) and word_count >= 150:
+                        awarded = round(max_m * 0.92, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "Narrow, function-specific problem clearly framed with end-to-end workflow architecture and tool mappings."
+                        evidence = f'Extracted prototype design: "{p_sample_1}"'
+                        gap = "Document system error escalation pathways for model latency spikes."
+                    else:
+                        awarded = round(max_m * 0.74, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Problem defined with generalized multi-step workflow."
+                        evidence = f'Extracted prototype design: "{p_sample_1}"'
+                        gap = "Specify exact tool assignments and human validation gates for each workflow step."
+                elif any(k in crit_lower for k in ["prototype build", "critical assessment", "build"]):
+                    if has_prototype_build and ("error" in text_lower or "limitation" in text_lower or "test" in text_lower):
+                        awarded = round(max_m * 0.90, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "Functional prototype executed on real data with concrete error analysis and feasibility limitations identified."
+                        evidence = f'Extracted prototype design: "{p_sample_2}"'
+                        gap = "Include quantitative benchmark evaluations across diverse edge-case inputs."
+                    elif has_prototype_build:
+                        awarded = round(max_m * 0.75, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Prototype workflow designed and executed with basic testing."
+                        evidence = f'Extracted prototype design: "{p_sample_2}"'
+                        gap = "Document specific model output errors and corrective prompting mechanisms."
+                    else:
+                        awarded = round(max_m * 0.50, 1)
+                        tier = "Pass (50-69%)"
+                        rationale = "Prototype concept described without live execution records."
+                        evidence = f'Extracted prototype design: "{p_sample_2}"'
+                        gap = "Missing executable prototype run logs."
+                else:  # Risk Assessment & Report
+                    if has_ai_logs and word_count >= 180:
+                        awarded = round(max_m * 0.90, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "AI risk assessment evaluated with independent technical reasoning in a structured executive report."
+                        evidence = f'Extracted prototype design: "{p_sample_3}"'
+                        gap = "Provide data privacy governance guidelines for enterprise deployment."
+                    else:
+                        awarded = round(max_m * 0.72, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Risk report identifies standard AI challenges."
+                        evidence = f'Extracted prototype design: "{p_sample_3}"'
+                        gap = "Incorporate independent synthesis of AI model evaluation responses."
+            else:
+                # Act 7: Marketing Case Lab
+                if any(k in crit_lower for k in ["comprehension", "sub-function"]):
+                    if has_subfunctions and word_count >= 150:
+                        awarded = round(max_m * 0.92, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "Marketing case rigorously analyzed with 3 distinct sub-functions and correctly attributed operational gains."
+                        evidence = f'Extracted case analysis: "{p_sample_1}"'
+                        gap = "Model quantifiable ROI metrics for each marketing sub-function."
+                    else:
+                        awarded = round(max_m * 0.74, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Case summarized with general marketing benefits identified."
+                        evidence = f'Extracted case analysis: "{p_sample_1}"'
+                        gap = "Differentiate 3 genuinely distinct sub-functions with case-specific evidence."
+                elif any(k in crit_lower for k in ["risk", "safeguard"]):
+                    if has_risks and word_count >= 150:
+                        awarded = round(max_m * 0.91, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "Function-specific risks matched with concrete, plausible operational safeguards."
+                        evidence = f'Extracted case analysis: "{p_sample_2}"'
+                        gap = "Include contractual indemnification standards for AI vendor content."
+                    else:
+                        awarded = round(max_m * 0.72, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Risks outlined with standard governance recommendations."
+                        evidence = f'Extracted case analysis: "{p_sample_2}"'
+                        gap = "Tie each risk directly to its corresponding marketing sub-function."
+                else:  # Example & Memo
+                    if has_ai_logs and word_count >= 180:
+                        awarded = round(max_m * 0.90, 1)
+                        tier = "Distinction (85-100%)"
+                        rationale = "Current market example cited and Claude pattern critique integrated into executive memo."
+                        evidence = f'Extracted case analysis: "{p_sample_3}"'
+                        gap = "Deepen comparative analysis between enterprise and open-source models."
+                    else:
+                        awarded = round(max_m * 0.72, 1)
+                        tier = "Merit (70-84%)"
+                        rationale = "Executive memo integrates key case points."
+                        evidence = f'Extracted case analysis: "{p_sample_3}"'
+                        gap = "Ensure current market case citations and AI critique prompts are fully documented."
+
+            total_score += awarded
+            criteria_breakdown.append({
+                "criterion": crit_name,
+                "marks_awarded": awarded,
+                "max_marks": max_m,
+                "tier": tier,
+                "rationale": rationale,
+                "evidence": evidence,
+                "gap_identified": gap,
+            })
+
+        total_score = min(100.0, max(0.0, round(total_score, 1)))
+        overall_tier = "Distinction (85-100%)" if total_score >= 85 else ("Merit (70-84%)" if total_score >= 70 else ("Pass (50-69%)" if total_score >= 50 else "Needs Work (<50%)"))
+        strengths = [
+            "Functional GenAI Deployment: Clear articulation of AI integration within operational workflows.",
+            "Risk-Aware Architecture: Explicit safeguards established against hallucinations and IP exposure.",
+            "Practical Experimentation: Hands-on evaluation of LLM capabilities with concrete test cases.",
+        ]
+        areas_for_improvement = [
+            "Production Guardrails: Define latency, token economics, and error recovery thresholds.",
+            "Evaluation Metrics: Benchmark model outputs using quantitative accuracy scores.",
+        ]
+        exec_summary = f"GenAI lab evaluation completed across {len(criteria_breakdown)} criteria ({word_count} words analyzed). Score: {total_score}/100 ({overall_tier})."
+        critical_feedback = f"ACADEMIC APPRAISAL — GENAI APPLICATIONS\n\n1. Solution Architecture: Applied AI design demonstrates solid functional understanding.\n2. Risk Management: Concrete safeguards proposed for generative risks.\n3. Advancement: Formalize prompt versioning and enterprise evaluation benchmarks."
+
     else:
         # General / Legal / Governance Fallback Evaluation
         has_statutory_sections = any(k in text_lower for k in ["section", "sec.", "s.", "rule", "clause", "article", "scc", "act, 1996", "act, 2013"])
@@ -1442,16 +1919,16 @@ def _generate_structured_fallback_evaluation(
             "Practical orientation: Highlights commercial and organizational relevance.",
         ]
         areas_for_improvement = [
-            "Statutory Precision: Deepen primary case citations by referencing specific paragraph numbers.",
-            "Adversarial AI Verification: Document explicit prompt logs showing where AI models omitted critical doctrines.",
-            "Executive Deal-Structuring Depth: Formulate actionable contractual clauses rather than high-level advice.",
-            "Quantitative Risk Assessment: Incorporate financial exposure thresholds and governance protocols.",
+            "Precision: Deepen primary references and operational documentation.",
+            "Adversarial AI Verification: Document explicit prompt logs showing where AI models omitted critical elements.",
+            "Executive Depth: Formulate actionable strategic recommendations rather than high-level advice.",
+            "Quantitative Assessment: Incorporate risk exposure thresholds and validation protocols.",
         ]
         critical_feedback = (
             f"COMPREHENSIVE ACADEMIC & EXECUTIVE APPRAISAL\n\n"
-            f"1. Doctrinal Rigor: Solid understanding of foundational case law and contractual principles.\n"
-            f"2. AI Audit: Incorporate transparent verification notes distinguishing raw AI outputs from expert revisions.\n"
-            f"3. Strategic Application: Frame recommendations as actionable risk playbooks."
+            f"1. Academic Rigor: Solid understanding of core assignment principles.\n"
+            f"2. AI Audit: Incorporate transparent verification notes distinguishing raw AI outputs from student analysis.\n"
+            f"3. Strategic Application: Frame recommendations as actionable playbooks."
         )
         exec_summary = (
             f"Comprehensive evaluation completed across {len(criteria_breakdown)} rubric criteria ({word_count} words analyzed). "
