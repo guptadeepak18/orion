@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 _ollama_backoff_until = 0.0
 _groq_backoff_until = 0.0
+_openrouter_backoff_until = 0.0
+_gemini_backoff_until = 0.0
 
 
 async def evaluate_submission_against_rubric(
@@ -114,11 +116,13 @@ async def evaluate_submission_against_rubric(
             if "429" in str(e) or "too many requests" in str(e).lower() or "rate" in str(e).lower():
                 _groq_backoff_until = time.time() + 60.0
 
-    if not result and openrouter_key:
+    global _openrouter_backoff_until
+    if not result and openrouter_key and os.getenv("OPENROUTER_MODEL") and now_ts > _openrouter_backoff_until:
         try:
             result = await _evaluate_with_openrouter(activity, rubric, full_submission_text, openrouter_key, student_name=student_name)
         except Exception as e:
             logger.warning(f"OpenRouter evaluation failed: {e}")
+            _openrouter_backoff_until = time.time() + 600.0
 
     if not result and anthropic_key:
         try:
@@ -126,11 +130,13 @@ async def evaluate_submission_against_rubric(
         except Exception as e:
             logger.warning(f"Anthropic evaluation failed: {e}")
 
-    if not result and gemini_key:
+    global _gemini_backoff_until
+    if not result and gemini_key and now_ts > _gemini_backoff_until:
         try:
             result = await _evaluate_with_gemini(activity, rubric, full_submission_text, gemini_key, student_name=student_name)
         except Exception as e:
             logger.warning(f"Gemini evaluation failed: {e}")
+            _gemini_backoff_until = time.time() + 600.0
 
     if not result and openai_key:
         try:
@@ -466,7 +472,7 @@ async def _evaluate_with_groq(
                         global _groq_backoff_until
                         _groq_backoff_until = time.time() + 60.0
                         logger.warning(f"Groq {model} hit 429, backing off Groq for 60s.")
-                        break
+                        raise RuntimeError(f"Groq {model} hit 429 rate limit, backing off Groq for 60s.")
                     elif resp.status_code == 413:
                         logger.warning(f"Groq {model} request too large (413), falling back immediately.")
                         break
@@ -494,7 +500,7 @@ async def _evaluate_with_openrouter(
 ) -> Dict[str, Any]:
     prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
     model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free")
-    async with httpx.AsyncClient(timeout=65.0) as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
