@@ -12,6 +12,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _ollama_backoff_until = 0.0
+_groq_backoff_until = 0.0
 
 
 async def evaluate_submission_against_rubric(
@@ -104,11 +105,14 @@ async def evaluate_submission_against_rubric(
 
 
     # Priority 2: Groq Multi-Model LPU (120B / 27B)
-    if not result and groq_key:
+    global _groq_backoff_until
+    if not result and groq_key and now_ts > _groq_backoff_until:
         try:
             result = await _evaluate_with_groq(activity, rubric, full_submission_text, groq_key, student_name=student_name)
         except Exception as e:
             logger.warning(f"Groq evaluation failed: {e}")
+            if "429" in str(e) or "too many requests" in str(e).lower() or "rate" in str(e).lower():
+                _groq_backoff_until = time.time() + 60.0
 
     if not result and openrouter_key:
         try:
@@ -459,9 +463,10 @@ async def _evaluate_with_groq(
                         parsed["evaluated_at"] = datetime.utcnow().isoformat()
                         return parsed
                     elif resp.status_code == 429:
-                        wait = 2 + attempt * 2  # 2s, 4s
-                        logger.warning(f"Groq {model} hit 429, sleeping {wait}s (attempt {attempt+1}/2)...")
-                        await asyncio.sleep(wait)
+                        global _groq_backoff_until
+                        _groq_backoff_until = time.time() + 60.0
+                        logger.warning(f"Groq {model} hit 429, backing off Groq for 60s.")
+                        break
                     elif resp.status_code == 413:
                         logger.warning(f"Groq {model} request too large (413), falling back immediately.")
                         break
