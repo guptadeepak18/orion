@@ -27,18 +27,34 @@ async def evaluate_submission_against_rubric(
     if submission_text and submission_text.strip():
         content_chunks.append(submission_text.strip())
 
+    manifest_lines = []
     if files:
+        manifest_lines.append(f"=== SUBMISSION ATTACHMENTS MANIFEST ({len(files)} files uploaded) ===")
         for idx, f in enumerate(files):
             file_url = f.get("file_url") or f.get("file_path") or f.get("saved_path")
-            file_name = f.get("file_name") or f.get("filename")
+            file_name = f.get("file_name") or f.get("filename") or f"file_{idx+1}"
+            file_size = f.get("file_size") or 0
+            file_type = f.get("file_type") or (os.path.splitext(file_name)[1] if file_name else "file")
+
+            extracted = ""
             if file_url:
                 extracted = extract_text_from_file(file_url, file_name)
-                if extracted and extracted.strip():
-                    # Allow up to 30,000 characters per file so secondary files (like Excel sheets) are never starved
-                    truncated_file_text = extracted.strip()[:30000]
-                    content_chunks.append(
-                        f"=== ATTACHED FILE [{idx+1}/{len(files)}]: {file_name or 'file'} ===\n{truncated_file_text}"
-                    )
+
+            if extracted and extracted.strip():
+                # Allow up to 50,000 characters per file so secondary files are never starved
+                truncated_file_text = extracted.strip()[:50000]
+                manifest_lines.append(f"- File {idx+1}: {file_name} ({file_type}, {file_size} bytes, {len(extracted)} chars extracted)")
+                content_chunks.append(
+                    f"=== ATTACHED FILE [{idx+1}/{len(files)}]: {file_name} ===\n{truncated_file_text}"
+                )
+            else:
+                manifest_lines.append(f"- File {idx+1}: {file_name} ({file_type}, {file_size} bytes) [NOTE: File uploaded by student; visual/scanned format]")
+                content_chunks.append(
+                    f"=== ATTACHED FILE [{idx+1}/{len(files)}]: {file_name} ===\n[File was successfully uploaded ({file_size} bytes). Text extraction returned empty (e.g. scanned image or vector drawing). Acknowledge that the student submitted this deliverable.]"
+                )
+
+        if manifest_lines:
+            content_chunks.insert(0, "\n".join(manifest_lines))
 
     full_submission_text = "\n\n".join(content_chunks).strip()
     if not full_submission_text:
@@ -237,10 +253,10 @@ Mode: {mode}
 
 === STUDENT'S SUBMITTED DELIVERABLE (EXAMINE ALL ATTACHED FILES THOROUGHLY) ===
 NOTE ON MULTI-FILE DELIVERABLES:
-The student may submit multiple attachments (e.g. a written report in PDF/DOCX AND an Excel workbook in XLSX/XLS/CSV).
-You MUST review every attached file section below. Do NOT claim an Excel workbook or practical calculation is missing if it is contained in one of the attached file blocks below.
+The student may submit multiple attachments (e.g. a written report or memo in PDF/DOCX AND an Excel quantitative workbook in XLSX/XLS/CSV, or multiple analysis documents).
+You MUST review the entire Submission Attachments Manifest and every attached file block below. A required deliverable, model, or calculation is ONLY missing if it cannot be found across ANY of the attached files. For example, if one file contains the written report and another file contains the Excel calculations or data tables, synthesize both to evaluate the student's complete work.
 
-{student_text[:50000]}
+{student_text[:150000]}
 
 === OUTPUT REQUIREMENTS ===
 Return ONLY a valid JSON object matching this exact schema (no markdown fences, no extra text):
