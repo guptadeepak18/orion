@@ -17,10 +17,12 @@ async def evaluate_submission_against_rubric(
     files: Optional[List[Dict[str, Any]]] = None,
     peer_texts: Optional[Dict[str, str]] = None,
     student_name: str = "Student",
+    technique: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Evaluates a student's activity submission critically against the activity's grading rubric.
     Produces a detailed scorecard out of 100 marks with criterion breakdowns and actionable feedback.
+    Supports configurable evaluation techniques: 'balanced_rubric_native' (default) and 'calibrated_hard_caps'.
     """
     # 1. Gather all submission content
     content_chunks = []
@@ -152,8 +154,8 @@ async def evaluate_submission_against_rubric(
             result.setdefault("collusion_details", [])
 
     # 7. Apply deterministic AI Reliance & Manual Effort Audit with Grade Caps and Penalties
-    ai_audit = detect_ai_reliance(full_submission_text)
-    result = apply_ai_penalties_and_caps(result, ai_audit)
+    ai_audit = detect_ai_reliance(full_submission_text, activity=activity)
+    result = apply_ai_penalties_and_caps(result, ai_audit, technique=technique)
 
     return result
 
@@ -211,25 +213,28 @@ Submission Requirements: {reqs or 'Complete practical submission meeting all cou
 Intended Learning Outcomes: {outcomes or 'Apply concepts analytically with evidence and rigor.'}
 
 === RIGOROUS, UNCOMPROMISING GRADING NORMS (MANUAL EFFORT VS AI OFFLOADING) ===
-In this era of generative AI, high scores (85+) MUST BE EARNED through genuine human thinking and manual execution, not prompt-engineered copy-pasting.
+In this era of generative AI, high scores (85+) MUST BE EARNED through genuine human thinking, empirical data, and manual execution, not uncritical prompt copy-pasting.
 
 1. CRITERIA FOR IDENTIFYING AUTHENTIC MANUAL EFFORT:
-- Grounded Empirical Evidence: Real student calculations, formula linking across cells in Excel, genuine dialogue excerpts and transcripts from live discussions, naming real classmates, domestic Indian business context (INR).
-- Authentic Reflective Candor: Candid first-person introspection, admitting personal mistakes, hesitation, or cognitive biases during simulations/case analyses (generic AI never writes this).
+- Grounded Empirical Evidence: Real student calculations, formula linking across cells in Excel (e.g. $B$6, SUM, NORM.DIST), genuine dialogue excerpts and transcripts from live discussions, naming real classmates, domestic Indian business context (INR/₹, real entities).
+- Authentic Reflective Candor: Candid first-person introspection, admitting personal mistakes, hesitation, or cognitive biases during simulations/case analyses.
 - Idiosyncratic Human Style: Organic paragraph structures, non-templated phrasing, original arguments.
 
-2. CRITERIA FOR IDENTIFYING SYNTHETIC AI GENERATION (PENALIZE STRONGLY):
-- Symmetrical Listitis: Repetitive bullet lists with bold prefixes (**Strategy:**, **Implementation:**), boilerplate corporate intros/conclusions.
-- Robotic Cliché Lexicon: Overusing AI buzzwords ('in the realm of', 'paramount', 'testament to', 'delve into', 'multifaceted nature', 'holistic approach', 'beacon', 'crucial to note').
+2. CRITERIA FOR IDENTIFYING SYNTHETIC AI GENERATION (SCORE ACCORDINGLY WITHIN CRITERIA):
+- Uncritical Boilerplate: Vague, high-level summaries that lack numbers, primary data, formulas, or specific operational details.
+- Hallucinated or Foreign Scenarios: Generic foreign contexts (Silicon Valley USD figures) in Indian PGDM assignments.
+- Unedited Conversational Residuals: Residual chat framing ('Certainly, here is the analysis', 'As an AI model', '[cite: X]', '[insert your name]').
 - Detached Third-Person Phrasing: Writing personal role-play reflections in the third person ('the participant negotiated...').
-- Synthetic / Hallucinated Scenarios: Generic foreign contexts (Silicon Valley USD figures) in Indian PGDM assignments.
-- Conversational Residuals: Residual chat framing ('Certainly, here is the analysis', 'As an AI model', '[cite: X]').
 
-3. MANDATORY GRADE CAPS & CEILINGS:
-- Distinction (85-100%): STRICTLY RESERVED for verified manual execution, deep personal reflection, and flawless technical deliverables. PROHIBITED for text that reads like unedited AI output. (Very rare, <5% of cohort).
-- Merit (70-84%): Strong submission with clear manual effort, solid critical thinking, and minor gaps.
-- Pass (50-69%): Satisfactory basic work, or submissions exhibiting noticeable AI drafting assistance (50-70% AI) with minimal personal synthesis.
-- Needs Work (<50%): Incomplete deliverables, unedited AI copy-paste, raw chat transcripts, or heavy AI offloading (>75% AI)."""
+3. NOTE ON PRESCRIBED AI TOOLS & STANDARD VOCABULARY:
+- Prescribed AI Usage: When the activity explicitly instructs the student to prompt Claude, Gemini, ChatGPT, or another AI tool and record its response (e.g., Step 7 in Negotiation, Prototype Build in GenAI), doing so is full compliance with instructions. Evaluate whether the student actively challenged or synthesized the AI output versus passively copying it.
+- Standard Business English: Do NOT penalize standard management and MBA terminology (e.g. 'operational bottlenecks', 'pain points', 'in conclusion', 'moreover', 'furthermore', 'risk mitigation', 'strategic alignment') as AI clichés. Focus on substantive empirical depth.
+
+4. MANDATORY GRADE CALIBRATION:
+- Distinction (85-100%): STRICTLY RESERVED for verified manual execution, empirical data/formulas, authentic reflection, and complete technical compliance. Prohibited for generic AI summaries lacking manual data.
+- Merit (70-84%): Strong submission with clear manual effort, solid critical thinking, but minor gaps or summarized data.
+- Pass (50-69%): Satisfactory basic work, or submissions exhibiting noticeable generic AI drafting assistance with minimal manual evidence.
+- Needs Work (<50%): Incomplete deliverables, unedited AI copy-paste, raw chat transcripts, or severe offloading without synthesis."""
 
         import re
         step_matches = re.findall(r'(?:^|\n)\s*(?:(\d+)[\.\)]|\bStep\s*(\d+)[:\.\s])\s*([^\n\.\:]{5,50})', instructions)
@@ -712,122 +717,168 @@ def _check_topic_alignment(activity: Any, student_text: str) -> tuple[bool, str,
     return True, detected_topic, ""
 
 
-def detect_ai_reliance(text: str) -> Dict[str, Any]:
+def detect_ai_reliance(text: str, activity: Optional[Any] = None) -> Dict[str, Any]:
     """
     Analyzes textual artifacts, syntactic markers, formatting symmetry, and positive human indicators
     to determine the percentage of AI support/offloading used by the student vs verified manual effort.
+    Context-aware: accounts for activities that prescribe AI tools (Claude, Gemini, ChatGPT).
     """
     import re
     text_lower = text.lower()
     words = text.split()
     total_words = max(len(words), 1)
 
+    # Check if activity explicitly prescribes AI usage
+    act_title = getattr(activity, "title", "") or ""
+    act_instructions = getattr(activity, "instructions", "") or ""
+    act_reqs = getattr(activity, "submission_requirements", "") or ""
+    combined_meta = f"{act_title} {act_instructions} {act_reqs}".lower()
+    prescribes_ai = any(k in combined_meta for k in [
+        "claude", "chatgpt", "gemini", "prompt claude", "prompt chatgpt", "prompt gemini",
+        "ai prototype", "ai solution", "ai tool", "ai-assisted", "generative ai"
+    ])
+    is_personal_roleplay = any(k in combined_meta for k in [
+        "negotiation", "role-play", "role play", "batna", "counterpart", "leadership style", "360-degree"
+    ])
+
     findings = []
     ai_score_points = 0.0
 
-    # 1. Direct LLM Artifacts & Citations
+    # 1. Direct Unedited LLM Search Artifacts
     cite_matches = re.findall(r'\[cite: \d+\]', text)
     if cite_matches:
         count = len(cite_matches)
         ai_score_points += min(45.0, count * 5.0)
         findings.append(f"Contains {count} raw AI search/browse citation tags (e.g. '[cite: 1]') left unedited in document.")
 
-    # 2. Third-person detached self-reference in personal role-play sections
-    third_person_matches = re.findall(r'\b(the negotiator|the participant|the candidate stated|they chose to keep|the author|the student demonstrated)\b', text_lower)
-    if third_person_matches:
-        count = len(third_person_matches)
-        ai_score_points += min(30.0, count * 7.5)
-        findings.append(f"Uses detached third-person phrasing ({count} instances, e.g. 'the negotiator did not disclose') in personal reflection.")
+    # 2. Third-person detached phrasing in personal role-play / reflection sections ONLY
+    if is_personal_roleplay:
+        third_person_matches = re.findall(r'\b(the negotiator stated|the participant negotiated|the candidate stated|they chose to keep their batna|the student demonstrated)\b', text_lower)
+        if third_person_matches:
+            count = len(third_person_matches)
+            ai_score_points += min(25.0, count * 6.0)
+            findings.append(f"Uses detached third-person phrasing ({count} instances) in what should be a first-person experiential role-play reflection.")
 
-    # 3. Conversational AI remnants or system prompts
-    ai_remnants = [
-        ("this keeps the batna", "Contains AI assistant explanatory commentary to the user ('This keeps the BATNA...')"),
-        ("certainly! here", "Contains standard conversational LLM introductory greeting ('Certainly! Here...')"),
-        ("certainly, here", "Contains standard conversational LLM introductory greeting ('Certainly, here...')"),
+    # 3. Conversational AI remnants or uncompleted prompt templates
+    uncompleted_placeholders = [
+        ("paste your response here", "Uncompleted prompt template placeholder ('paste your response here')"),
+        ("to be pasted here verbatim", "Uncompleted prompt template placeholder ('to be pasted here verbatim')"),
+        ("[paste claude", "Uncompleted prompt template placeholder ('[paste claude...')"),
+        ("[write ~", "Uncompleted prompt template placeholder ('[write ~...')"),
+        ("[insert counterpart", "Uncompleted prompt template placeholder"),
+        ("[insert your", "Uncompleted prompt template placeholder"),
+    ]
+    for phrase, desc in uncompleted_placeholders:
+        if phrase in text_lower:
+            ai_score_points += 30.0
+            findings.append(desc)
+
+    # Conversational chat remnants
+    chat_remnants = [
         ("as an ai", "Explicit AI self-identification ('As an AI...')"),
         ("as a language model", "Explicit AI self-identification ('As a language model...')"),
-        ("in this simulation, the candidate", "Third-person prompt generation framing"),
-        ("here is a comprehensive", "Boilerplate LLM output framing"),
-        ("here is your", "Boilerplate LLM output framing"),
-        ("to answer your question", "Direct LLM response phrasing"),
-        ("i hope this helps", "Conversational AI closing greeting"),
-        ("feel free to ask", "Conversational AI closing greeting"),
-        ("let me know if you need", "Conversational AI closing greeting"),
-        ("paste your response here", "Uncompleted prompt template placeholder"),
-        ("to be pasted here verbatim", "Uncompleted prompt template placeholder"),
-        ("[paste claude", "Uncompleted prompt template placeholder"),
-        ("[write ~", "Uncompleted prompt template placeholder"),
-        ("chatgpt:", "Raw chat log transcript header"),
-        ("claude:", "Raw chat log transcript header"),
-        ("assistant:", "Raw chat log transcript header"),
-        ("user:", "Raw chat log transcript header"),
+        ("certainly! here", "Unedited conversational LLM introductory greeting ('Certainly! Here...')"),
+        ("certainly, here", "Unedited conversational LLM introductory greeting ('Certainly, here...')"),
+        ("i hope this helps", "Unedited conversational AI closing greeting ('I hope this helps')"),
+        ("feel free to ask", "Unedited conversational AI closing greeting ('Feel free to ask')"),
+        ("let me know if you need", "Unedited conversational AI closing greeting"),
+        ("this keeps the batna confidential", "Contains AI assistant explanatory commentary to user"),
     ]
-    for phrase, desc in ai_remnants:
+    for phrase, desc in chat_remnants:
         if phrase in text_lower:
             ai_score_points += 25.0
             findings.append(desc)
 
-    # 4. Stylistic AI markers (Cliché density)
-    cliche_words = [
-        "tapestry", "multifaceted", "paramount", "delve into", "delves into", "testament to",
-        "crucial to recognize", "crucial to note", "in conclusion", "pivotal role", "beacon of",
-        "bespoke", "intricate", "nuanced", "landscape of", "in the realm of", "fostering a culture",
-        "navigating the complexities", "vital role", "a myriad of", "underscores the importance",
-        "holistic approach", "seamlessly", "furthermore", "moreover", "it is imperative", "in summary"
+    # Chat headers: only penalize if AI was NOT prescribed
+    if not prescribes_ai:
+        raw_headers = [
+            ("chatgpt:", "Raw chat log transcript header ('ChatGPT:')"),
+            ("claude:", "Raw chat log transcript header ('Claude:')"),
+            ("assistant:", "Raw chat log transcript header ('Assistant:')"),
+            ("user:", "Raw chat log transcript header ('User:')")
+        ]
+        for h, desc in raw_headers:
+            if h in text_lower:
+                ai_score_points += 20.0
+                findings.append(desc)
+
+    # 4. True LLM tell-tale cliché combinations (requiring multiple distinct occurrences)
+    llm_hallmark_phrases = [
+        "delve into the intricate tapestry", "in the realm of", "testament to the enduring",
+        "beacon of hope", "multifaceted tapestry", "ever-evolving tapestry",
+        "serves as a poignant reminder", "it is worth delving into", "tapestry of possibilities",
+        "a myriad of nuanced"
     ]
-    found_cliches = [w for w in cliche_words if w in text_lower]
-    if len(found_cliches) >= 2:
-        ai_score_points += min(25.0, len(found_cliches) * 3.5)
-        findings.append(f"High density of synthetic transition markers ({len(found_cliches)} matches, e.g. '{found_cliches[0]}', '{found_cliches[1]}').")
+    found_hallmarks = [p for p in llm_hallmark_phrases if p in text_lower]
+    if len(found_hallmarks) >= 2:
+        ai_score_points += min(20.0, len(found_hallmarks) * 5.0)
+        findings.append(f"Contains synthetic LLM boilerplate phrases ({len(found_hallmarks)} matches, e.g. '{found_hallmarks[0]}').")
 
-    # 5. Symmetrical Listitis / Structural formatting uniformity
-    bullet_bold_matches = re.findall(r'(?:^|\n)\s*[-*•]\s*\*\*[^*]{3,40}\*\*:', text)
-    if len(bullet_bold_matches) >= 6:
-        ai_score_points += min(20.0, (len(bullet_bold_matches) - 5) * 2.5)
-        findings.append(f"Contains high-density symmetrical bullet formatting ({len(bullet_bold_matches)} repetitive bold-prefixed points characteristic of AI generation).")
-
-    # 6. Positive Manual Effort Verification (Evidence of genuine human work)
+    # 5. Positive Manual Effort Verification (Multi-Dimensional)
     manual_effort_evidence = []
     manual_effort_points = 0.0
 
-    # Peer/classmate collaboration
-    partner_matches = re.findall(r'\b(my partner|partnered with|classmate|peer counterpart|roleplay with|with student|with prn)\b', text_lower)
-    if partner_matches:
-        manual_effort_points += 15.0
-        manual_effort_evidence.append(f"Verified peer/classmate collaboration reference ({len(partner_matches)} mentions).")
+    # A. Quantitative / Spreadsheet / Formula Lineage
+    formula_matches = re.findall(r'(?:BINOM\.DIST|POISSON\.DIST|NORM\.DIST|NORM\.INV|EMV|\bSUM\(|\bAVERAGE\(|\bIF\(|\bVLOOKUP\(|\bINDEX\(|\bMATCH\(|\bCOUNTIF\(|\bSTDEV\.|\bROUND\()', text, re.IGNORECASE)
+    cell_ref_matches = re.findall(r'(?:\$[A-Z]\$\d+|[A-Z]\d+:[A-Z]\d+)', text)
+    float_precision_matches = re.findall(r'\b\d+\.\d{4,}\b', text)  # Floating point numbers with 4+ decimal places
 
-    # Direct quoted dialogue
-    dialogue_matches = re.findall(r'["\u201c][^"\u201d]{10,200}["\u201d]\s*(?:said|replied|countered|stated|asked|proposed)', text, re.IGNORECASE)
+    if formula_matches or cell_ref_matches:
+        count_funcs = len(set(formula_matches))
+        count_refs = len(set(cell_ref_matches))
+        manual_effort_points += 25.0
+        manual_effort_evidence.append(f"Constructed quantitative formula models ({count_funcs} distinct functions, {count_refs} explicit cell references e.g. {cell_ref_matches[:2] if cell_ref_matches else ''}).")
+    elif float_precision_matches:
+        manual_effort_points += 15.0
+        manual_effort_evidence.append(f"Contains empirical calculation outputs with floating-point precision (e.g. {float_precision_matches[0]}).")
+
+    # B. Structured Empirical Data Tables / Transaction IDs / Field Records
+    transaction_matches = re.findall(r'\b(?:T0\d{2,}|ORD[-_]?\d+|EMP[-_]?\d+|TXN[-_]?\d+)\b', text, re.IGNORECASE)
+    table_headers = re.findall(r'\b(order id|discount percentage|total revenue|transaction id|mlq 5x|radar chart|gap score|self rating|peer rating)\b', text_lower)
+    if transaction_matches or len(table_headers) >= 2:
+        manual_effort_points += 20.0
+        items = transaction_matches[:3] if transaction_matches else table_headers[:3]
+        manual_effort_evidence.append(f"Structured empirical dataset with granular transaction/instrument records ({', '.join(items)}).")
+
+    # C. Peer/Classmate Collaboration & Named Counterparts
+    partner_matches = re.findall(r'\b(my partner|partnered with|classmate|peer counterpart|roleplay with|with student|with prn)\b', text_lower)
+    named_peers = re.findall(r'\b(tithi|nakshatra|rudra|sumit|anjali|sahil|harsh|priya|rohit|shreya|arjun|kavya|neha|aditya|rahul)\b', text_lower)
+    if partner_matches or named_peers:
+        manual_effort_points += 20.0
+        mention = f"Named peer ({named_peers[0].capitalize()})" if named_peers else "Peer collaboration documented"
+        manual_effort_evidence.append(f"Verified peer/classmate collaboration ({mention}).")
+
+    # D. Verbatim Quoted Dialogue
+    dialogue_matches = re.findall(r'["\u201c][^"\u201d]{10,200}["\u201d]\s*(?:said|replied|countered|stated|asked|proposed|offered)', text, re.IGNORECASE)
     if dialogue_matches:
         manual_effort_points += 20.0
         manual_effort_evidence.append(f"Includes {len(dialogue_matches)} authentic dialogue exchanges with quoted speech.")
 
-    # Custom quantitative formulas
-    formula_matches = re.findall(r'(?:BINOM\.DIST|POISSON\.DIST|NORM\.DIST|NORM\.INV|EMV|\bSUM\(|\bAVERAGE\(|\bIF\()', text, re.IGNORECASE)
-    if formula_matches:
-        manual_effort_points += 20.0
-        manual_effort_evidence.append(f"Constructed quantitative formula models ({len(set(formula_matches))} unique mathematical functions).")
-
-    # Authentic self-critical reflection
-    reflection_candor = re.findall(r'\b(i hesitated|my mistake|i blundered|i felt nervous|i conceded|i realized i|i initially thought|in hindsight i|my cognitive bias|i failed to|i should have held)\b', text_lower)
+    # E. Authentic Reflective Candor / Metacognitive Learning
+    reflection_candor = re.findall(r'\b(i hesitated|my mistake|i blundered|i felt nervous|i conceded|i realized that|in hindsight|my cognitive bias|i failed to|i should have held|my learning was|i struggled with)\b', text_lower)
     if reflection_candor:
         manual_effort_points += 20.0
-        manual_effort_evidence.append(f"Demonstrates genuine introspective self-critique ({len(reflection_candor)} authentic reflective candor markers).")
+        manual_effort_evidence.append(f"Demonstrates genuine introspective self-critique ({len(reflection_candor)} reflective candor markers).")
 
-    # Local PGDM business context
-    inr_matches = re.findall(r'(?:₹|rs\.?|inr|lakh|crore|maruti|zepto|blinkit|zomato|reliance|tata|stylemod)', text_lower)
+    # F. Local PGDM Business & Economic Context
+    inr_matches = re.findall(r'(?:₹|rs\.?|inr|lakh|crore|maruti|zepto|blinkit|zomato|reliance|tata|stylemod|infosys|wipro)', text_lower)
     if len(inr_matches) >= 3:
-        manual_effort_points += 10.0
+        manual_effort_points += 15.0
         manual_effort_evidence.append("Grounded in domestic Indian business context with realistic financial and operational parameters.")
+
+    # G. Prescribed AI Tool Compliance (Bonus for properly using tool as requested)
+    if prescribes_ai:
+        has_tool_log = any(k in text_lower for k in ["prompt:", "gemini", "claude", "chatgpt", "ai output", "system prompt", "test case"])
+        if has_tool_log:
+            manual_effort_points += 15.0
+            manual_effort_evidence.append("Properly executed and documented prescribed AI tool workflow/prompting.")
 
     manual_effort_detected = manual_effort_points >= 25.0
 
-    # 7. Legitimate AI usage in Step 7
-    has_claude_critique = "claude" in text_lower and any(k in text_lower for k in ["critique", "value on the table", "prompt", "feedback", "claude.ai"])
-    legit_base = 15.0 if has_claude_critique else 0.0
-
-    # Net AI support calculation (manual effort reduces AI score)
-    net_ai_points = max(0.0, ai_score_points - (manual_effort_points * 0.4))
+    # Net AI support calculation:
+    # If the activity prescribes AI, a baseline of 10-15% represents the tool usage as instructed
+    legit_base = 15.0 if prescribes_ai else 0.0
+    net_ai_points = max(0.0, ai_score_points - (manual_effort_points * 0.35))
     total_ai_pct = min(98.0, round(legit_base + net_ai_points, 1))
 
     if total_ai_pct <= 25.0:
@@ -852,19 +903,96 @@ def detect_ai_reliance(text: str) -> Dict[str, Any]:
     }
 
 
-def apply_ai_penalties_and_caps(result: Dict[str, Any], ai_audit: Dict[str, Any]) -> Dict[str, Any]:
+def apply_ai_penalties_and_caps(result: Dict[str, Any], ai_audit: Dict[str, Any], technique: Optional[str] = None) -> Dict[str, Any]:
     """
-    Enforces rigorous academic integrity penalties and grade caps on AI-offloaded submissions.
-    Ensures Distinction (85+) is mathematically impossible for purely AI-generated text.
+    Calibrates AI support metrics, manual effort verification, and grade boundaries.
+    Supports two configurable evaluation techniques:
+    1. 'calibrated_hard_caps' (Retained current technique: rigid regex penalties and hard caps, for 100% reversibility)
+    2. 'balanced_rubric_native' (New default: robust, rubric-aligned scoring with Distinction guard and professor-grade feedback)
     """
-    raw_score = float(result.get("total_score") or 0.0)
+    active_technique = technique or getattr(settings, "EVALUATION_TECHNIQUE", "balanced_rubric_native")
 
-    # Effective AI percentage combines model estimate and deterministic audit
+    # -------------------------------------------------------------------------
+    # MODE 1: CALIBRATED HARD CAPS (PRESERVED EXACT CODE FOR 100% REVERSIBILITY)
+    # -------------------------------------------------------------------------
+    if active_technique == "calibrated_hard_caps":
+        raw_score = float(result.get("total_score") or 0.0)
+
+        # Effective AI percentage combines model estimate and deterministic audit
+        model_ai_pct = float(result.get("ai_support_percentage") or 0.0)
+        audit_ai_pct = float(ai_audit.get("ai_support_percentage") or 0.0)
+        effective_ai_pct = max(model_ai_pct, audit_ai_pct)
+
+        # Merge audit findings
+        findings = list(result.get("ai_audit_findings") or [])
+        for f in ai_audit.get("ai_audit_findings") or []:
+            if f not in findings:
+                findings.append(f)
+
+        manual_effort_detected = ai_audit.get("manual_effort_detected", False)
+        manual_effort_evidence = ai_audit.get("manual_effort_evidence", [])
+
+        penalty = 0.0
+        cap = 100.0
+        penalty_note = ""
+
+        if effective_ai_pct >= 75.0:
+            penalty = 35.0
+            cap = 48.0
+            level = "Critical (Heavy/Near-Complete AI Generation)"
+            penalty_note = f"ACADEMIC INTEGRITY DEDUCTION: High AI generation ({effective_ai_pct:.1f}%) detected without authentic student synthesis. Score capped at Needs Work (<50%)."
+        elif effective_ai_pct >= 50.0:
+            penalty = 20.0
+            cap = 65.0
+            level = "High (Substantial AI Generation & Offloading)"
+            penalty_note = f"AI OFFLOADING DEDUCTION: Substantial AI-assisted drafting ({effective_ai_pct:.1f}%) detected. Grade capped at Pass (max 65%)."
+        elif effective_ai_pct >= 35.0:
+            penalty = 10.0
+            cap = 78.0
+            level = "Moderate (Partial AI Assistance in Drafting)"
+            penalty_note = f"AI ASSISTANCE ADJUSTMENT: Moderate AI reliance ({effective_ai_pct:.1f}%) noted. Grade capped at Merit (max 78%)."
+        else:
+            level = "Low (Bounded AI Engagement per Instructions)"
+            # For Distinction (85+), verified manual effort must be present!
+            if raw_score >= 85.0 and not manual_effort_detected:
+                cap = 82.0
+                penalty_note = "CALIBRATION NOTE: Submission demonstrates competent drafting but lacks verified empirical manual effort (e.g. customized calculations, authentic peer dialogue, or original data). Capped at High Merit (82%)."
+
+        final_score = max(15.0, min(cap, round(raw_score - penalty, 1))) if penalty > 0 else min(cap, raw_score)
+
+        if final_score >= 85.0:
+            tier = "Distinction (85-100%)"
+        elif final_score >= 70.0:
+            tier = "Merit (70-84%)"
+        elif final_score >= 50.0:
+            tier = "Pass (50-69%)"
+        else:
+            tier = "Needs Work (<50%)"
+
+        result["total_score"] = final_score
+        result["performance_tier"] = tier
+        result["ai_support_percentage"] = effective_ai_pct
+        result["ai_support_level"] = level
+        result["ai_audit_findings"] = findings
+        result["manual_effort_verified"] = manual_effort_detected
+        result["manual_effort_evidence"] = manual_effort_evidence
+        result["evaluation_technique"] = "calibrated_hard_caps"
+
+        if penalty_note:
+            result["critical_feedback"] = f"{penalty_note}\n\n" + str(result.get("critical_feedback") or "")
+            if "executive_summary" in result and penalty_note not in result["executive_summary"]:
+                result["executive_summary"] += f" [{penalty_note}]"
+
+        return result
+
+    # -------------------------------------------------------------------------
+    # MODE 2: BALANCED RUBRIC NATIVE (ROBUST ACADEMIC EVALUATION ENGINE)
+    # -------------------------------------------------------------------------
+    raw_score = float(result.get("total_score") or 0.0)
     model_ai_pct = float(result.get("ai_support_percentage") or 0.0)
     audit_ai_pct = float(ai_audit.get("ai_support_percentage") or 0.0)
     effective_ai_pct = max(model_ai_pct, audit_ai_pct)
 
-    # Merge audit findings
     findings = list(result.get("ai_audit_findings") or [])
     for f in ai_audit.get("ai_audit_findings") or []:
         if f not in findings:
@@ -873,33 +1001,42 @@ def apply_ai_penalties_and_caps(result: Dict[str, Any], ai_audit: Dict[str, Any]
     manual_effort_detected = ai_audit.get("manual_effort_detected", False)
     manual_effort_evidence = ai_audit.get("manual_effort_evidence", [])
 
-    penalty = 0.0
-    cap = 100.0
-    penalty_note = ""
-
-    if effective_ai_pct >= 75.0:
-        penalty = 35.0
-        cap = 48.0
-        level = "Critical (Heavy/Near-Complete AI Generation)"
-        penalty_note = f"ACADEMIC INTEGRITY DEDUCTION: High AI generation ({effective_ai_pct:.1f}%) detected without authentic student synthesis. Score capped at Needs Work (<50%)."
-    elif effective_ai_pct >= 50.0:
-        penalty = 20.0
-        cap = 65.0
-        level = "High (Substantial AI Generation & Offloading)"
-        penalty_note = f"AI OFFLOADING DEDUCTION: Substantial AI-assisted drafting ({effective_ai_pct:.1f}%) detected. Grade capped at Pass (max 65%)."
-    elif effective_ai_pct >= 35.0:
-        penalty = 10.0
-        cap = 78.0
-        level = "Moderate (Partial AI Assistance in Drafting)"
-        penalty_note = f"AI ASSISTANCE ADJUSTMENT: Moderate AI reliance ({effective_ai_pct:.1f}%) noted. Grade capped at Merit (max 78%)."
-    else:
+    if effective_ai_pct <= 25.0:
         level = "Low (Bounded AI Engagement per Instructions)"
-        # For Distinction (85+), verified manual effort must be present!
-        if raw_score >= 85.0 and not manual_effort_detected:
-            cap = 82.0
-            penalty_note = "CALIBRATION NOTE: Submission demonstrates competent drafting but lacks verified empirical manual effort (e.g. customized calculations, authentic peer dialogue, or original data). Capped at High Merit (82%)."
+    elif effective_ai_pct <= 50.0:
+        level = "Moderate (Partial AI Assistance in Drafting)"
+    elif effective_ai_pct <= 70.0:
+        level = "High (Substantial AI Generation & Offloading)"
+    else:
+        level = "Critical (Heavy/Near-Complete AI Generation)"
 
-    final_score = max(15.0, min(cap, round(raw_score - penalty, 1))) if penalty > 0 else min(cap, raw_score)
+    # Distinction Guard: Distinction (85+) strictly requires verified empirical manual effort!
+    final_score = raw_score
+    calibration_note = ""
+
+    if raw_score >= 85.0 and not manual_effort_detected:
+        final_score = 82.0
+        calibration_note = "Distinction (85%+) strictly requires primary empirical evidence (e.g., customized calculation models, authentic peer dialogue transcripts, or raw data linkage). This submission demonstrates strong conceptual execution and is awarded High Merit (82%)."
+    elif effective_ai_pct >= 75.0 and final_score > 48.0:
+        final_score = 48.0
+        calibration_note = "Grade calibrated to Needs Work (<50%) due to unedited generative AI offloading without student synthesis or empirical deliverables."
+    elif effective_ai_pct >= 55.0 and final_score > 65.0:
+        final_score = 65.0
+        calibration_note = "Grade calibrated to Pass (65%) due to substantial reliance on generic AI generation with minimal manual execution."
+
+    # Harmonize criteria breakdown with final_score if a cap was applied
+    criteria = result.get("criteria_breakdown") or []
+    if criteria and abs(final_score - raw_score) > 0.5:
+        crit_sum = sum(float(c.get("marks_awarded") or 0.0) for c in criteria)
+        if crit_sum > 0:
+            scale = final_score / crit_sum
+            for c in criteria:
+                orig_m = float(c.get("marks_awarded") or 0.0)
+                c["marks_awarded"] = round(orig_m * scale, 1)
+                max_m = float(c.get("max_marks") or 0.0)
+                if max_m > 0:
+                    ratio = c["marks_awarded"] / max_m
+                    c["tier"] = "Distinction (85-100%)" if ratio >= 0.85 else ("Merit (70-84%)" if ratio >= 0.70 else ("Pass (50-69%)" if ratio >= 0.50 else "Needs Work (<50%)"))
 
     if final_score >= 85.0:
         tier = "Distinction (85-100%)"
@@ -910,18 +1047,19 @@ def apply_ai_penalties_and_caps(result: Dict[str, Any], ai_audit: Dict[str, Any]
     else:
         tier = "Needs Work (<50%)"
 
-    result["total_score"] = final_score
+    result["total_score"] = round(final_score, 1)
     result["performance_tier"] = tier
     result["ai_support_percentage"] = effective_ai_pct
     result["ai_support_level"] = level
     result["ai_audit_findings"] = findings
     result["manual_effort_verified"] = manual_effort_detected
     result["manual_effort_evidence"] = manual_effort_evidence
+    result["evaluation_technique"] = "balanced_rubric_native"
 
-    if penalty_note:
-        result["critical_feedback"] = f"{penalty_note}\n\n" + str(result.get("critical_feedback") or "")
-        if "executive_summary" in result and penalty_note not in result["executive_summary"]:
-            result["executive_summary"] += f" [{penalty_note}]"
+    # Pedagogical guidance without mechanical deduction strings
+    if calibration_note:
+        if calibration_note not in str(result.get("critical_feedback") or ""):
+            result["critical_feedback"] = f"EVALUATION NOTE: {calibration_note}\n\n" + str(result.get("critical_feedback") or "")
 
     return result
 

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     DEV_NOTIFICATION_OVERRIDE_EMAIL: str = ""
     FILE_STORAGE_PATH: str = "./uploads"
 
+    # Evaluation Technique: "balanced_rubric_native" (default) or "calibrated_hard_caps" (legacy rigid penalty caps)
+    EVALUATION_TECHNIQUE: str = os.getenv("EVALUATION_TECHNIQUE", "balanced_rubric_native")
+
     # Cloudflare R2 Cloud Object Storage settings
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
