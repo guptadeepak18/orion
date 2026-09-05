@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -15,6 +15,8 @@ from app.schemas.attendance import (
     SubjectAttendanceSummaryResponse,
     StudentAttendanceDossierResponse,
     DebarredStudentItemResponse,
+    StudentLedgerResponse,
+    StudentLedgerExportRequest,
 )
 from app.services import attendance_service
 
@@ -336,3 +338,103 @@ async def admin_review_correction(
         return ResponseEnvelope(data=corr)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get(
+    "/student-ledger",
+    response_model=ResponseEnvelope[StudentLedgerResponse],
+    dependencies=[Depends(require_role(STAFF_ROLES))],
+    summary="Daily student-class attendance ledger with flexible filters",
+)
+async def get_student_class_attendance_ledger(
+    start_date: Optional[date] = Query(None, description="Start date for filter (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date for filter (YYYY-MM-DD)"),
+    batch_id: Optional[UUID] = Query(None, description="Batch ID filter"),
+    subject_id: Optional[UUID] = Query(None, description="Subject ID filter"),
+    session_id: Optional[UUID] = Query(None, description="Specific Session ID filter"),
+    faculty_id: Optional[UUID] = Query(None, description="Faculty ID filter"),
+    status: Optional[str] = Query(None, description="Attendance status filter (present, absent, late, excused)"),
+    search: Optional[str] = Query(None, description="Search term for student name, PRN, email, or roll no"),
+    limit: Optional[int] = Query(None, ge=1, le=5000, description="Page size limit"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    payload=Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "finance", "reporting_readonly"] for r in roles)
+    
+    # Scoping: if user is pure faculty, enforce scoping to their sessions
+    effective_faculty_id = faculty_id
+    if not is_admin and user_id:
+        effective_faculty_id = user_id
+
+    ledger_data = await attendance_service.get_student_class_attendance_ledger(
+        db=db,
+        start_date=start_date,
+        end_date=end_date,
+        batch_id=batch_id,
+        subject_id=subject_id,
+        session_id=session_id,
+        faculty_id=effective_faculty_id,
+        status_filter=status,
+        search_query=search,
+        limit=limit,
+        offset=offset,
+    )
+    return ResponseEnvelope(data=ledger_data)
+
+
+@router.post(
+    "/student-ledger/export-excel",
+    dependencies=[Depends(require_role(STAFF_ROLES))],
+    summary="Export student attendance ledger to an Excel file with customizable fields",
+)
+async def export_student_ledger_excel(
+    req: StudentLedgerExportRequest,
+    payload=Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "finance", "reporting_readonly"] for r in roles)
+
+    effective_faculty_id = None
+    if not is_admin and user_id:
+        effective_faculty_id = user_id
+
+    # Fetch complete matching dataset (limit=None)
+    ledger_data = await attendance_service.get_student_class_attendance_ledger(
+        db=db,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        batch_id=req.batch_id,
+        subject_id=req.subject_id,
+        session_id=req.session_id,
+        faculty_id=effective_faculty_id,
+        status_filter=req.status,
+        search_query=req.search,
+        limit=None,
+        offset=0,
+    )
+
+    items = ledger_data.get("items", [])
+    excel_bytes = attendance_service.export_student_class_attendance_ledger_excel(
+        items=items,
+        selected_fields=req.fields,
+    )
+
+    clean_filename = (req.filename or f"attendance_ledger_{date.today().isoformat()}").strip()
+    if clean_filename.endswith(".xlsx"):
+        clean_filename = clean_filename[:-5]
+    safe_filename = f"{clean_filename}.xlsx"
+
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+

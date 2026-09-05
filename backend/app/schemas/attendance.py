@@ -150,3 +150,65 @@ class DebarredStudentItemResponse(BaseModel):
     total_sessions: int
     attended_sessions: int
     shortfall_sessions: int
+
+
+class StudentLedgerItem(BaseModel):
+    id: UUID
+    student_id: UUID
+    student_prn: str
+    student_name: str
+    roll_no: Optional[str] = None
+    official_email: Optional[str] = None
+    personal_email: Optional[str] = None
+    phone: Optional[str] = None
+    program_name: Optional[str] = None
+    batch_name: Optional[str] = None
+    division: Optional[str] = None
+    trimester: Optional[int] = None
+    session_id: UUID
+    session_date: date
+    day_of_week: str
+    start_time: str
+    end_time: str
+    time_slot: str
+    subject_id: Optional[UUID] = None
+    subject_code: Optional[str] = None
+    subject_name: Optional[str] = None
+    session_type: str
+    topic_delivered: Optional[str] = None
+    venue: str
+    faculty_name: Optional[str] = None
+    status: str
+    remarks: Optional[str] = None
+    is_locked: bool = False
+    marked_at: Optional[datetime] = None
+
+
+class StudentLedgerSummary(BaseModel):
+    total_records: int
+    present_count: int
+    absent_count: int
+    late_count: int
+    excused_count: int
+    od_count: int
+    attendance_percentage: float
+    unique_students: int
+    unique_sessions: int
+
+
+class StudentLedgerResponse(BaseModel):
+    items: List[StudentLedgerItem]
+    summary: StudentLedgerSummary
+    total: int
+
+
+class StudentLedgerExportRequest(BaseModel):
+    fields: List[str]
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    batch_id: Optional[UUID] = None
+    subject_id: Optional[UUID] = None
+    session_id: Optional[UUID] = None
+    status: Optional[str] = None
+    search: Optional[str] = None
+    filename: Optional[str] = None

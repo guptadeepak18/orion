@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.academic import Program, Batch, Subject, SubjectBatch
+from app.models.academic import Program, Batch, Subject, SubjectBatch, Topic
 from app.models.faculty import FacultyInternal, FacultyExternal
 from app.models.session import (
     Session,
@@ -1678,4 +1678,362 @@ async def get_subject_attendance_matrix(
         "sessions": sessions_header,
         "students": students_matrix,
     }
+
+
+async def get_student_class_attendance_ledger(
+    db: AsyncSession,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    batch_id: Optional[UUID] = None,
+    program_id: Optional[UUID] = None,
+    subject_id: Optional[UUID] = None,
+    session_id: Optional[UUID] = None,
+    faculty_id: Optional[UUID] = None,
+    attendance_status: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user_id: Optional[UUID] = None,
+    user_roles: Optional[List[str]] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = 0,
+) -> Dict[str, Any]:
+    """
+    Fetches granular student-by-student, class-by-class, day-by-day attendance ledger records
+    with comprehensive filtering, faculty scoping, and cohort analytics.
+    """
+    roles = user_roles or []
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly"] for r in roles)
+
+    query = (
+        select(
+            StudentAttendance,
+            Session,
+            Student,
+            Subject,
+            Batch,
+            Program,
+            FacultyInternal,
+            FacultyExternal,
+            Topic,
+        )
+        .join(Session, StudentAttendance.session_id == Session.id)
+        .join(Student, StudentAttendance.student_id == Student.id)
+        .outerjoin(Subject, Session.subject_id == Subject.id)
+        .outerjoin(Batch, Session.batch_id == Batch.id)
+        .outerjoin(Program, Session.program_id == Program.id)
+        .outerjoin(FacultyInternal, Session.faculty_internal_id == FacultyInternal.id)
+        .outerjoin(FacultyExternal, Session.faculty_external_id == FacultyExternal.id)
+        .outerjoin(Topic, Session.topic_id == Topic.id)
+        .where(Session.is_deleted == False, Student.is_deleted == False)
+    )
+
+    # Faculty Scoping: If user is only faculty, restrict to their allocated classes
+    if not is_admin and any(r in ["faculty_internal", "faculty_external"] for r in roles) and current_user_id:
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if fac_type == "internal":
+            query = query.where(Session.faculty_internal_id == fac_id)
+        elif fac_type == "external":
+            query = query.where(Session.faculty_external_id == fac_id)
+        else:
+            return {
+                "items": [],
+                "summary": {
+                    "total_records": 0,
+                    "present_count": 0,
+                    "absent_count": 0,
+                    "late_count": 0,
+                    "excused_count": 0,
+                    "od_count": 0,
+                    "attendance_percentage": 0.0,
+                    "unique_students": 0,
+                    "unique_sessions": 0,
+                },
+                "total": 0,
+            }
+
+    # Filters
+    if start_date:
+        query = query.where(Session.session_date >= start_date)
+    if end_date:
+        query = query.where(Session.session_date <= end_date)
+    if batch_id:
+        query = query.where(Session.batch_id == batch_id)
+    if program_id:
+        query = query.where(Session.program_id == program_id)
+    if subject_id:
+        query = query.where(Session.subject_id == subject_id)
+    if session_id:
+        query = query.where(Session.id == session_id)
+    if faculty_id:
+        query = query.where(
+            or_(
+                Session.faculty_internal_id == faculty_id,
+                Session.faculty_external_id == faculty_id,
+            )
+        )
+    if attendance_status and attendance_status.lower() != "all":
+        st_lower = attendance_status.lower()
+        if st_lower == "present":
+            query = query.where(StudentAttendance.status.in_(PRESENT_STATUSES))
+        elif st_lower == "absent":
+            query = query.where(StudentAttendance.status == "absent")
+        elif st_lower in ("late", "excused", "od_duty", "leave_approved"):
+            query = query.where(StudentAttendance.status == st_lower)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Student.full_name.ilike(term),
+                Student.first_name.ilike(term),
+                Student.last_name.ilike(term),
+                Student.prn_number.ilike(term),
+                Student.roll_no.ilike(term),
+                Student.email_official.ilike(term),
+                Student.email.ilike(term),
+                Subject.name.ilike(term),
+                Subject.code.ilike(term),
+                Session.venue.ilike(term),
+            )
+        )
+
+    query = query.order_by(
+        Session.session_date.desc(),
+        Session.start_time.desc(),
+        Student.roll_no.asc(),
+        Student.prn_number.asc(),
+        Student.full_name.asc(),
+    )
+
+    result = await db.execute(query)
+    all_rows = result.all()
+
+    total_records = len(all_rows)
+    present_count = 0
+    absent_count = 0
+    late_count = 0
+    excused_count = 0
+    od_count = 0
+    unique_students_set = set()
+    unique_sessions_set = set()
+
+    formatted_items = []
+
+    for att, sess, st, subj, batch, prog, fi, fe, topic in all_rows:
+        cur_status = att.status or "present"
+        if cur_status in PRESENT_STATUSES:
+            present_count += 1
+            if cur_status == "late":
+                late_count += 1
+            elif cur_status in ("excused", "leave_approved"):
+                excused_count += 1
+            elif cur_status in ("od_duty", "on_duty", "on duty"):
+                od_count += 1
+        elif cur_status == "absent":
+            absent_count += 1
+
+        unique_students_set.add(st.id)
+        unique_sessions_set.add(sess.id)
+
+        fac_name = "Unassigned"
+        if fi and fi.full_name:
+            fac_name = fi.full_name
+        elif fe and fe.name:
+            fac_name = fe.name
+
+        sub_code = subj.code if subj else ("HB" if sess.session_type == "hyperbuild" else "SUB")
+        sub_name = subj.name if subj else ("HyperBuild Session" if sess.session_type == "hyperbuild" else "Class Session")
+        topic_title = topic.name if topic else (sess.notes or (f"HyperBuild Act #{sess.hyperbuild_activity_no}" if sess.hyperbuild_activity_no else "Regular Lecture"))
+
+        start_str = sess.start_time.strftime("%H:%M") if sess.start_time else ""
+        end_str = sess.end_time.strftime("%H:%M") if sess.end_time else ""
+        slot_str = f"{start_str} - {end_str}" if start_str and end_str else ""
+
+        formatted_items.append({
+            "id": att.id,
+            "student_id": st.id,
+            "student_prn": st.prn_number or "",
+            "student_name": st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
+            "roll_no": st.roll_no or "",
+            "official_email": st.email_official or st.email or "",
+            "personal_email": st.email_personal or "",
+            "phone": st.mobile_number or st.phone or "",
+            "program_name": prog.name if prog else "",
+            "batch_name": batch.name if batch else "",
+            "division": getattr(st, "division", "") or "",
+            "trimester": st.trimester,
+            "session_id": sess.id,
+            "session_date": sess.session_date,
+            "day_of_week": sess.session_date.strftime("%A"),
+            "start_time": start_str,
+            "end_time": end_str,
+            "time_slot": slot_str,
+            "subject_id": sess.subject_id,
+            "subject_code": sub_code,
+            "subject_name": sub_name,
+            "session_type": sess.session_type,
+            "topic_delivered": topic_title,
+            "venue": sess.venue or "Classroom",
+            "faculty_name": fac_name,
+            "status": cur_status,
+            "remarks": att.remarks or "",
+            "is_locked": att.is_locked,
+            "marked_at": att.created_at,
+        })
+
+    att_pct = round((present_count / total_records * 100), 1) if total_records > 0 else 0.0
+
+    summary = {
+        "total_records": total_records,
+        "present_count": present_count,
+        "absent_count": absent_count,
+        "late_count": late_count,
+        "excused_count": excused_count,
+        "od_count": od_count,
+        "attendance_percentage": att_pct,
+        "unique_students": len(unique_students_set),
+        "unique_sessions": len(unique_sessions_set),
+    }
+
+    paged_items = formatted_items
+    if limit is not None:
+        paged_items = formatted_items[offset : offset + limit]
+
+    return {
+        "items": paged_items,
+        "summary": summary,
+        "total": total_records,
+    }
+
+
+def export_student_class_attendance_ledger_excel(
+    items: List[Dict[str, Any]],
+    selected_fields: List[str],
+) -> bytes:
+    """
+    Builds a beautifully styled, professional .xlsx spreadsheet containing
+    only the user-selected columns with proper formatting, headers, and column widths.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    FIELD_LABELS: Dict[str, str] = {
+        "student_prn": "PRN Number",
+        "student_name": "Student Name",
+        "roll_no": "Roll No",
+        "official_email": "Official Email",
+        "personal_email": "Personal Email",
+        "phone": "Mobile Number",
+        "program_name": "Program",
+        "batch_name": "Batch",
+        "division": "Division",
+        "trimester": "Trimester",
+        "session_date": "Session Date",
+        "day_of_week": "Day",
+        "time_slot": "Time Slot",
+        "start_time": "Start Time",
+        "end_time": "End Time",
+        "subject_code": "Subject Code",
+        "subject_name": "Subject Name",
+        "topic_delivered": "Topic / Activity",
+        "session_type": "Session Type",
+        "venue": "Venue / Classroom",
+        "faculty_name": "Faculty Name",
+        "status": "Attendance Status",
+        "marked_at": "Marked / Timestamp",
+        "remarks": "Remarks / Notes",
+    }
+
+    if not selected_fields:
+        selected_fields = [
+            "student_prn", "student_name", "batch_name", "session_date", "day_of_week",
+            "time_slot", "subject_code", "subject_name", "faculty_name", "status"
+        ]
+
+    valid_fields = [f for f in selected_fields if f in FIELD_LABELS]
+    if not valid_fields:
+        valid_fields = list(FIELD_LABELS.keys())[:10]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Daily Attendance Ledger"
+    ws.views.sheetView[0].showGridLines = True
+
+    # Header styling
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0"),
+    )
+
+    present_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    absent_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    late_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+    excused_fill = PatternFill(start_color="E0E7FF", end_color="E0E7FF", fill_type="solid")
+
+    for col_idx, f_key in enumerate(valid_fields, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=FIELD_LABELS[f_key])
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_align
+        cell.border = thin_border
+    ws.row_dimensions[1].height = 28
+
+    data_font = Font(name="Calibri", size=10)
+    for row_idx, item in enumerate(items, start=2):
+        status_val = str(item.get("status", "")).lower()
+        for col_idx, f_key in enumerate(valid_fields, start=1):
+            raw_val = item.get(f_key)
+            if isinstance(raw_val, date):
+                cell_val = raw_val.strftime("%Y-%m-%d")
+            elif isinstance(raw_val, datetime):
+                cell_val = raw_val.strftime("%Y-%m-%d %H:%M")
+            elif raw_val is None:
+                cell_val = ""
+            else:
+                cell_val = str(raw_val)
+
+            cell = ws.cell(row=row_idx, column=col_idx, value=cell_val)
+            cell.font = data_font
+            cell.border = thin_border
+
+            if f_key in ("session_date", "day_of_week", "start_time", "end_time", "time_slot", "roll_no", "student_prn", "status"):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+            if f_key == "status":
+                cell.value = status_val.upper()
+                if status_val in ("present", "on_duty", "od_duty"):
+                    cell.fill = present_fill
+                    cell.font = Font(name="Calibri", size=10, bold=True, color="166534")
+                elif status_val == "absent":
+                    cell.fill = absent_fill
+                    cell.font = Font(name="Calibri", size=10, bold=True, color="991B1B")
+                elif status_val == "late":
+                    cell.fill = late_fill
+                    cell.font = Font(name="Calibri", size=10, bold=True, color="92400E")
+                elif status_val in ("excused", "leave_approved"):
+                    cell.fill = excused_fill
+                    cell.font = Font(name="Calibri", size=10, bold=True, color="3730A3")
+
+        ws.row_dimensions[row_idx].height = 20
+
+    for col_idx, f_key in enumerate(valid_fields, start=1):
+        col_letter = get_column_letter(col_idx)
+        max_len = max(len(FIELD_LABELS[f_key]), 10)
+        for row in range(2, min(len(items) + 2, 200)):
+            val = ws.cell(row=row, column=col_idx).value
+            if val:
+                max_len = max(max_len, min(len(str(val)), 45))
+        ws.column_dimensions[col_letter].width = max_len + 4
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
 

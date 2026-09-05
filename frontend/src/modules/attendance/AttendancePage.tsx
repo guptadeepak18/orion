@@ -23,10 +23,12 @@ import {
   FileSpreadsheet,
   Layers,
   ShieldCheck,
+  ClipboardList,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../lib/store';
 import { AttendanceCorrectionModal } from './AttendanceCorrectionModal';
+import { ExportAttendanceExcelModal } from './ExportAttendanceExcelModal';
 
 export const AttendancePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -609,6 +611,104 @@ export const AttendancePage: React.FC = () => {
     enabled: !isStudent && activeTab === 'compliance',
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TAB: DAILY STUDENT CLASS ATTENDANCE LEDGER
+  // ─────────────────────────────────────────────────────────────────────────────
+  const { data: batchesListData = [] } = useQuery({
+    queryKey: ['batches_list_for_attendance'],
+    queryFn: async () => {
+      const res = await api.get('/academic/batches');
+      return (res.data?.data || []) as any[];
+    },
+    enabled: !isStudent,
+  });
+
+  const [ledgerStartDate, setLedgerStartDate] = useState<string>('');
+  const [ledgerEndDate, setLedgerEndDate] = useState<string>('');
+  const [ledgerBatchId, setLedgerBatchId] = useState<string>('');
+  const [ledgerSubjectId, setLedgerSubjectId] = useState<string>('');
+  const [ledgerSessionId, setLedgerSessionId] = useState<string>('');
+  const [ledgerStatus, setLedgerStatus] = useState<string>('');
+  const [ledgerSearch, setLedgerSearch] = useState<string>('');
+  const [ledgerLimit, setLedgerLimit] = useState<number>(50);
+  const [ledgerPage, setLedgerPage] = useState<number>(1);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+
+  const {
+    data: studentLedgerData,
+    isPending: studentLedgerLoading,
+    refetch: refetchLedger,
+  } = useQuery({
+    queryKey: [
+      'attendance_student_ledger',
+      ledgerStartDate,
+      ledgerEndDate,
+      ledgerBatchId,
+      ledgerSubjectId,
+      ledgerSessionId,
+      ledgerStatus,
+      ledgerSearch,
+      ledgerLimit,
+      ledgerPage,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (ledgerStartDate) params.append('start_date', ledgerStartDate);
+      if (ledgerEndDate) params.append('end_date', ledgerEndDate);
+      if (ledgerBatchId) params.append('batch_id', ledgerBatchId);
+      if (ledgerSubjectId) params.append('subject_id', ledgerSubjectId);
+      if (ledgerSessionId) params.append('session_id', ledgerSessionId);
+      if (ledgerStatus) params.append('status', ledgerStatus);
+      if (ledgerSearch.trim()) params.append('search', ledgerSearch.trim());
+      if (ledgerLimit) {
+        params.append('limit', String(ledgerLimit));
+        params.append('offset', String((ledgerPage - 1) * ledgerLimit));
+      }
+      const res = await api.get(`/attendance/student-ledger?${params.toString()}`);
+      return res.data?.data;
+    },
+    enabled: activeTab === 'daily_ledger',
+  });
+
+  const handlePresetDate = (preset: 'today' | 'yesterday' | 'week' | 'month' | 'all') => {
+    const today = new Date().toISOString().split('T')[0];
+    if (preset === 'today') {
+      setLedgerStartDate(today);
+      setLedgerEndDate(today);
+    } else if (preset === 'yesterday') {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const yesterday = d.toISOString().split('T')[0];
+      setLedgerStartDate(yesterday);
+      setLedgerEndDate(yesterday);
+    } else if (preset === 'week') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setLedgerStartDate(d.toISOString().split('T')[0]);
+      setLedgerEndDate(today);
+    } else if (preset === 'month') {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      setLedgerStartDate(d.toISOString().split('T')[0]);
+      setLedgerEndDate(today);
+    } else if (preset === 'all') {
+      setLedgerStartDate('');
+      setLedgerEndDate('');
+    }
+    setLedgerPage(1);
+  };
+
+  const handleResetLedgerFilters = () => {
+    setLedgerStartDate('');
+    setLedgerEndDate('');
+    setLedgerBatchId('');
+    setLedgerSubjectId('');
+    setLedgerSessionId('');
+    setLedgerStatus('');
+    setLedgerSearch('');
+    setLedgerPage(1);
+  };
+
   // Modal: Raise Correction
   const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<any | null>(null);
 
@@ -649,6 +749,12 @@ export const AttendancePage: React.FC = () => {
         {!isStudent && (
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setTab('daily_ledger')}
+              className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <ClipboardList className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Daily Student Ledger
+            </button>
+            <button
               onClick={() => setTab('register')}
               className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
             >
@@ -674,6 +780,7 @@ export const AttendancePage: React.FC = () => {
             ]
           : [
               { id: 'sessions', label: 'Take Attendance', icon: CheckCircle2 },
+              { id: 'daily_ledger', label: 'Daily Student Ledger', icon: ClipboardList, badge: 'Granular' },
               { id: 'register', label: 'Class Register', icon: FileSpreadsheet },
               { id: 'matrix', label: 'Subject Matrix', icon: Layers },
               { id: 'students', label: 'Student Records', icon: Users },
@@ -2035,6 +2142,551 @@ export const AttendancePage: React.FC = () => {
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════════
+          TAB: DAILY STUDENT CLASS ATTENDANCE LEDGER
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'daily_ledger' && (
+        <div className="space-y-5 animate-fadeIn">
+          {/* Top Header Card */}
+          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-500/20">
+                <ClipboardList className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  Daily Student Class Attendance Ledger
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    Granular View
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  View and audit every student's attendance for each class and each day with multi-parameter filtering and full Excel report export.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-stretch md:self-auto">
+              <button
+                type="button"
+                onClick={() => refetchLedger()}
+                className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                title="Refresh Ledger"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(true)}
+                className="flex-1 md:flex-initial px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span>Export Report to Excel</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          {studentLedgerData?.summary && (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+              {/* Total Records */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Class Records</span>
+                <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                  {studentLedgerData.summary.total_records.toLocaleString()}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Across {studentLedgerData.summary.unique_sessions} classes & {studentLedgerData.summary.unique_students} students
+                </div>
+              </div>
+
+              {/* Attendance % */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Attendance Rate</span>
+                  <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                    studentLedgerData.summary.attendance_percentage >= 75
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                  }`}>
+                    {studentLedgerData.summary.attendance_percentage >= 75 ? 'Healthy' : 'Sub-75%'}
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                  {studentLedgerData.summary.attendance_percentage}%
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className={`h-1.5 rounded-full ${
+                      studentLedgerData.summary.attendance_percentage >= 75 ? 'bg-emerald-500' : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${Math.min(studentLedgerData.summary.attendance_percentage, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Present Records */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Present</span>
+                <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                  {studentLedgerData.summary.present_count.toLocaleString()}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {studentLedgerData.summary.total_records > 0
+                    ? `${Math.round((studentLedgerData.summary.present_count / studentLedgerData.summary.total_records) * 100)}% of records`
+                    : '0%'}
+                </div>
+              </div>
+
+              {/* Absent Records */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Absent</span>
+                <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+                  {studentLedgerData.summary.absent_count.toLocaleString()}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {studentLedgerData.summary.total_records > 0
+                    ? `${Math.round((studentLedgerData.summary.absent_count / studentLedgerData.summary.total_records) * 100)}% of records`
+                    : '0%'}
+                </div>
+              </div>
+
+              {/* Late / Excused / OD */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs col-span-2 lg:col-span-1">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Late / Excused / OD</span>
+                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                  {(
+                    studentLedgerData.summary.late_count +
+                    studentLedgerData.summary.excused_count +
+                    studentLedgerData.summary.od_count
+                  ).toLocaleString()}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {studentLedgerData.summary.late_count} Late • {studentLedgerData.summary.excused_count} Excused • {studentLedgerData.summary.od_count} OD
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Filtering & Search Toolbar */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            {/* Quick Date Presets */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" /> Date Presets:
+                </span>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'week', label: 'Last 7 Days' },
+                  { id: 'month', label: 'Last 30 Days' },
+                  { id: 'all', label: 'All Dates' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handlePresetDate(p.id as any)}
+                    className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {(ledgerStartDate || ledgerEndDate || ledgerBatchId || ledgerSubjectId || ledgerStatus || ledgerSearch) && (
+                <button
+                  type="button"
+                  onClick={handleResetLedgerFilters}
+                  className="text-xs font-bold text-rose-600 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <X className="h-3.5 w-3.5" /> Reset Filters
+                </button>
+              )}
+            </div>
+
+            {/* Filter Inputs Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              {/* Start Date */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={ledgerStartDate}
+                  onChange={(e) => {
+                    setLedgerStartDate(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* End Date */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={ledgerEndDate}
+                  onChange={(e) => {
+                    setLedgerEndDate(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Batch Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Batch
+                </label>
+                <select
+                  value={ledgerBatchId}
+                  onChange={(e) => {
+                    setLedgerBatchId(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                >
+                  <option value="">All Batches</option>
+                  {batchesListData.map((b: any) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Subject Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Subject
+                </label>
+                <select
+                  value={ledgerSubjectId}
+                  onChange={(e) => {
+                    setLedgerSubjectId(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                >
+                  <option value="">All Subjects</option>
+                  {subjectsListData.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.code ? `[${s.code}] ` : ''}{s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Attendance Status
+                </label>
+                <select
+                  value={ledgerStatus}
+                  onChange={(e) => {
+                    setLedgerStatus(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="late">Late</option>
+                  <option value="excused">Excused / Leave</option>
+                  <option value="od_duty">On Duty (OD)</option>
+                </select>
+              </div>
+
+              {/* Student Search */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Search Student
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={ledgerSearch}
+                    onChange={(e) => {
+                      setLedgerSearch(e.target.value);
+                      setLedgerPage(1);
+                    }}
+                    placeholder="Name, PRN, Email..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                  />
+                  {ledgerSearch && (
+                    <button
+                      onClick={() => setLedgerSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Granular Attendance Ledger Table */}
+          <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    <th className="p-3.5 pl-5">Student Information</th>
+                    <th className="p-3.5">Batch / Program</th>
+                    <th className="p-3.5">Class Date & Slot</th>
+                    <th className="p-3.5">Subject & Activity</th>
+                    <th className="p-3.5">Faculty & Venue</th>
+                    <th className="p-3.5 text-center">Status</th>
+                    <th className="p-3.5">Timestamp / Notes</th>
+                    <th className="p-3.5 pr-5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {studentLedgerLoading ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-slate-400">
+                        <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />
+                        <span className="text-xs font-bold">Loading student class attendance ledger...</span>
+                      </td>
+                    </tr>
+                  ) : !studentLedgerData?.items || studentLedgerData.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-slate-400">
+                        <ClipboardList className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No attendance records found</p>
+                        <p className="text-xs text-slate-400 mt-1">Try expanding your date range or adjusting the filters above.</p>
+                        <button
+                          type="button"
+                          onClick={handleResetLedgerFilters}
+                          className="mt-3 px-4 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 text-xs font-bold cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    studentLedgerData.items.map((item: any) => {
+                      const stLower = (item.status || '').toLowerCase();
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                          {/* Student Info */}
+                          <td className="p-3.5 pl-5">
+                            <div className="font-extrabold text-slate-900 dark:text-white">
+                              {item.student_name}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                {item.student_prn || 'N/A'}
+                              </span>
+                              {item.roll_no && (
+                                <span className="text-[10px] text-slate-400 font-semibold">
+                                  #{item.roll_no}
+                                </span>
+                              )}
+                            </div>
+                            {item.official_email && (
+                              <div className="text-[10px] text-slate-400 truncate max-w-[180px] mt-0.5">
+                                {item.official_email}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Batch / Program */}
+                          <td className="p-3.5">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">
+                              {item.batch_name || 'N/A'}
+                            </div>
+                            <div className="text-[10.5px] text-slate-400">
+                              {item.program_name} {item.division ? `• Div ${item.division}` : ''}
+                            </div>
+                          </td>
+
+                          {/* Class Date & Slot */}
+                          <td className="p-3.5">
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5 text-indigo-500" />
+                              {item.session_date}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-semibold">
+                              {item.day_of_week}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock className="h-3 w-3" />
+                              {item.time_slot || `${item.start_time} - ${item.end_time}`}
+                            </div>
+                          </td>
+
+                          {/* Subject & Activity */}
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                                {item.subject_code || 'HB'}
+                              </span>
+                              <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
+                                {item.subject_name}
+                              </span>
+                            </div>
+                            {item.topic_delivered && (
+                              <div className="text-[10.5px] text-slate-500 truncate max-w-[220px] mt-0.5">
+                                {item.topic_delivered}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Faculty & Venue */}
+                          <td className="p-3.5">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">
+                              {item.faculty_name || 'Assigned Faculty'}
+                            </div>
+                            <div className="text-[10.5px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <MapPin className="h-3 w-3" />
+                              {item.venue || 'Classroom'}
+                            </div>
+                          </td>
+
+                          {/* Status Badge */}
+                          <td className="p-3.5 text-center">
+                            {stLower === 'present' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <CheckCircle2 className="h-3 w-3" /> Present
+                              </span>
+                            )}
+                            {stLower === 'absent' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                <X className="h-3 w-3" /> Absent
+                              </span>
+                            )}
+                            {stLower === 'late' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                <Clock className="h-3 w-3" /> Late
+                              </span>
+                            )}
+                            {['excused', 'leave_approved'].includes(stLower) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                <ShieldCheck className="h-3 w-3" /> Excused
+                              </span>
+                            )}
+                            {['od_duty', 'on_duty'].includes(stLower) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                                <CheckCircle2 className="h-3 w-3" /> On Duty
+                              </span>
+                            )}
+                            {!['present', 'absent', 'late', 'excused', 'leave_approved', 'od_duty', 'on_duty'].includes(stLower) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                {item.status}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Timestamp / Notes */}
+                          <td className="p-3.5">
+                            <div className="text-[10.5px] font-mono text-slate-500">
+                              {item.marked_at ? new Date(item.marked_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                            </div>
+                            {item.remarks && (
+                              <div className="text-[10px] text-slate-400 italic truncate max-w-[150px] mt-0.5">
+                                "{item.remarks}"
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Action */}
+                          <td className="p-3.5 pr-5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openCorrectionModal({
+                                attendance_id: item.id,
+                                studentName: item.student_name,
+                                studentPrn: item.student_prn,
+                                subjectName: item.subject_name,
+                                sessionDate: item.session_date,
+                                sessionTime: item.time_slot,
+                                venue: item.venue,
+                                currentStatus: item.status,
+                              })}
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                            >
+                              Dispute / Correct
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {studentLedgerData && studentLedgerData.total > 0 && (
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                  <span>
+                    Showing <strong className="text-slate-900 dark:text-white">{((ledgerPage - 1) * ledgerLimit) + 1}</strong> to{' '}
+                    <strong className="text-slate-900 dark:text-white">
+                      {Math.min(ledgerPage * ledgerLimit, studentLedgerData.total)}
+                    </strong>{' '}
+                    of <strong className="text-slate-900 dark:text-white">{studentLedgerData.total.toLocaleString()}</strong> records
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Rows:</span>
+                    <select
+                      value={ledgerLimit}
+                      onChange={(e) => {
+                        setLedgerLimit(Number(e.target.value));
+                        setLedgerPage(1);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 outline-none"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={250}>250</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={ledgerPage <= 1}
+                    onClick={() => setLedgerPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> Previous
+                  </button>
+
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 px-2">
+                    Page {ledgerPage} of {Math.ceil(studentLedgerData.total / ledgerLimit) || 1}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={ledgerPage * ledgerLimit >= studentLedgerData.total}
+                    onClick={() => setLedgerPage((p) => p + 1)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    Next <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ─── FULL-SCREEN FOCUS ROLL-CALL (KIOSK MODE) MODAL ────────────────── */}
       {isKioskOpen && activeSheetData?.students && activeSheetData.students.length > 0 && (
         <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
@@ -2346,6 +2998,24 @@ export const AttendancePage: React.FC = () => {
           currentStatus={selectedAttendanceForCorrection.currentStatus}
         />
       )}
+
+      {/* ─── EXPORT ATTENDANCE TO EXCEL MODAL ──────────────────────────────── */}
+      <ExportAttendanceExcelModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        filters={{
+          startDate: ledgerStartDate,
+          endDate: ledgerEndDate,
+          batchId: ledgerBatchId,
+          subjectId: ledgerSubjectId,
+          sessionId: ledgerSessionId,
+          status: ledgerStatus,
+          search: ledgerSearch,
+        }}
+        totalMatchingRecords={studentLedgerData?.total || 0}
+        previewItems={studentLedgerData?.items || []}
+      />
     </div>
   );
 };
+
