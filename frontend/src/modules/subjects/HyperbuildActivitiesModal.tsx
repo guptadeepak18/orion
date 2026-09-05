@@ -20,6 +20,10 @@ import {
   Briefcase,
   FileText,
   Search,
+  UploadCloud,
+  FileUp,
+  AlertCircle,
+  Check,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -176,6 +180,32 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
     external_link: '',
     discussion_questions: [],
     is_manual: true,
+  });
+
+  // Document Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importOverwrite, setImportOverwrite] = useState(false);
+  const [importReport, setImportReport] = useState<any | null>(null);
+
+  // Document Ingestion Mutation
+  const importMutation = useMutation({
+    mutationFn: async ({ file, overwrite }: { file: File; overwrite: boolean }) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post(
+        `/academic/subjects/${subject.id}/activities/import-document?overwrite=${overwrite}`,
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }
+      );
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      setImportReport(data);
+      queryClient.invalidateQueries({ queryKey: ['subject-activities', subject.id] });
+    },
   });
 
   // Fetch Activities for Subject
@@ -496,6 +526,18 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                setIsImportModalOpen(true);
+                setImportReport(null);
+                setImportFile(null);
+                setImportOverwrite(false);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-purple-500/20 transition-all cursor-pointer"
+              title="Import activities automatically from course PDF or Word documents"
+            >
+              <UploadCloud className="h-4 w-4" /> Import from PDF / DOCX
+            </button>
             <button
               onClick={openCreateForm}
               className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-indigo-500/20 transition-all cursor-pointer"
@@ -1385,6 +1427,228 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
               >
                 <CheckCircle2 className="h-4 w-4" /> Attach to Activity
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Ingestion / Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-purple-50/50 dark:bg-purple-950/20">
+              <div className="flex items-center space-x-3">
+                <div className="h-10 w-10 rounded-2xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                  <UploadCloud className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                    Import HyperBuild Activities from Document
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Upload a single activity sheet or a master document containing all 16 activities for {subject.name}.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+              {!importReport ? (
+                <>
+                  {/* Drag & Drop File Zone */}
+                  <div
+                    className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer ${
+                      importFile
+                        ? 'border-purple-500 bg-purple-50/30 dark:bg-purple-950/20'
+                        : 'border-slate-300 dark:border-slate-700 hover:border-purple-400 bg-slate-50/50 dark:bg-slate-800/30'
+                    }`}
+                    onClick={() => document.getElementById('hb-doc-upload')?.click()}
+                  >
+                    <input
+                      type="file"
+                      id="hb-doc-upload"
+                      className="hidden"
+                      accept=".pdf,.docx,.doc"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          setImportFile(e.target.files[0]);
+                        }
+                      }}
+                    />
+                    <FileUp className="h-10 w-10 mx-auto text-purple-500 mb-3" />
+                    {importFile ? (
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white text-sm">
+                          {importFile.name}
+                        </p>
+                        <p className="text-slate-500 mt-1">
+                          {(importFile.size / 1024).toFixed(1)} KB • Click to choose a different file
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                          Click to browse or drop your course PDF or DOCX here
+                        </p>
+                        <p className="text-slate-500 mt-1">
+                          Supports single activity sheets (e.g. Stats_HB_Activity_5.pdf) or full 16-activity master documents
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Safety & Preservation Notice */}
+                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-amber-900 dark:text-amber-200">
+                        Student Submissions & Manual Work Protection
+                      </p>
+                      <p className="text-amber-800 dark:text-amber-300/90 leading-relaxed text-[11px]">
+                        Activities that already exist in the LMS will be <strong>skipped and preserved</strong> automatically. Any student submissions, evaluations, and manual rubric adjustments already in place will not be overwritten.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Overwrite Toggle */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">Overwrite Existing Activities</span>
+                      <p className="text-[11px] text-slate-500">Only check this if you specifically wish to replace existing activity instructions & rubrics.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={importOverwrite}
+                      onChange={(e) => setImportOverwrite(e.target.checked)}
+                      className="h-4 w-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer"
+                    />
+                  </div>
+
+                  {importMutation.isError && (
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-medium">
+                      {(importMutation.error as any)?.response?.data?.detail || importMutation.error?.message || 'Ingestion failed.'}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Report Summary View */
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-center">
+                      <span className="text-xl font-bold text-purple-700 dark:text-purple-300">
+                        {importReport.total_activities_found}
+                      </span>
+                      <p className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold mt-0.5">Found in Document</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+                      <span className="text-xl font-bold text-emerald-700 dark:text-emerald-300">
+                        {importReport.created_count}
+                      </span>
+                      <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">Newly Created</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-center">
+                      <span className="text-xl font-bold text-blue-700 dark:text-blue-300">
+                        {importReport.skipped_count}
+                      </span>
+                      <p className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold mt-0.5">Preserved / Skipped</p>
+                    </div>
+                  </div>
+
+                  {/* Created list */}
+                  {importReport.created_activities?.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        Created Activities (Available immediately in LMS)
+                      </h5>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {importReport.created_activities.map((ca: any) => (
+                          <div key={ca.id} className="p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              Act #{ca.activity_no}: {ca.title}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] font-bold">
+                              Created & Released
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skipped list */}
+                  {importReport.skipped_activities?.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <Check className="h-4 w-4 text-blue-500" />
+                        Preserved Activities (Student submissions intact)
+                      </h5>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                        {importReport.skipped_activities.map((sa: any) => (
+                          <div key={sa.activity_no} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-slate-600 dark:text-slate-300">
+                            <span>Act #{sa.activity_no}: {sa.title}</span>
+                            <span className="text-[10px] text-slate-400 italic">Preserved</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2 bg-slate-50/50 dark:bg-slate-800/40">
+              {!importReport ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!importFile || importMutation.isPending}
+                    onClick={() => {
+                      if (importFile) {
+                        importMutation.mutate({ file: importFile, overwrite: importOverwrite });
+                      }
+                    }}
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold flex items-center gap-1.5 shadow-sm shadow-purple-500/20 disabled:opacity-50 cursor-pointer"
+                  >
+                    {importMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" /> Ingesting & Creating...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="h-4 w-4" /> Ingest Activities
+                      </>
+                    )}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportReport(null);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
+                >
+                  Done & View Activities
+                </button>
+              )}
             </div>
           </div>
         </div>

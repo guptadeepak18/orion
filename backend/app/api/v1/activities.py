@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.schemas.activity import (
     ActivityCreate, ActivityUpdate, ActivityReleaseUpdate, BatchReleaseRequest, ActivityResponse
 )
 from app.services.activity_service import activity_service
+from app.services.activity_importer import import_activities_from_document
 
 router = APIRouter(prefix="/academic", tags=["Activities"])
 
@@ -130,8 +131,44 @@ async def seed_default_subject_activities(
 
 
 @router.post(
+    "/subjects/{subject_id}/activities/import-document",
+    response_model=ResponseEnvelope[Dict[str, Any]],
+    dependencies=[Depends(require_permission("academic", "edit"))],
+)
+async def import_activities_document(
+    subject_id: UUID,
+    file: UploadFile = File(...),
+    overwrite: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Ingests and creates activities from a course PDF or DOCX document.
+    Skips existing activities by default to protect student submissions and manual setup.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    try:
+        report = await import_activities_from_document(
+            db,
+            subject_id=subject_id,
+            file_bytes=content,
+            filename=file.filename,
+            overwrite_existing=overwrite,
+        )
+        return ResponseEnvelope(data=report)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document import failed: {str(e)}")
+
+
+@router.post(
     "/subjects/{subject_id}/activities/upload-docx",
-    response_model=ResponseEnvelope[List[ActivityResponse]],
+    response_model=ResponseEnvelope[Dict[str, Any]],
     dependencies=[Depends(require_permission("academic", "edit"))],
 )
 async def upload_docx_activities(
@@ -139,14 +176,7 @@ async def upload_docx_activities(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file uploaded")
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file uploaded")
-
-    activities = await activity_service.import_from_docx(db, subject_id, content)
-    return ResponseEnvelope(data=[ActivityResponse.model_validate(a) for a in activities])
+    return await import_activities_document(subject_id, file, overwrite=False, db=db)
 
 
 @router.delete(
