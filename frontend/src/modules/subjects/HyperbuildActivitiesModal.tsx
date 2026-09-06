@@ -41,10 +41,13 @@ export interface ActivityCaseStudy {
 }
 
 interface ActivityTool {
-  tool: string;
-  category: string;
-  purpose: string;
-  access: string;
+  tool?: string;
+  tool_name?: string;
+  name?: string;
+  category?: string;
+  purpose?: string;
+  access?: string;
+  how_to_access?: string;
 }
 
 interface ActivityRubric {
@@ -293,9 +296,15 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
     setFormWhyThisActivity(act.why_this_activity || '');
     setFormInstructions(act.instructions || '');
     setFormLearningOutcomes(act.learning_outcomes || '');
-    setFormSubmissionRequirements(act.submission_requirements || '');
-    setFormAiTools(act.ai_tools && act.ai_tools.length > 0 ? act.ai_tools : []);
-    
+    let initialAiTools: ActivityTool[] = [];
+    if (Array.isArray(act.ai_tools)) {
+      initialAiTools = act.ai_tools;
+    } else if (typeof act.ai_tools === 'string') {
+      try {
+        initialAiTools = JSON.parse(act.ai_tools);
+      } catch {}
+    }
+    setFormAiTools(initialAiTools);
     // Ensure existing rubrics have a default weightage if not present
     let rawRubric: ActivityRubric[] = act.rubric && act.rubric.length > 0 ? act.rubric : [];
     if (rawRubric.length > 0) {
@@ -702,23 +711,58 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
                         </div>
                       )}
 
-                      {act.ai_tools && act.ai_tools.length > 0 && (
-                        <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
-                          <h5 className="font-bold text-purple-800 dark:text-purple-400 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                            <Wrench className="h-3 w-3 text-purple-600" /> AI Tools Required
-                          </h5>
-                          <div className="flex flex-wrap gap-2">
-                            {act.ai_tools.map((t, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 text-[11px]"
-                              >
-                                {t.tool} ({t.category}) — {t.purpose}
-                              </span>
-                            ))}
+                      {/* AI TOOLS & PLATFORMS TABLE */}
+                      {(() => {
+                        let toolsList: ActivityTool[] = [];
+                        if (Array.isArray(act.ai_tools)) {
+                          toolsList = act.ai_tools;
+                        } else if (typeof act.ai_tools === 'string') {
+                          try {
+                            toolsList = JSON.parse(act.ai_tools);
+                          } catch {}
+                        }
+
+                        if (!toolsList || toolsList.length === 0) return null;
+
+                        return (
+                          <div className="space-y-2.5">
+                            <h5 className="font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" /> AI TOOLS &amp; PLATFORMS
+                            </h5>
+
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                    <th className="py-3 px-4 font-black">TOOL / PLATFORM</th>
+                                    <th className="py-3 px-4 font-black">CATEGORY</th>
+                                    <th className="py-3 px-4 font-black">PURPOSE IN ACTIVITY</th>
+                                    <th className="py-3 px-4 font-black">HOW TO ACCESS</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                  {toolsList.map((t, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                      <td className="py-3 px-4 font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
+                                        {t.tool || t.tool_name || t.name}
+                                      </td>
+                                      <td className="py-3 px-4 font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                        {t.category || 'AI Tool'}
+                                      </td>
+                                      <td className="py-3 px-4 font-medium leading-relaxed">
+                                        {t.purpose || 'Deliverable generation & critique'}
+                                      </td>
+                                      <td className="py-3 px-4 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                        {t.access || t.how_to_access || 'Web Platform'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -950,28 +994,28 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
                           type="text"
                           placeholder="Tool Name (e.g. ChatGPT)"
                           className="md:col-span-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white font-bold"
-                          value={t.tool}
+                          value={t.tool || t.tool_name || ''}
                           onChange={(e) => updateAiToolRow(idx, 'tool', e.target.value)}
                         />
                         <input
                           type="text"
                           placeholder="Category (e.g. LLM)"
                           className="md:col-span-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white"
-                          value={t.category}
+                          value={t.category || ''}
                           onChange={(e) => updateAiToolRow(idx, 'category', e.target.value)}
                         />
                         <input
                           type="text"
                           placeholder="Purpose in activity"
                           className="md:col-span-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white"
-                          value={t.purpose}
+                          value={t.purpose || ''}
                           onChange={(e) => updateAiToolRow(idx, 'purpose', e.target.value)}
                         />
                         <input
                           type="text"
                           placeholder="How to Access"
                           className="md:col-span-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white font-mono text-[10px]"
-                          value={t.access}
+                          value={t.access || t.how_to_access || ''}
                           onChange={(e) => updateAiToolRow(idx, 'access', e.target.value)}
                         />
                         <button
