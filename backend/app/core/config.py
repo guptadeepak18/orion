@@ -42,13 +42,20 @@ class Settings(BaseSettings):
     R2_PUBLIC_URL: str = ""
 
     # Email API settings (HTTP APIs take precedence over SMTP on platforms like Render where SMTP ports are blocked)
-    PRIMARY_EMAIL_PROVIDER: str = "auto"  # "auto", "brevo", "resend", "sendgrid", "hostinger", "smtp"
+    PRIMARY_EMAIL_PROVIDER: str = "hostinger"  # Default: "hostinger" (Priority 1) -> fallback "brevo" (Priority 2)
     HOSTINGER_MAIL_API_KEY: str = "47365baa0ca73c5e8c639bd961149cf4ad99f5e3b3fef47dd64dac28f69932b5"
     HOSTINGER_MAILBOX_ID: str = "AC450fbdeffe5c83d81e26fcf45213"
-    RESEND_API_KEY: str = ""
     BREVO_API_KEY: str = ""
+    BREVO_KEY: str = ""
+    SENDINBLUE_API_KEY: str = ""
     BREVO_SENDER_EMAIL: str = ""
+    BREVO_FROM_EMAIL: str = ""
+    BREVO_SEND_FROM_EMAIL: str = ""
+    BREVO_SEND_FROM: str = ""
+    BREVO_SENDER: str = ""
+    BREVO_EMAIL: str = ""
     BREVO_SENDER_NAME: str = "Orion Portal"
+    RESEND_API_KEY: str = ""
     SENDGRID_API_KEY: str = ""
 
     # SMTP / Email settings (optional — falls back to console log in dev if unset)

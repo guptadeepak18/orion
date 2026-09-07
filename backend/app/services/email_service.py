@@ -6,6 +6,7 @@ Supports:
 3. Console logging fallback for development or when outbound SMTP ports are blocked by host firewalls.
 """
 import logging
+import os
 import random
 import smtplib
 import socket
@@ -283,25 +284,53 @@ _circuit_breaker_cooldowns: dict[str, float] = {}
 
 
 def _get_brevo_api_key() -> str:
-    key = getattr(settings, "BREVO_API_KEY", "").strip()
-    if key:
-        return key
-    smtp_host = getattr(settings, "SMTP_HOST", "").lower()
+    for var_name in ["BREVO_API_KEY", "BREVO_KEY", "SENDINBLUE_API_KEY", "BREVO_APIKEY"]:
+        key = (getattr(settings, var_name, "") or os.environ.get(var_name, "")).strip()
+        if key:
+            return key
+    smtp_host = (getattr(settings, "SMTP_HOST", "") or os.environ.get("SMTP_HOST", "")).lower()
     if "brevo" in smtp_host or "sendinblue" in smtp_host:
-        return getattr(settings, "SMTP_PASSWORD", "").strip()
+        return (getattr(settings, "SMTP_PASSWORD", "") or os.environ.get("SMTP_PASSWORD", "")).strip()
     return ""
 
 
 def _get_brevo_sender(default_from_email: str = "") -> tuple[str, str]:
-    sender_email = getattr(settings, "BREVO_SENDER_EMAIL", "").strip()
-    if not sender_email:
-        smtp_host = getattr(settings, "SMTP_HOST", "").lower()
-        if ("brevo" in smtp_host or "sendinblue" in smtp_host) and "@" in getattr(settings, "SMTP_USER", ""):
-            sender_email = getattr(settings, "SMTP_USER", "").strip()
-    if not sender_email:
-        sender_email = default_from_email or getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club").strip()
+    sender_email = ""
+    for var_name in [
+        "BREVO_SENDER_EMAIL",
+        "BREVO_FROM_EMAIL",
+        "BREVO_SEND_FROM_EMAIL",
+        "BREVO_SEND_FROM",
+        "BREVO_SENDER",
+        "SEND_FROM_EMAIL",
+        "BREVO_EMAIL",
+    ]:
+        val = (getattr(settings, var_name, "") or os.environ.get(var_name, "")).strip()
+        if val:
+            sender_email = val
+            break
 
-    sender_name = getattr(settings, "BREVO_SENDER_NAME", "").strip() or "Orion Portal"
+    if not sender_email:
+        smtp_host = (getattr(settings, "SMTP_HOST", "") or os.environ.get("SMTP_HOST", "")).lower()
+        if "brevo" in smtp_host or "sendinblue" in smtp_host:
+            smtp_u = (getattr(settings, "SMTP_USER", "") or os.environ.get("SMTP_USER", "")).strip()
+            if "@" in smtp_u:
+                sender_email = smtp_u
+
+    if not sender_email:
+        sender_email = (
+            default_from_email
+            or getattr(settings, "SMTP_FROM_EMAIL", "")
+            or os.environ.get("SMTP_FROM_EMAIL", "")
+            or "no-reply@dataxplore.club"
+        ).strip()
+
+    sender_name = (
+        getattr(settings, "BREVO_SENDER_NAME", "")
+        or os.environ.get("BREVO_SENDER_NAME", "")
+        or os.environ.get("BREVO_FROM_NAME", "")
+        or "Orion Portal"
+    ).strip()
     return sender_email, sender_name
 
 
@@ -320,9 +349,10 @@ def _trip_circuit_breaker(provider: str, duration_seconds: float = 1800.0, reaso
 
 def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bool:
     if not _is_provider_available("hostinger"):
+        logger.info("[Hostinger Mail API] Provider currently in circuit breaker cooldown, bypassing to fallback provider.")
         return False
 
-    api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
+    api_key = (getattr(settings, "HOSTINGER_MAIL_API_KEY", "") or os.environ.get("HOSTINGER_MAIL_API_KEY", "")).strip()
     if not api_key:
         return False
 
@@ -330,7 +360,7 @@ def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bo
         "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json",
     }
-    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
+    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213") or os.environ.get("HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
     url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
     payload = {
         "to": [target_email],
@@ -346,10 +376,18 @@ def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bo
             else:
                 resp_text = resp.text.lower()
                 logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
-                if resp.status_code == 429 or "limit" in resp_text or "quota" in resp_text:
-                    _trip_circuit_breaker("hostinger", duration_seconds=1800.0, reason=f"Quota/rate limit hit ({resp.status_code})")
+                # Trip circuit breaker if rate limit or quota exceeded
+                if resp.status_code in (429, 403, 400) and any(
+                    k in resp_text for k in ["limit", "quota", "exceeded", "rate", "restriction", "too many", "daily", "reached"]
+                ) or resp.status_code == 429:
+                    _trip_circuit_breaker(
+                        "hostinger",
+                        duration_seconds=1800.0,
+                        reason=f"Quota/rate limit hit ({resp.status_code}): {resp.text[:120]}",
+                    )
     except Exception as e:
         logger.error(f"[Hostinger Mail API] Request failed: {e}")
+        _trip_circuit_breaker("hostinger", duration_seconds=300.0, reason=f"Connection failure: {str(e)[:100]}")
     return False
 
 
@@ -488,51 +526,40 @@ def _try_smtp_dispatch(target_email: str, subject: str, html_content: str, from_
     return False
 
 
-def _send_raw_custom_html(target_email: str, subject: str, html_content: str) -> bool:
-    """Internal dispatcher across Brevo, Resend, Hostinger, SendGrid, and SMTP with automatic failover."""
+def _send_raw_custom_html(
+    target_email: str,
+    subject: str,
+    html_content: str,
+    force_provider: Optional[str] = None,
+) -> bool:
+    """
+    Internal dispatcher across Hostinger and Brevo with automatic failover.
+    Priority: Hostinger (Priority 1) -> Brevo (Priority 2 / Failover on 429 quota limits).
+    """
     from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
     reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
 
-    # Determine provider priority order
-    pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "auto").lower().strip()
-    if pref == "brevo":
-        provider_order = ["brevo", "resend", "sendgrid", "smtp", "hostinger"]
-    elif pref == "resend":
-        provider_order = ["resend", "brevo", "sendgrid", "smtp", "hostinger"]
-    elif pref == "sendgrid":
-        provider_order = ["sendgrid", "brevo", "resend", "smtp", "hostinger"]
-    elif pref == "smtp":
-        provider_order = ["smtp", "brevo", "resend", "hostinger"]
-    elif pref == "hostinger":
-        provider_order = ["hostinger", "brevo", "resend", "sendgrid", "smtp"]
+    if force_provider:
+        provider_order = [force_provider.lower().strip()]
     else:
-        # "auto" mode: prioritize dedicated transactional APIs if keys exist, otherwise Hostinger
-        provider_order = []
-        if _get_brevo_api_key():
-            provider_order.append("brevo")
-        if getattr(settings, "RESEND_API_KEY", ""):
-            provider_order.append("resend")
-        if getattr(settings, "SENDGRID_API_KEY", ""):
-            provider_order.append("sendgrid")
-        provider_order.extend(["hostinger", "smtp"])
+        pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
+        if pref == "brevo":
+            provider_order = ["brevo", "hostinger"]
+        else:
+            # Hostinger is Priority 1; Brevo is Priority 2 fallback
+            provider_order = ["hostinger", "brevo"]
 
     attempted = []
     for provider in provider_order:
         attempted.append(provider)
-        if provider == "brevo" and _try_brevo_api(target_email, subject, html_content, from_email, reply_to):
+        if provider == "hostinger" and _try_hostinger_api(target_email, subject, html_content):
             return True
-        elif provider == "resend" and _try_resend_api(target_email, subject, html_content, from_email, reply_to):
-            return True
-        elif provider == "sendgrid" and _try_sendgrid_api(target_email, subject, html_content, from_email, reply_to):
-            return True
-        elif provider == "hostinger" and _try_hostinger_api(target_email, subject, html_content):
-            return True
-        elif provider == "smtp" and _try_smtp_dispatch(target_email, subject, html_content, from_email, reply_to):
+        elif provider == "brevo" and _try_brevo_api(target_email, subject, html_content, from_email, reply_to):
             return True
 
     # Console output fallback if all providers exhausted
     logger.error(
-        f"[Email Dispatch Warning] Could not deliver email to {target_email} via any configured provider (tried: {attempted}). "
+        f"[Email Dispatch Warning] Could not deliver email to {target_email} via configured providers (tried: {attempted}). "
         f"Falling back to server console log."
     )
     print(f"\n{'='*70}")
@@ -547,9 +574,7 @@ def _send_raw_custom_html(target_email: str, subject: str, html_content: str) ->
 def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     """
     Send OTP verification email.
-    Environment-aware:
-    - On local server: redirects to deepak.gupta@mile.education with [LOCAL TEST -> student] subject.
-    - On production: delivers directly to to_email.
+    Delivers directly to to_email via Hostinger -> Brevo cascade.
     """
     target_email, subject, html_content = resolve_email_recipient(
         intended_email=to_email,
@@ -559,19 +584,111 @@ def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:
     return _send_raw_custom_html(target_email, subject, html_content)
 
 
-def send_custom_html_email(to_email: str, subject: str, html_content: str) -> bool:
+def send_custom_html_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    force_provider: Optional[str] = None,
+) -> bool:
     """
-    Send any custom HTML email.
-    Environment-aware:
-    - On local server: redirects to deepak.gupta@mile.education with [LOCAL TEST -> recipient] subject.
-    - On production: delivers directly to to_email.
+    Send any custom HTML email via Hostinger -> Brevo cascade (or forced provider).
     """
     target_email, target_subject, target_html = resolve_email_recipient(
         intended_email=to_email,
         subject=subject,
         html_content=html_content,
     )
-    return _send_raw_custom_html(target_email, target_subject, target_html)
+    return _send_raw_custom_html(target_email, target_subject, target_html, force_provider=force_provider)
+
+
+def send_brevo_test_email(to_email: str = "deepak.gupta@mile.education") -> dict:
+    """
+    Explicitly sends a test email via Brevo HTTPS REST API (Port 443) and returns diagnostic details.
+    """
+    api_key = _get_brevo_api_key()
+    if not api_key:
+        return {
+            "success": False,
+            "provider": "brevo",
+            "error": "Brevo API key is not configured. Please ensure BREVO_API_KEY is set in environment variables.",
+            "available_env_keys": [k for k in os.environ if "BREVO" in k.upper()],
+        }
+
+    sender_email, sender_name = _get_brevo_sender()
+    reply_email = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
+
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "api-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid #e2e8f0;">
+        <h2 style="color: #0f172a; margin: 0;">⚡ Brevo Transactional Email Test</h2>
+        <p style="color: #64748b; font-size: 14px; margin-top: 6px;">Lexicon MILE Academic Portal</p>
+      </div>
+      <div style="padding: 24px 0;">
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          Hello <strong>Deepak Gupta</strong>,
+        </p>
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          This is a confirmation test email sent directly via <strong>Brevo HTTPS REST API (Port 443)</strong>.
+        </p>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 20px 0;">
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Sender:</strong> {sender_name} &lt;{sender_email}&gt;</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Recipient:</strong> {to_email}</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Active Routing:</strong> Priority 1: Hostinger &rarr; Priority 2: Brevo (Rate Limit Failover)</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>API Status:</strong> Connected & Operational</p>
+        </div>
+        <p style="font-size: 14px; color: #059669; font-weight: bold;">
+          ✓ Brevo API key and sender credentials are functioning properly!
+        </p>
+      </div>
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 12px; color: #94a3b8; text-align: center;">
+        Sent by Orion Notification Service • Lexicon MILE
+      </div>
+    </div>
+    """
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_email.strip(), "name": "Deepak Gupta"}],
+        "subject": "Orion — Brevo Email Integration Test (Verified)",
+        "htmlContent": html_content,
+        "replyTo": {"email": reply_email, "name": "Deepak Gupta"},
+    }
+
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                return {
+                    "success": True,
+                    "provider": "brevo",
+                    "status_code": resp.status_code,
+                    "messageId": data.get("messageId"),
+                    "sender": sender_email,
+                    "recipient": to_email,
+                    "message": "Test email successfully delivered via Brevo REST API",
+                }
+            else:
+                return {
+                    "success": False,
+                    "provider": "brevo",
+                    "status_code": resp.status_code,
+                    "sender": sender_email,
+                    "recipient": to_email,
+                    "error": resp.text,
+                }
+    except Exception as e:
+        return {
+            "success": False,
+            "provider": "brevo",
+            "error": str(e),
+        }
 
 
 def generate_and_send_otp(to_email: str, full_name: str) -> str:
@@ -582,35 +699,21 @@ def generate_and_send_otp(to_email: str, full_name: str) -> str:
 
 
 def get_email_provider_status() -> dict:
-    """Diagnostic status snapshot of all configured email providers, cooldowns, and active cascade."""
+    """Diagnostic status snapshot of configured email providers (Hostinger & Brevo) and active cascade."""
     brevo_key = _get_brevo_api_key()
     brevo_sender, brevo_name = _get_brevo_sender()
-    pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "auto").lower().strip()
+    pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
 
     if pref == "brevo":
-        active_order = ["brevo", "resend", "sendgrid", "smtp", "hostinger"]
-    elif pref == "resend":
-        active_order = ["resend", "brevo", "sendgrid", "smtp", "hostinger"]
-    elif pref == "sendgrid":
-        active_order = ["sendgrid", "brevo", "resend", "smtp", "hostinger"]
-    elif pref == "smtp":
-        active_order = ["smtp", "brevo", "resend", "hostinger"]
-    elif pref == "hostinger":
-        active_order = ["hostinger", "brevo", "resend", "sendgrid", "smtp"]
+        active_order = ["brevo", "hostinger"]
     else:
-        active_order = []
-        if brevo_key:
-            active_order.append("brevo")
-        if getattr(settings, "RESEND_API_KEY", ""):
-            active_order.append("resend")
-        if getattr(settings, "SENDGRID_API_KEY", ""):
-            active_order.append("sendgrid")
-        active_order.extend(["hostinger", "smtp"])
+        active_order = ["hostinger", "brevo"]
 
     return {
         "mode": pref,
         "active_order": active_order,
-        "primary_active": active_order[0] if active_order else "none",
+        "primary_active": active_order[0],
+        "fallback_active": active_order[1] if len(active_order) > 1 else None,
         "brevo": {
             "configured": bool(brevo_key),
             "key_preview": f"{brevo_key[:8]}...{brevo_key[-4:]}" if len(brevo_key) > 12 else ("Set" if brevo_key else "Not Set"),
@@ -619,22 +722,8 @@ def get_email_provider_status() -> dict:
             "available": _is_provider_available("brevo"),
         },
         "hostinger": {
-            "configured": bool(getattr(settings, "HOSTINGER_MAIL_API_KEY", "")),
-            "mailbox_id": getattr(settings, "HOSTINGER_MAILBOX_ID", ""),
+            "configured": bool(getattr(settings, "HOSTINGER_MAIL_API_KEY", "") or os.environ.get("HOSTINGER_MAIL_API_KEY", "")),
+            "mailbox_id": getattr(settings, "HOSTINGER_MAILBOX_ID", "") or os.environ.get("HOSTINGER_MAILBOX_ID", ""),
             "available": _is_provider_available("hostinger"),
-        },
-        "resend": {
-            "configured": bool(getattr(settings, "RESEND_API_KEY", "")),
-            "available": _is_provider_available("resend"),
-        },
-        "sendgrid": {
-            "configured": bool(getattr(settings, "SENDGRID_API_KEY", "")),
-            "available": _is_provider_available("sendgrid"),
-        },
-        "smtp": {
-            "configured": bool(getattr(settings, "SMTP_HOST", "") and getattr(settings, "SMTP_USER", "")),
-            "host": getattr(settings, "SMTP_HOST", ""),
-            "port": getattr(settings, "SMTP_PORT", 587),
-            "available": _is_provider_available("smtp"),
         },
     }
