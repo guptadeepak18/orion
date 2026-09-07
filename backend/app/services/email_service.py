@@ -691,6 +691,87 @@ def send_brevo_test_email(to_email: str = "deepak.gupta@mile.education") -> dict
         }
 
 
+def send_hostinger_test_email(to_email: str = "deepak.gupta@mile.education") -> dict:
+    """
+    Explicitly sends a test email via Hostinger Mail API and returns diagnostic details.
+    """
+    api_key = (getattr(settings, "HOSTINGER_MAIL_API_KEY", "") or os.environ.get("HOSTINGER_MAIL_API_KEY", "")).strip()
+    if not api_key:
+        return {
+            "success": False,
+            "provider": "hostinger",
+            "error": "Hostinger Mail API key not configured.",
+        }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213") or os.environ.get("HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
+    url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
+
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid #e2e8f0;">
+        <h2 style="color: #0f172a; margin: 0;">🌐 Hostinger Mail API Test</h2>
+        <p style="color: #64748b; font-size: 14px; margin-top: 6px;">Lexicon MILE Academic Portal</p>
+      </div>
+      <div style="padding: 24px 0;">
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          Hello <strong>Deepak Gupta</strong>,
+        </p>
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          This is a confirmation test email sent directly via <strong>Hostinger Mail API (HTTPS Port 443)</strong>.
+        </p>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 20px 0;">
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Recipient:</strong> {to_email}</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Mailbox ID:</strong> {mailbox_id}</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>Active Routing:</strong> Priority 1: Hostinger &rarr; Priority 2: Brevo (Rate Limit Failover)</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;"><strong>API Status:</strong> Operational</p>
+        </div>
+        <p style="font-size: 14px; color: #059669; font-weight: bold;">
+          ✓ Hostinger Mail API is functioning properly!
+        </p>
+      </div>
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 12px; color: #94a3b8; text-align: center;">
+        Sent by Orion Notification Service • Lexicon MILE
+      </div>
+    </div>
+    """
+
+    payload = {
+        "to": [to_email.strip()],
+        "subject": "Orion — Hostinger Mail API Test (Verified)",
+        "html": html_content,
+    }
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201, 204):
+                return {
+                    "success": True,
+                    "provider": "hostinger",
+                    "status_code": resp.status_code,
+                    "recipient": to_email,
+                    "message": "Test email successfully delivered via Hostinger Mail API",
+                }
+            else:
+                return {
+                    "success": False,
+                    "provider": "hostinger",
+                    "status_code": resp.status_code,
+                    "recipient": to_email,
+                    "error": resp.text,
+                }
+    except Exception as e:
+        return {
+            "success": False,
+            "provider": "hostinger",
+            "error": str(e),
+        }
+
+
 def generate_and_send_otp(to_email: str, full_name: str) -> str:
     """Generate a 6-digit OTP, send it, and return the OTP string."""
     otp = _generate_otp(6)

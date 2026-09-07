@@ -18,7 +18,12 @@ from app.schemas.email_template import (
 )
 from app.services import email_template_service
 from app.services.email_template_ai_service import generate_email_template_with_ai
-from app.services.email_service import get_email_provider_status, send_custom_html_email, send_brevo_test_email
+from app.services.email_service import (
+    get_email_provider_status,
+    send_custom_html_email,
+    send_brevo_test_email,
+    send_hostinger_test_email,
+)
 from app.core.config import settings
 
 router = APIRouter(prefix="/email-templates", tags=["Email Notification Templates"])
@@ -57,6 +62,22 @@ async def test_brevo_endpoint(
     """Explicitly tests transactional email delivery directly via Brevo HTTPS REST API (Port 443)."""
     target = (recipient or "deepak.gupta@mile.education").strip()
     result = send_brevo_test_email(to_email=target)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result,
+        )
+    return ResponseEnvelope(data=result)
+
+
+@router.get("/test-hostinger", response_model=ResponseEnvelope[dict])
+@router.post("/test-hostinger", response_model=ResponseEnvelope[dict])
+async def test_hostinger_endpoint(
+    recipient: Optional[str] = Query("deepak.gupta@mile.education", description="Target recipient email"),
+):
+    """Explicitly tests transactional email delivery directly via Hostinger Mail API (HTTPS Port 443)."""
+    target = (recipient or "deepak.gupta@mile.education").strip()
+    result = send_hostinger_test_email(to_email=target)
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
