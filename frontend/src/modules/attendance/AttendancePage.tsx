@@ -1796,6 +1796,7 @@ export const AttendancePage: React.FC = () => {
                                 openCorrectionModal({
                                   attendance_id: rec.attendance_id || rec.id,
                                   sessionId: rec.session_id,
+                                  activityId: rec.activity_id,
                                   studentId: studentDossierData?.student_id,
                                   studentName: studentDossierData?.student_name,
                                   studentPrn: studentDossierData?.student_prn,
@@ -1900,6 +1901,19 @@ export const AttendancePage: React.FC = () => {
                       <td className="p-3.5">
                         <div className="font-bold text-slate-800 dark:text-slate-200">{corr.subject_name}</div>
                         <div className="text-[11px] text-slate-500">{corr.session_date}</div>
+                        {corr.activities_details && corr.activities_details.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {corr.activities_details.map((act: any) => (
+                              <span
+                                key={act.id}
+                                className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80"
+                                title={`Act #${act.activity_no}: ${act.title}`}
+                              >
+                                Act #{act.activity_no} ({act.subject_code || 'HB'})
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="p-3.5 text-center font-bold">
                         <span className="text-rose-600 uppercase">{corr.current_status}</span> &rarr;{' '}
@@ -2988,6 +3002,24 @@ export const AttendancePage: React.FC = () => {
                 <div><span className="font-semibold text-slate-500">Subject:</span> {reviewingCorrection.subject_name}</div>
                 <div><span className="font-semibold text-slate-500">Session:</span> {reviewingCorrection.session_date}</div>
                 <div><span className="font-semibold text-slate-500">Dispute:</span> <span className="text-rose-600 uppercase font-bold">{reviewingCorrection.current_status}</span> &rarr; <span className="text-emerald-600 uppercase font-bold">{reviewingCorrection.requested_status}</span></div>
+                {reviewingCorrection.activities_details && reviewingCorrection.activities_details.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
+                    <span className="font-semibold text-slate-500 block mb-1">Disputed Activities ({reviewingCorrection.activities_details.length}):</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {reviewingCorrection.activities_details.map((act: any) => (
+                        <div key={act.id} className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[10.5px]">
+                          <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">Act #{act.activity_no}</span>: {act.title}
+                          <span className="ml-1 px-1 py-0.2 rounded bg-white dark:bg-slate-900 text-[9px] font-semibold text-slate-600 dark:text-slate-400">
+                            {act.subject_code || act.subject_name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">
+                      ✓ Approval verifies presence specifically for these {reviewingCorrection.activities_details.length} activity subject(s).
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -3067,6 +3099,7 @@ export const AttendancePage: React.FC = () => {
           onClose={closeCorrectionModal}
           attendanceId={selectedAttendanceForCorrection.attendance_id || selectedAttendanceForCorrection.id}
           sessionId={selectedAttendanceForCorrection.sessionId || selectedAttendanceForCorrection.session_id}
+          initialActivityId={selectedAttendanceForCorrection.activityId || selectedAttendanceForCorrection.activity_id}
           studentId={selectedAttendanceForCorrection.studentId || selectedAttendanceForCorrection.student_id}
           studentName={selectedAttendanceForCorrection.studentName || selectedAttendanceForCorrection.student_name}
           studentPrn={selectedAttendanceForCorrection.studentPrn || selectedAttendanceForCorrection.student_prn}

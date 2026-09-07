@@ -1,5 +1,5 @@
 from datetime import date, time, datetime
-from typing import Optional, List, Any
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
@@ -8,6 +8,7 @@ class AttendanceCorrectionCreate(BaseModel):
     attendance_id: UUID
     session_id: Optional[UUID] = None
     student_id: Optional[UUID] = None
+    activity_ids: Optional[List[UUID]] = None
     requested_status: str  # present | excused | leave_approved | od_duty | late
     reason: str
     document_url: Optional[str] = None
@@ -26,6 +27,8 @@ class AttendanceCorrectionResponse(BaseModel):
     session_id: UUID
     student_id: UUID
     requested_by_id: UUID
+    activity_ids: Optional[List[UUID]] = None
+    activities_details: Optional[List[Dict[str, Any]]] = None
     student_name: Optional[str] = None
     student_prn: Optional[str] = None
     subject_name: Optional[str] = None
@@ -111,6 +114,7 @@ class StudentSubjectAttendanceBreakdown(BaseModel):
 class StudentSessionAttendanceRecordItem(BaseModel):
     attendance_id: UUID
     session_id: UUID
+    activity_id: Optional[UUID] = None
     subject_id: UUID
     subject_name: str
     subject_code: Optional[str] = None

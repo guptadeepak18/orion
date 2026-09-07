@@ -260,6 +260,7 @@ class AttendanceCorrectionRequest(Base, TimestampMixin):
     admin_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    activity_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # List of HyperBuild activity UUIDs
     audit_trail: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     attendance: Mapped["StudentAttendance"] = relationship("StudentAttendance")

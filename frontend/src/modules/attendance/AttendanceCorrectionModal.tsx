@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   X,
   FileCheck2,
@@ -9,6 +9,7 @@ import {
   MapPin,
   BookOpen,
   UploadCloud,
+  Layers,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -17,6 +18,7 @@ interface AttendanceCorrectionModalProps {
   onClose: () => void;
   attendanceId: string;
   sessionId?: string;
+  initialActivityId?: string;
   studentId?: string;
   studentName?: string;
   studentPrn?: string;
@@ -33,6 +35,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
   onClose,
   attendanceId,
   sessionId,
+  initialActivityId,
   studentId,
   studentName,
   studentPrn,
@@ -49,6 +52,55 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
   const [reasonDetails, setReasonDetails] = useState<string>('');
   const [documentUrl, setDocumentUrl] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+
+  // Fetch Hyperbuild activities for the session if sessionId is provided
+  const { data: sessionActivities = [] } = useQuery({
+    queryKey: ['hyperbuild_session_activities', sessionId],
+    queryFn: async () => {
+      if (!sessionId) return [];
+      try {
+        const res = await api.get(`/hyperbuild/sessions/${sessionId}/activities`);
+        const acts = res.data?.activities || res.data?.data?.activities || [];
+        return (acts as any[]).sort((a: any, b: any) => (a.activity_no || 0) - (b.activity_no || 0));
+      } catch (err) {
+        return [];
+      }
+    },
+    enabled: !!sessionId && isOpen,
+  });
+
+  // Pre-select activities:
+  // - If initialActivityId is provided (student clicked Dispute for a specific activity), pre-select only that activity
+  // - Else pre-select all unverified/eligible activities
+  React.useEffect(() => {
+    if (!sessionActivities || sessionActivities.length === 0) {
+      setSelectedActivityIds([]);
+      return;
+    }
+    if (initialActivityId) {
+      setSelectedActivityIds([initialActivityId]);
+    } else {
+      const unverified = sessionActivities
+        .filter((act: any) => !act.is_verified_by_student)
+        .map((act: any) => act.id);
+      setSelectedActivityIds(unverified.length > 0 ? unverified : sessionActivities.map((act: any) => act.id));
+    }
+  }, [sessionActivities, initialActivityId]);
+
+  const toggleActivity = (actId: string) => {
+    setSelectedActivityIds((prev) =>
+      prev.includes(actId) ? prev.filter((id) => id !== actId) : [...prev, actId]
+    );
+  };
+
+  const selectAllActivities = () => {
+    setSelectedActivityIds(sessionActivities.map((a: any) => a.id));
+  };
+
+  const clearAllActivities = () => {
+    setSelectedActivityIds([]);
+  };
 
   const createCorrectionMutation = useMutation({
     mutationFn: async (payload: {
@@ -58,6 +110,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
       requested_status: string;
       reason: string;
       document_url?: string;
+      activity_ids?: string[];
     }) => {
       const res = await api.post('/attendance/corrections', payload);
       return res.data.data;
@@ -90,6 +143,11 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
     e.preventDefault();
     setErrorMsg(null);
 
+    if (sessionActivities.length > 0 && selectedActivityIds.length === 0) {
+      setErrorMsg('Please select at least one HyperBuild activity for this attendance dispute.');
+      return;
+    }
+
     if (!reasonDetails.trim()) {
       setErrorMsg('Please provide a detailed explanation or reason for the attendance correction.');
       return;
@@ -104,6 +162,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
       requested_status: requestedStatus,
       reason: fullReason,
       document_url: documentUrl.trim() || undefined,
+      activity_ids: selectedActivityIds.length > 0 ? selectedActivityIds : undefined,
     });
   };
 
@@ -180,6 +239,105 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
               </div>
             )}
           </div>
+
+          {/* HyperBuild Activities Multi-Select Checklist */}
+          {sessionActivities && sessionActivities.length > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Disputed Activities Multi-Select <span className="text-rose-500">*</span>
+                  </span>
+                  <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-0.5">
+                    Choose which specific activities you are disputing. Approval will mark attendance only for the selected activities and their subjects.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={selectAllActivities}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllActivities}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {sessionActivities.map((act: any) => {
+                  const isSelected = selectedActivityIds.includes(act.id);
+                  const isVerified = act.is_verified_by_student;
+                  return (
+                    <div
+                      key={act.id}
+                      onClick={() => toggleActivity(act.id)}
+                      className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                        isSelected
+                          ? 'border-amber-500 bg-white dark:bg-slate-900 shadow-sm ring-1 ring-amber-400/30'
+                          : 'border-amber-100/80 dark:border-amber-900/30 bg-white/60 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-900 opacity-75'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleActivity(act.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 shrink-0 accent-amber-600 cursor-pointer"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 shrink-0">
+                              Act #{act.activity_no}
+                            </span>
+                            <span className="font-bold text-slate-900 dark:text-white truncate text-xs">
+                              {act.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                              [{act.subject_code || 'HB'}] {act.subject_name || 'General'}
+                            </span>
+                            {act.start_time && act.end_time && (
+                              <span>• {act.start_time.slice(0, 5)} - {act.end_time.slice(0, 5)}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right">
+                        {isVerified ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                            ✓ Verified Present
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300">
+                            ⚠️ Absent / Key Missing
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between text-[10.5px] pt-1">
+                <span className={`font-bold ${selectedActivityIds.length === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-800 dark:text-amber-300'}`}>
+                  {selectedActivityIds.length === 0 ? '⚠️ No activities selected (required)' : `${selectedActivityIds.length} of ${sessionActivities.length} activities selected`}
+                </span>
+                {initialActivityId && selectedActivityIds.includes(initialActivityId) && (
+                  <span className="text-[10px] text-slate-400 italic">Pre-selected from row click</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Requested Status */}
           <div className="space-y-1.5">

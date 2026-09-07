@@ -781,6 +781,7 @@ async def get_student_attendance_dossier(
                     StudentSessionAttendanceRecordItem(
                         attendance_id=r.id,
                         session_id=sess.id,
+                        activity_id=act.id,
                         subject_id=sub_id,
                         subject_name=sub_name,
                         subject_code=sub_code,
@@ -1126,7 +1127,10 @@ async def create_attendance_correction_request(
         "from_status": attendance.status,
         "to_status": req_in.requested_status,
         "reason": req_in.reason,
+        "activity_ids": [str(a) for a in req_in.activity_ids] if req_in.activity_ids else None,
     }
+
+    activity_ids_val = [str(a) for a in req_in.activity_ids] if req_in.activity_ids else None
 
     corr = AttendanceCorrectionRequest(
         attendance_id=attendance.id,
@@ -1138,6 +1142,7 @@ async def create_attendance_correction_request(
         reason=req_in.reason,
         document_url=req_in.document_url,
         status=initial_status,
+        activity_ids=activity_ids_val,
         faculty_approver_id=faculty_approver_id,
         faculty_action=faculty_action,
         faculty_acted_at=faculty_acted_at,
@@ -1250,8 +1255,43 @@ async def review_attendance_correction_admin(
         att = corr.attendance
         if att:
             att.status = corr.requested_status
+            att.roll_call_status = "present"
             prev_remarks = att.remarks or ""
             att.remarks = f"{prev_remarks} [Dual-Approved: {corr.requested_status} on {now_utc.strftime('%d/%m/%Y')}]".strip()
+
+            # If specific HyperBuild activities were disputed, mark student present in HyperbuildActivityVerification for those activities
+            if corr.activity_ids and isinstance(corr.activity_ids, list) and len(corr.activity_ids) > 0:
+                for act_id_str in corr.activity_ids:
+                    try:
+                        act_id = UUID(str(act_id_str))
+                    except Exception:
+                        continue
+                    v_stmt = select(HyperbuildActivityVerification).where(
+                        HyperbuildActivityVerification.activity_id == act_id,
+                        HyperbuildActivityVerification.student_id == corr.student_id,
+                    )
+                    v_res = await db.execute(v_stmt)
+                    v_rec = v_res.scalar_one_or_none()
+                    if not v_rec:
+                        act_obj = (await db.execute(select(HyperbuildActivity).where(HyperbuildActivity.id == act_id))).scalar_one_or_none()
+                        v_rec = HyperbuildActivityVerification(
+                            activity_id=act_id,
+                            session_id=corr.session_id,
+                            student_id=corr.student_id,
+                            subject_id=act_obj.subject_id if act_obj else None,
+                            challenge_key_entered="DISPUTE_APPROVED",
+                            is_key_valid=True,
+                            is_geofence_valid=True,
+                            verification_status="verified_present",
+                            verified_at=now_utc,
+                        )
+                        db.add(v_rec)
+                    else:
+                        v_rec.is_key_valid = True
+                        v_rec.verification_status = "verified_present"
+                        v_rec.verified_at = now_utc
+                        if not v_rec.challenge_key_entered:
+                            v_rec.challenge_key_entered = "DISPUTE_APPROVED"
 
             # Recalculate automatic batch attendance %
             if corr.session and corr.session.batch_id:
@@ -1438,12 +1478,40 @@ async def format_correction_response(db: AsyncSession, corr: AttendanceCorrectio
     faculty_approver_name = corr.faculty_approver.full_name if corr.faculty_approver else None
     admin_approver_name = corr.admin_approver.full_name if corr.admin_approver else None
 
+    # Format activities details if activity_ids are present
+    activity_ids_out = []
+    activities_details_out = []
+    if corr.activity_ids and isinstance(corr.activity_ids, list):
+        for a_id_str in corr.activity_ids:
+            try:
+                a_uuid = UUID(str(a_id_str))
+                activity_ids_out.append(a_uuid)
+            except Exception:
+                continue
+        if activity_ids_out:
+            act_stmt = (
+                select(HyperbuildActivity)
+                .options(selectinload(HyperbuildActivity.subject))
+                .where(HyperbuildActivity.id.in_(activity_ids_out))
+            )
+            act_res = await db.execute(act_stmt)
+            for act_obj in act_res.scalars().all():
+                activities_details_out.append({
+                    "id": str(act_obj.id),
+                    "activity_no": act_obj.activity_no,
+                    "title": act_obj.title,
+                    "subject_name": act_obj.subject.name if act_obj.subject else "General",
+                    "subject_code": act_obj.subject.code if act_obj.subject else None,
+                })
+
     return AttendanceCorrectionResponse(
         id=corr.id,
         attendance_id=corr.attendance_id,
         session_id=corr.session_id,
         student_id=corr.student_id,
         requested_by_id=corr.requested_by_id,
+        activity_ids=activity_ids_out if activity_ids_out else None,
+        activities_details=activities_details_out if activities_details_out else None,
         student_name=student_name,
         student_prn=student_prn,
         subject_name=subject_name,
