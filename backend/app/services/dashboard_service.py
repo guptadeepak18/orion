@@ -232,6 +232,39 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
             s_time = sess.start_time.strftime("%H:%M") if hasattr(sess.start_time, "strftime") else (str(sess.start_time)[:5] if sess.start_time else None)
             e_time = sess.end_time.strftime("%H:%M") if hasattr(sess.end_time, "strftime") else (str(sess.end_time)[:5] if sess.end_time else None)
 
+            eff_status = att.status
+            eff_remarks = att.remarks
+
+            if sess.session_type == "hyperbuild" and sess.hyperbuild_activities and len(sess.hyperbuild_activities) > 0:
+                PRESENT_STATUSES = ["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"]
+                roll_is_present = (att.status in PRESENT_STATUSES) or (getattr(att, "roll_call_status", None) in PRESENT_STATUSES)
+                acts_req_key = [
+                    a for a in sess.hyperbuild_activities
+                    if (a.challenge_key is not None or a.status in ["active", "closed"])
+                ]
+                if acts_req_key:
+                    from app.models.session import HyperbuildActivityVerification
+                    act_ids = [a.id for a in acts_req_key]
+                    v_stmt = select(HyperbuildActivityVerification).where(
+                        HyperbuildActivityVerification.session_id == sess.id,
+                        HyperbuildActivityVerification.student_id == student.id,
+                        HyperbuildActivityVerification.activity_id.in_(act_ids),
+                        HyperbuildActivityVerification.verification_status.in_(["verified_present", "late_submission", "present"]),
+                        HyperbuildActivityVerification.is_key_valid == True,
+                    )
+                    v_res = await db.execute(v_stmt)
+                    valid_verifs = v_res.scalars().all()
+
+                    if not roll_is_present:
+                        eff_status = "absent"
+                        eff_remarks = "Absent (Marked absent during classroom roll call)"
+                    elif len(valid_verifs) == 0:
+                        eff_status = "absent"
+                        eff_remarks = "Absent (Secret key not entered)"
+                    else:
+                        eff_status = "present"
+                        eff_remarks = f"Verified ({len(valid_verifs)}/{len(acts_req_key)} activities completed)"
+
             recent_att_items.append(
                 StudentRecentAttendanceItem(
                     attendance_id=str(att.id),
@@ -244,8 +277,8 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
                     faculty_name=fac_name,
                     venue=sess.venue or "Campus Classroom",
                     session_type=sess.session_type or "lecture",
-                    status=att.status,
-                    remarks=att.remarks,
+                    status=eff_status,
+                    remarks=eff_remarks,
                 )
             )
 

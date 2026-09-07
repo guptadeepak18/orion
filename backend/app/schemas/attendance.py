@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict
 
 class AttendanceCorrectionCreate(BaseModel):
     attendance_id: UUID
+    session_id: Optional[UUID] = None
+    student_id: Optional[UUID] = None
     requested_status: str  # present | excused | leave_approved | od_duty | late
     reason: str
     document_url: Optional[str] = None

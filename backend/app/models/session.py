@@ -199,6 +199,9 @@ class StudentAttendance(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(
         String(30), nullable=False
     )  # present|absent|late|excused|leave_approved|od_duty
+    roll_call_status: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )  # Original attendance status recorded during faculty/admin roll call
     marked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

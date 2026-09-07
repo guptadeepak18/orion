@@ -1211,7 +1211,9 @@ export const AttendancePage: React.FC = () => {
                                 type="button"
                                 onClick={() =>
                                   openCorrectionModal({
-                                    attendance_id: st.id,
+                                    attendance_id: st.id || st.attendance_id || st.student_id,
+                                    sessionId: activeSheetData.session_id,
+                                    studentId: st.student_id,
                                     studentName: st.student_name,
                                     studentPrn: st.student_prn,
                                     subjectName: activeSheetData.subject_name,
@@ -1790,7 +1792,20 @@ export const AttendancePage: React.FC = () => {
                           <td className="p-3 text-right">
                             <button
                               type="button"
-                              onClick={() => openCorrectionModal(rec)}
+                              onClick={() =>
+                                openCorrectionModal({
+                                  attendance_id: rec.attendance_id || rec.id,
+                                  sessionId: rec.session_id,
+                                  studentId: studentDossierData?.student_id,
+                                  studentName: studentDossierData?.student_name,
+                                  studentPrn: studentDossierData?.student_prn,
+                                  subjectName: rec.subject_name,
+                                  sessionDate: rec.session_date,
+                                  sessionTime: rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time} - ${rec.end_time}` : undefined),
+                                  venue: rec.venue,
+                                  currentStatus: rec.status,
+                                })
+                              }
                               className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 text-slate-700 dark:text-slate-300 font-bold text-[11px] transition-colors cursor-pointer"
                             >
                               Dispute
@@ -3051,13 +3066,15 @@ export const AttendancePage: React.FC = () => {
           isOpen={!!selectedAttendanceForCorrection}
           onClose={closeCorrectionModal}
           attendanceId={selectedAttendanceForCorrection.attendance_id || selectedAttendanceForCorrection.id}
-          studentName={selectedAttendanceForCorrection.studentName}
-          studentPrn={selectedAttendanceForCorrection.studentPrn}
-          subjectName={selectedAttendanceForCorrection.subjectName}
-          sessionDate={selectedAttendanceForCorrection.sessionDate}
-          sessionTime={selectedAttendanceForCorrection.sessionTime}
+          sessionId={selectedAttendanceForCorrection.sessionId || selectedAttendanceForCorrection.session_id}
+          studentId={selectedAttendanceForCorrection.studentId || selectedAttendanceForCorrection.student_id}
+          studentName={selectedAttendanceForCorrection.studentName || selectedAttendanceForCorrection.student_name}
+          studentPrn={selectedAttendanceForCorrection.studentPrn || selectedAttendanceForCorrection.student_prn}
+          subjectName={selectedAttendanceForCorrection.subjectName || selectedAttendanceForCorrection.subject_name}
+          sessionDate={selectedAttendanceForCorrection.sessionDate || selectedAttendanceForCorrection.session_date}
+          sessionTime={selectedAttendanceForCorrection.sessionTime || selectedAttendanceForCorrection.session_time}
           venue={selectedAttendanceForCorrection.venue}
-          currentStatus={selectedAttendanceForCorrection.currentStatus}
+          currentStatus={selectedAttendanceForCorrection.currentStatus || selectedAttendanceForCorrection.status || 'absent'}
         />
       )}
 

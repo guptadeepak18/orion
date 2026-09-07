@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, KeyRound, Users, RefreshCw, CheckCircle2,
   X, ExternalLink, Lock, Unlock, History, Clock, Radio,
-  Sparkles, FileText, Award, Check
+  Sparkles, FileText, Award, Check, AlertTriangle, Copy,
+  ClipboardList, Search, CheckCheck, ShieldAlert
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
@@ -25,6 +26,12 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   const [reopenMode, setReopenMode] = useState<'timed' | 'manual_indefinite'>('timed');
   const [reopenDuration, setReopenDuration] = useState<number>(15);
   const [reopenReasonInput, setReopenReasonInput] = useState('');
+
+  // Roster filtering and report states
+  const [rosterFilter, setRosterFilter] = useState<'all' | 'present' | 'absent' | 'downgraded' | 'rc_absent'>('all');
+  const [rosterSearch, setRosterSearch] = useState<string>('');
+  const [showSummaryReportModal, setShowSummaryReportModal] = useState(false);
+  const [copiedReport, setCopiedReport] = useState(false);
 
   // Selected scorecard for detail modal
   const [viewingScorecardSub, setViewingScorecardSub] = useState<any | null>(null);
@@ -272,6 +279,68 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
     return () => clearInterval(interval);
   }, [keyRemainingSeconds]);
 
+  const filteredRoster = (rosterData?.roster || []).filter((st: any) => {
+    if (rosterSearch.trim()) {
+      const q = rosterSearch.toLowerCase();
+      const matches =
+        (st.full_name || '').toLowerCase().includes(q) ||
+        (st.prn_no || '').toLowerCase().includes(q) ||
+        (st.email || '').toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (rosterFilter === 'present') return st.final_status === 'present';
+    if (rosterFilter === 'absent') return st.final_status === 'absent';
+    if (rosterFilter === 'downgraded') return Boolean(st.is_downgraded);
+    if (rosterFilter === 'rc_absent') return st.roll_call_status === 'absent';
+    return true;
+  });
+
+  const generateReportText = () => {
+    if (!currentActivity || !rosterData) return '';
+    const nowStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const downgradedStudents = (rosterData?.roster || []).filter((s: any) => s.is_downgraded);
+    const rcAbsentStudents = (rosterData?.roster || []).filter((s: any) => s.roll_call_status === 'absent');
+
+    let text = `📊 HYPERBUILD DUAL-VERIFICATION ATTENDANCE AUDIT REPORT\n`;
+    text += `Session: ${session?.batch_name || 'Batch'} · ${session?.venue || 'HyperBuild Lab'}\n`;
+    text += `Date: ${session?.session_date || nowStr} | Time: ${session?.start_time?.slice(0, 5)} - ${session?.end_time?.slice(0, 5)}\n`;
+    text += `Activity #${currentActivity.activity_no}: ${currentActivity.title || 'Practical Lab'}\n`;
+    text += `Assigned Subject: ${currentActivity.subject_name} (${currentActivity.subject_code})\n`;
+    text += `---------------------------------------------------\n`;
+    text += `👥 Total Students in Roster: ${rosterData?.roster?.length || 0}\n`;
+    text += `✅ Roll Call Present: ${rosterData?.roll_call_present_count || 0}\n`;
+    text += `❌ Roll Call Absent: ${rosterData?.roll_call_absent_count || 0}\n`;
+    text += `🔑 Secret Keys Verified: ${rosterData?.keys_verified_count || 0}\n`;
+    text += `⚠️ Auto-Absent Downgraded (Key Missing): ${rosterData?.downgraded_absent_count || 0}\n`;
+    text += `📈 FINAL EFFECTIVE ATTENDANCE:\n`;
+    text += `   • Present: ${rosterData?.final_present_count || 0}\n`;
+    text += `   • Absent: ${rosterData?.final_absent_count || 0}\n`;
+
+    if (downgradedStudents.length > 0) {
+      text += `\n⚠️ AUTO-ABSENT STUDENTS (Marked Present in Roll Call, but Secret Key Missing):\n`;
+      downgradedStudents.forEach((s: any, idx: number) => {
+        text += `   ${idx + 1}. ${s.full_name} (PRN: ${s.prn_no || 'N/A'})\n`;
+      });
+    }
+
+    if (rcAbsentStudents.length > 0) {
+      text += `\n🔒 ROLL CALL ABSENT STUDENTS (Key Entry Locked Out):\n`;
+      rcAbsentStudents.forEach((s: any, idx: number) => {
+        text += `   ${idx + 1}. ${s.full_name} (PRN: ${s.prn_no || 'N/A'})\n`;
+      });
+    }
+
+    return text;
+  };
+
+  const handleCopyReport = () => {
+    const report = generateReportText();
+    if (!report) return;
+    navigator.clipboard.writeText(report);
+    setCopiedReport(true);
+    setTimeout(() => setCopiedReport(false), 3000);
+  };
+
   const totalSubmitted = submissionsData.length;
   const totalGraded = submissionsData.filter((s: any) => s.score !== null && s.score !== undefined).length;
   const isEvaluating = evalProgress?.status === 'in_progress';
@@ -478,25 +547,91 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                     </div>
                   </div>
 
-                  {/* Summary Metric Badges */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 text-center">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verified Present</p>
-                      <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                        {rosterData?.total_verified_present || 0}
-                      </p>
+                  {/* Dual Verification Audit Metrics Header & Report Button */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <ShieldAlert className="h-3.5 w-3.5 text-indigo-500" />
+                        Dual Verification Attendance Audit
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowSummaryReportModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                      >
+                        <ClipboardList className="h-3.5 w-3.5" />
+                        <span>Audit Report</span>
+                      </button>
                     </div>
-                    <div className="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40 text-center">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Submissions In</p>
-                      <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                        {totalSubmitted}
-                      </p>
+
+                    {/* KPI Cards Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {/* Roll Call */}
+                      <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Roll Call</p>
+                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                          <span className="text-sm font-extrabold text-emerald-600" title="Present in roll call">
+                            {rosterData?.roll_call_present_count ?? 0} P
+                          </span>
+                          <span className="text-xs text-slate-300">/</span>
+                          <span className="text-sm font-extrabold text-rose-600" title="Absent in roll call">
+                            {rosterData?.roll_call_absent_count ?? 0} A
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Keys Verified */}
+                      <div className="p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40 text-center shadow-xs">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Keys Verified</p>
+                        <p className="text-lg font-black text-blue-600 dark:text-blue-400 mt-0.5">
+                          {rosterData?.keys_verified_count ?? 0}
+                        </p>
+                      </div>
+
+                      {/* Auto-Absent Downgraded */}
+                      <div className={`p-3 rounded-2xl border text-center shadow-xs ${
+                        (rosterData?.downgraded_absent_count ?? 0) > 0
+                          ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80'
+                          : 'bg-slate-50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800'
+                      }`}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1">
+                          {(rosterData?.downgraded_absent_count ?? 0) > 0 && <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />}
+                          Auto-Absent
+                        </p>
+                        <p className={`text-lg font-black mt-0.5 ${
+                          (rosterData?.downgraded_absent_count ?? 0) > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'
+                        }`}>
+                          {rosterData?.downgraded_absent_count ?? 0}
+                        </p>
+                      </div>
+
+                      {/* Final Attendance */}
+                      <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 text-center shadow-xs">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Final Attendance</p>
+                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                          <span className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300" title="Final Present">
+                            {rosterData?.final_present_count ?? 0} P
+                          </span>
+                          <span className="text-xs text-slate-300">/</span>
+                          <span className="text-sm font-extrabold text-rose-600 dark:text-rose-400" title="Final Absent">
+                            {rosterData?.final_absent_count ?? 0} A
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 text-center">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">AI Graded</p>
-                      <p className="text-2xl font-extrabold text-purple-600 dark:text-purple-400 mt-0.5">
-                        {totalGraded} <span className="text-xs font-normal text-purple-500">/ {totalSubmitted}</span>
-                      </p>
+
+                    {/* Submissions & AI Graded row */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-900/40 flex items-center justify-between px-3.5">
+                        <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300">Deliverables In</span>
+                        <span className="text-sm font-extrabold text-indigo-700 dark:text-indigo-300">{totalSubmitted}</span>
+                      </div>
+                      <div className="p-2.5 rounded-2xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/40 flex items-center justify-between px-3.5">
+                        <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300">AI Graded</span>
+                        <span className="text-sm font-extrabold text-purple-700 dark:text-purple-300">
+                          {totalGraded} <span className="text-xs font-normal text-purple-400">/ {totalSubmitted}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -609,83 +744,167 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                         )}
                       </div>
 
-                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                        {rosterData?.roster?.map((st: any) => {
-                          return (
-                            <div
-                              key={st.student_id}
-                              className={`p-3 rounded-2xl border transition-all ${
-                                st.is_verified
-                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
-                                  : st.is_eligible
-                                  ? 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/30'
-                                  : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40 opacity-50'
+                      {/* Search and Filters */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Filter by name, PRN, or email..."
+                            value={rosterSearch}
+                            onChange={(e) => setRosterSearch(e.target.value)}
+                            className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none text-[11px] font-bold">
+                          {[
+                            { id: 'all', label: `All (${rosterData?.roster?.length || 0})` },
+                            { id: 'present', label: `Present (${rosterData?.final_present_count || 0})` },
+                            { id: 'absent', label: `Absent (${rosterData?.final_absent_count || 0})` },
+                            { id: 'downgraded', label: `⚠️ Key Missing (${rosterData?.downgraded_absent_count || 0})` },
+                            { id: 'rc_absent', label: `🔒 RC Absent (${rosterData?.roll_call_absent_count || 0})` },
+                          ].map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setRosterFilter(f.id as any)}
+                              className={`px-2.5 py-1 rounded-xl transition-all shrink-0 cursor-pointer ${
+                                rosterFilter === f.id
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                               }`}
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{st.full_name}</p>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {st.is_verified ? (
-                                    <>
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                        <CheckCircle2 className="h-3 w-3" />
-                                        <span>Verified</span>
-                                      </span>
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                        {filteredRoster.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400 italic text-xs">
+                            No students match the current filter.
+                          </div>
+                        ) : (
+                          filteredRoster.map((st: any) => {
+                            const isRcAbsent = st.roll_call_status === 'absent';
+                            const isFinalPresent = st.final_status === 'present';
+                            const isDowngraded = Boolean(st.is_downgraded);
+
+                            return (
+                              <div
+                                key={st.student_id}
+                                className={`p-3 rounded-2xl border transition-all ${
+                                  isFinalPresent
+                                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
+                                    : isDowngraded
+                                    ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60'
+                                    : isRcAbsent
+                                    ? 'bg-rose-50/30 dark:bg-rose-950/10 border-rose-200 dark:border-rose-900/30'
+                                    : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{st.full_name}</p>
+                                    <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
+                                      <span>{st.prn_no || st.email}</span>
+                                      <span>•</span>
+                                      <span>{st.major_specialization ? `${st.major_specialization}` : 'General'}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {/* Roll Call Pill */}
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                      st.roll_call_status === 'present'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : st.roll_call_status === 'absent'
+                                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}>
+                                      RC: {st.roll_call_status || 'Unmarked'}
+                                    </span>
+
+                                    {/* Key Verification Pill */}
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                      st.is_verified
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        : isRcAbsent
+                                        ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    }`}>
+                                      Key: {st.is_verified ? 'Verified' : isRcAbsent ? 'Locked' : 'Missing'}
+                                    </span>
+
+                                    {/* Final Status Badge */}
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                      isFinalPresent
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-rose-600 text-white shadow-xs'
+                                    }`}>
+                                      {isFinalPresent ? 'Present' : 'Absent'}
+                                    </span>
+
+                                    {/* Action button */}
+                                    {isFinalPresent ? (
                                       <button
                                         type="button"
                                         onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'absent' })}
                                         disabled={updateAttendanceMutation.isPending}
                                         className="px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
-                                        title="Mark absent for this activity/subject"
+                                        title="Override student to absent"
                                       >
                                         Mark Absent
                                       </button>
-                                    </>
-                                  ) : st.is_eligible ? (
-                                    <>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
-                                        Pending
-                                      </span>
+                                    ) : (
                                       <button
                                         type="button"
                                         onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'present' })}
                                         disabled={updateAttendanceMutation.isPending}
                                         className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
-                                        title="Manually verify student present for this activity/subject"
+                                        title="Manually override and verify student present"
                                       >
                                         <Check className="h-2.5 w-2.5" />
                                         <span>Mark Present</span>
                                       </button>
-                                    </>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-900">
-                                      Ineligible (Domain)
-                                    </span>
-                                  )}
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
 
-                              <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 font-mono">
-                                <span>{st.prn_no || st.email}</span>
-                                <span>{st.major_specialization ? `${st.major_specialization}` : 'General'}</span>
-                              </div>
+                                {/* Warning banners */}
+                                {isDowngraded && (
+                                  <div className="mt-2 px-2.5 py-1 rounded-xl bg-amber-100/70 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-900 text-[10px] font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                    <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
+                                    <span>Auto-Absent Downgraded: Marked Present in Roll Call, but did not enter challenge key within window.</span>
+                                  </div>
+                                )}
 
-                              {st.submission_url && (
-                                <div className="mt-2 pt-1 border-t border-slate-200 dark:border-slate-800 text-[11px]">
-                                  <a
-                                    href={st.submission_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-medium"
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                    <span className="truncate">View Output Artifact</span>
-                                  </a>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                                {isRcAbsent && (
+                                  <div className="mt-2 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-[10px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                                    <Lock className="h-3 w-3 text-slate-400 shrink-0" />
+                                    <span>Roll Call Absent: Student workspace key input is locked out.</span>
+                                  </div>
+                                )}
+
+                                {st.submission_url && (
+                                  <div className="mt-2 pt-1 border-t border-slate-200 dark:border-slate-800 text-[11px]">
+                                    <a
+                                      href={st.submission_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-medium"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      <span className="truncate">View Output Artifact</span>
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   )}
@@ -1129,6 +1348,134 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
           </div>
         </div>
       )}
+
+        {/* Session Summary Audit Report Modal */}
+        {showSummaryReportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fadeIn">
+            <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4 max-h-[88vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                      HyperBuild Session Audit Report
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Dual-verification breakdown and auto-absent tracking
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSummaryReportModal(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Copy action & quick stats */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Activity #{currentActivity?.activity_no}: {currentActivity?.title}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyReport}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all cursor-pointer shadow-sm"
+                  >
+                    {copiedReport ? <CheckCheck className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedReport ? 'Copied to Clipboard!' : 'Copy Summary Report'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold">Roll Call</span>
+                    <p className="font-extrabold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {rosterData?.roll_call_present_count ?? 0} P / {rosterData?.roll_call_absent_count ?? 0} A
+                    </p>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold">Keys Verified</span>
+                    <p className="font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
+                      {rosterData?.keys_verified_count ?? 0}
+                    </p>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold">Auto-Absent</span>
+                    <p className="font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">
+                      {rosterData?.downgraded_absent_count ?? 0}
+                    </p>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold">Final Present</span>
+                    <p className="font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {rosterData?.final_present_count ?? 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* List of auto-absent students */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  <span>Auto-Absent Students ({rosterData?.downgraded_absent_count ?? 0})</span>
+                </h4>
+                {(rosterData?.roster || []).filter((s: any) => s.is_downgraded).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40">
+                    None! All students marked present in roll call verified their secret keys.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {(rosterData?.roster || [])
+                      .filter((s: any) => s.is_downgraded)
+                      .map((s: any, idx: number) => (
+                        <div key={s.student_id} className="p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 flex items-center justify-between text-xs">
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-white">{idx + 1}. {s.full_name}</span>
+                            <span className="text-slate-500 text-[11px] ml-2 font-mono">PRN: {s.prn_no || 'N/A'}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAttendanceMutation.mutate({ studentId: s.student_id, status: 'present' });
+                            }}
+                            disabled={updateAttendanceMutation.isPending}
+                            className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            Override to Present
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Pre-formatted Text Preview */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-500">Report Preview:</span>
+                <pre className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 text-[11px] font-mono whitespace-pre-wrap max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-800">
+                  {generateReportText()}
+                </pre>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSummaryReportModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 };

@@ -190,6 +190,8 @@ class HyperbuildSessionDetailResponse(BaseModel):
     status: str
     total_activities: int
     active_activity_id: Optional[UUID] = None
+    is_roll_call_absent: bool = False
+    roll_call_status: Optional[str] = None
     activities: List[HyperbuildActivityResponse]
 
     model_config = ConfigDict(from_attributes=True)
@@ -206,6 +208,10 @@ class HyperbuildLiveRosterStudentItem(BaseModel):
     is_eligible: bool
     is_verified: bool
     verification_status: str  # verified_present | unverified_absent | not_applicable
+    roll_call_status: str = "unmarked"  # present | absent | unmarked
+    key_status: str = "missing"  # verified | missing | blocked_absent
+    final_status: str = "absent"  # present | absent | not_applicable
+    is_downgraded: bool = False  # True if roll call was present, but secret key was not entered (auto-absent)
     verified_at: Optional[datetime] = None
     submission_url: Optional[str] = None
     submission_text: Optional[str] = None
@@ -227,6 +233,12 @@ class HyperbuildLiveRosterResponse(BaseModel):
     total_batch_students: int
     total_eligible_students: int
     total_verified_present: int
+    roll_call_present_count: int = 0
+    roll_call_absent_count: int = 0
+    keys_verified_count: int = 0
+    downgraded_absent_count: int = 0
+    final_present_count: int = 0
+    final_absent_count: int = 0
     roster: List[HyperbuildLiveRosterStudentItem]
 
 

@@ -157,6 +157,17 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                     LIVE
                   </span>
                 )}
+                {sessionDetails?.is_roll_call_absent ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                    <Lock className="h-2.5 w-2.5" />
+                    Roll Call: Absent (Locked)
+                  </span>
+                ) : sessionDetails?.roll_call_status === 'present' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    Roll Call: Present
+                  </span>
+                ) : null}
               </div>
               <p className="text-xs text-slate-500 font-medium">
                 📍 {session.venue || 'HyperBuild Lab'} · ⏰ {session.start_time?.slice(0, 5)} - {session.end_time?.slice(0, 5)} ({session.duration_minutes} mins)
@@ -274,7 +285,17 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                   </div>
                 )}
 
-                {activeActivity.is_verified_by_student ? (
+                {sessionDetails?.is_roll_call_absent ? (
+                  <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-900 dark:text-rose-200 space-y-2 text-center">
+                    <div className="flex items-center justify-center gap-2 font-bold text-rose-700 dark:text-rose-300">
+                      <AlertCircle className="h-5 w-5 shrink-0 text-rose-600" />
+                      <span className="text-sm">Classroom Roll Call: Marked Absent</span>
+                    </div>
+                    <p className="text-xs leading-relaxed text-rose-800/90 dark:text-rose-300/90">
+                      You were marked <strong>Absent</strong> during classroom roll call for this session. As per institutional policy, secret key self-verification is locked for students marked absent. If you are present in class, please request your faculty to update your roll call attendance.
+                    </p>
+                  </div>
+                ) : activeActivity.is_verified_by_student ? (
                   <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-center space-y-1">
                     <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mx-auto" />
                     <p className="font-bold text-xs text-emerald-900 dark:text-emerald-200">

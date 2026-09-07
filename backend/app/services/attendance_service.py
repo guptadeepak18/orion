@@ -240,11 +240,47 @@ async def mark_and_lock_session_attendance(
 
     now_utc = datetime.now(timezone.utc)
 
+    # For HyperBuild sessions with activities that required challenge keys:
+    hb_acts = []
+    if session.session_type == "hyperbuild":
+        act_res = await db.execute(
+            select(HyperbuildActivity).where(
+                HyperbuildActivity.session_id == session_id,
+                HyperbuildActivity.is_deleted == False,
+            )
+        )
+        hb_acts = act_res.scalars().all()
+
+    hb_key_req = any((a.challenge_key is not None or a.status in ["active", "closed"]) for a in hb_acts)
+    verified_student_ids = set()
+    if hb_key_req:
+        v_res = await db.execute(
+            select(HyperbuildActivityVerification.student_id).where(
+                HyperbuildActivityVerification.session_id == session_id,
+                HyperbuildActivityVerification.is_key_valid == True,
+                HyperbuildActivityVerification.is_deleted == False,
+            )
+        )
+        verified_student_ids = set(v_res.scalars().all())
+
     for item in req.attendances:
+        roll_status = item.status
+        eff_status = item.status
+        eff_remarks = item.remarks
+
+        if hb_key_req:
+            if roll_status in PRESENT_STATUSES:
+                if item.student_id not in verified_student_ids:
+                    eff_status = "absent"
+                    eff_remarks = item.remarks or "Auto-Absent: Secret key not entered (Roll call: Present)"
+            else:
+                eff_status = "absent"
+
         if item.student_id in existing_records:
             existing = existing_records[item.student_id]
-            existing.status = item.status
-            existing.remarks = item.remarks
+            existing.roll_call_status = roll_status
+            existing.status = eff_status
+            existing.remarks = eff_remarks
             existing.marked_by = current_user_id
             existing.is_locked = True
             existing.locked_at = now_utc
@@ -253,8 +289,9 @@ async def mark_and_lock_session_attendance(
             new_att = StudentAttendance(
                 session_id=session.id,
                 student_id=item.student_id,
-                status=item.status,
-                remarks=item.remarks,
+                roll_call_status=roll_status,
+                status=eff_status,
+                remarks=eff_remarks,
                 marked_by=current_user_id,
                 is_locked=True,
                 locked_at=now_utc,
@@ -672,13 +709,38 @@ async def get_student_attendance_dossier(
                     sub_name = act.title or "HyperBuild Practical Lab"
                     sub_code = "HYPERBUILD"
 
+                # Check whether this activity required secret key verification
+                act_required_key = (
+                    (act.challenge_key is not None)
+                    or (act.status in ["active", "closed"])
+                    or (act.id in hb_verifs)
+                )
+
+                parent_is_present = (r.status in PRESENT_STATUSES) or (getattr(r, "roll_call_status", None) in PRESENT_STATUSES)
                 v_rec = hb_verifs.get(act.id)
-                if v_rec:
-                    is_att = v_rec.verification_status in ["verified_present", "late_submission", "present"]
-                    act_status = "present" if is_att else "absent"
+                v_is_present = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+
+                if act_required_key:
+                    if parent_is_present and v_is_present:
+                        is_att = True
+                        act_status = "present"
+                        item_remarks = f"HyperBuild: {act.title} (Verified)"
+                    elif parent_is_present and not v_is_present:
+                        is_att = False
+                        act_status = "absent"
+                        item_remarks = f"HyperBuild: {act.title} (Absent: Secret key not entered)"
+                    elif not parent_is_present:
+                        is_att = False
+                        act_status = r.status or "absent"
+                        item_remarks = f"HyperBuild: {act.title} (Roll Call: Absent)"
+                    else:
+                        is_att = False
+                        act_status = "absent"
+                        item_remarks = f"HyperBuild: {act.title}"
                 else:
-                    is_att = r.status in PRESENT_STATUSES
+                    is_att = parent_is_present
                     act_status = r.status or ("present" if is_att else "absent")
+                    item_remarks = f"HyperBuild: {act.title}"
 
                 total_classes += 1
                 if is_att:
@@ -717,7 +779,7 @@ async def get_student_attendance_dossier(
 
                 session_items.append(
                     StudentSessionAttendanceRecordItem(
-                        attendance_id=v_rec.id if v_rec else uuid.uuid5(uuid.NAMESPACE_DNS, f"{r.id}-{act.id}"),
+                        attendance_id=r.id,
                         session_id=sess.id,
                         subject_id=sub_id,
                         subject_name=sub_name,
@@ -728,7 +790,7 @@ async def get_student_attendance_dossier(
                         end_time=e_time,
                         venue=f"{sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
                         status=act_status,
-                        remarks=f"HyperBuild: {act.title}",
+                        remarks=item_remarks,
                         is_locked=r.is_locked,
                         has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
                         correction_request_id=corr.id if corr else None,
@@ -931,23 +993,108 @@ async def create_attendance_correction_request(
     If raised by student: starts in 'pending_faculty_approval'.
     If raised by faculty: advances to 'pending_admin_approval'.
     """
-    att_stmt = (
-        select(StudentAttendance)
-        .options(
-            selectinload(StudentAttendance.session).selectinload(Session.subject),
-            selectinload(StudentAttendance.session).selectinload(Session.batch),
-            selectinload(StudentAttendance.student),
+    attendance = None
+
+    # Strategy 1: Find by StudentAttendance.id directly
+    if req_in.attendance_id:
+        att_stmt = (
+            select(StudentAttendance)
+            .options(
+                selectinload(StudentAttendance.session).selectinload(Session.subject),
+                selectinload(StudentAttendance.session).selectinload(Session.batch),
+                selectinload(StudentAttendance.student),
+            )
+            .where(StudentAttendance.id == req_in.attendance_id)
         )
-        .where(StudentAttendance.id == req_in.attendance_id)
-    )
-    att_res = await db.execute(att_stmt)
-    attendance = att_res.scalar_one_or_none()
+        att_res = await db.execute(att_stmt)
+        attendance = att_res.scalar_one_or_none()
+
+    # Strategy 2: If req_in.attendance_id matches a HyperbuildActivityVerification ID
+    if not attendance and req_in.attendance_id:
+        v_stmt = select(HyperbuildActivityVerification).where(HyperbuildActivityVerification.id == req_in.attendance_id)
+        v_res = await db.execute(v_stmt)
+        v_rec = v_res.scalar_one_or_none()
+        if v_rec:
+            att_stmt = (
+                select(StudentAttendance)
+                .options(
+                    selectinload(StudentAttendance.session).selectinload(Session.subject),
+                    selectinload(StudentAttendance.session).selectinload(Session.batch),
+                    selectinload(StudentAttendance.student),
+                )
+                .where(
+                    StudentAttendance.session_id == v_rec.session_id,
+                    StudentAttendance.student_id == v_rec.student_id,
+                )
+            )
+            att_res = await db.execute(att_stmt)
+            attendance = att_res.scalar_one_or_none()
+
+    # Strategy 3: Resolve target session_id and student_id
+    target_session_id = req_in.session_id
+    target_student_id = req_in.student_id
+
+    # If student_id not specified, check if requesting user is a student
+    if not target_student_id:
+        st_lookup = await db.execute(select(Student.id).where(Student.user_id == requested_by_id))
+        target_student_id = st_lookup.scalar_one_or_none()
+
+    # If session_id not specified, check if req_in.attendance_id is a Session ID
+    if not target_session_id and req_in.attendance_id:
+        sess_check = await db.execute(select(Session.id).where(Session.id == req_in.attendance_id))
+        if sess_check.scalar_one_or_none():
+            target_session_id = req_in.attendance_id
+
+    # Strategy 4: Find by (session_id, student_id)
+    if not attendance and target_session_id and target_student_id:
+        att_stmt = (
+            select(StudentAttendance)
+            .options(
+                selectinload(StudentAttendance.session).selectinload(Session.subject),
+                selectinload(StudentAttendance.session).selectinload(Session.batch),
+                selectinload(StudentAttendance.student),
+            )
+            .where(
+                StudentAttendance.session_id == target_session_id,
+                StudentAttendance.student_id == target_student_id,
+            )
+        )
+        att_res = await db.execute(att_stmt)
+        attendance = att_res.scalar_one_or_none()
+
+    # Strategy 5: If valid session and student exist, auto-create the StudentAttendance record
+    if not attendance and target_session_id and target_student_id:
+        sess_obj = (await db.execute(select(Session).where(Session.id == target_session_id))).scalar_one_or_none()
+        stud_obj = (await db.execute(select(Student).where(Student.id == target_student_id))).scalar_one_or_none()
+        if sess_obj and stud_obj:
+            attendance = StudentAttendance(
+                session_id=target_session_id,
+                student_id=target_student_id,
+                status="absent",
+                roll_call_status="absent",
+                is_locked=True,
+                remarks="Auto-created on attendance dispute",
+            )
+            db.add(attendance)
+            await db.flush()
+            att_stmt = (
+                select(StudentAttendance)
+                .options(
+                    selectinload(StudentAttendance.session).selectinload(Session.subject),
+                    selectinload(StudentAttendance.session).selectinload(Session.batch),
+                    selectinload(StudentAttendance.student),
+                )
+                .where(StudentAttendance.id == attendance.id)
+            )
+            att_res = await db.execute(att_stmt)
+            attendance = att_res.scalar_one_or_none()
+
     if not attendance:
         raise ValueError("Attendance record not found")
 
     # Check for existing pending request
     pending_stmt = select(AttendanceCorrectionRequest).where(
-        AttendanceCorrectionRequest.attendance_id == req_in.attendance_id,
+        AttendanceCorrectionRequest.attendance_id == attendance.id,
         AttendanceCorrectionRequest.status.in_(["pending_faculty_approval", "pending_admin_approval"]),
     )
     pending_res = await db.execute(pending_stmt)
@@ -1646,14 +1793,19 @@ async def get_subject_attendance_matrix(
 
             # Calculate presence for this activity
             act_verif_map = {v.student_id: v for v in act.verifications}
+            act_req_key = (act.challenge_key is not None) or (act.status in ["active", "closed"]) or len(act.verifications) > 0
             p_count = 0
             for st in students:
+                p_st = parent_sess_att_map.get((act.session_id, st.id))
+                parent_is_p = p_st in PRESENT_STATUSES
                 v_rec = act_verif_map.get(st.id)
-                if v_rec and v_rec.verification_status in ["verified_present", "late_submission", "present"]:
-                    p_count += 1
-                elif not v_rec:
-                    p_st = parent_sess_att_map.get((act.session_id, st.id))
-                    if p_st and p_st in PRESENT_STATUSES:
+                v_is_p = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+
+                if act_req_key:
+                    if parent_is_p and v_is_p:
+                        p_count += 1
+                else:
+                    if parent_is_p:
                         p_count += 1
 
             pct = round((p_count / len(students) * 100), 1) if students else 0.0
@@ -1699,16 +1851,20 @@ async def get_subject_attendance_matrix(
                     records[str(s.id)] = "unmarked"
             else:
                 act = item["obj"]
+                act_req_key = (act.challenge_key is not None) or (act.status in ["active", "closed"]) or len(act.verifications) > 0
+                p_st = parent_sess_att_map.get((act.session_id, st.id))
+                parent_is_p = p_st in PRESENT_STATUSES
                 v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
-                if v_rec:
-                    if v_rec.verification_status in ["verified_present", "late_submission", "present"]:
+                v_is_p = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+
+                if act_req_key:
+                    if parent_is_p and v_is_p:
                         records[str(act.id)] = "present"
                         attended += 1
                     else:
                         records[str(act.id)] = "absent"
                 else:
-                    p_st = parent_sess_att_map.get((act.session_id, st.id))
-                    if p_st and p_st in PRESENT_STATUSES:
+                    if parent_is_p:
                         records[str(act.id)] = "present"
                         attended += 1
                     else:

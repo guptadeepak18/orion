@@ -16,6 +16,8 @@ interface AttendanceCorrectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   attendanceId: string;
+  sessionId?: string;
+  studentId?: string;
   studentName?: string;
   studentPrn?: string;
   subjectName?: string;
@@ -30,6 +32,8 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
   isOpen,
   onClose,
   attendanceId,
+  sessionId,
+  studentId,
   studentName,
   studentPrn,
   subjectName,
@@ -49,6 +53,8 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
   const createCorrectionMutation = useMutation({
     mutationFn: async (payload: {
       attendance_id: string;
+      session_id?: string;
+      student_id?: string;
       requested_status: string;
       reason: string;
       document_url?: string;
@@ -93,6 +99,8 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
 
     createCorrectionMutation.mutate({
       attendance_id: attendanceId,
+      session_id: sessionId || undefined,
+      student_id: studentId || undefined,
       requested_status: requestedStatus,
       reason: fullReason,
       document_url: documentUrl.trim() || undefined,

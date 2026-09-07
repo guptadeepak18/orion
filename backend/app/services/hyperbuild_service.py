@@ -229,10 +229,23 @@ async def get_hyperbuild_session_details(
     activities = act_res.scalars().all()
 
     student = None
+    is_roll_call_absent = False
+    roll_call_status = None
     if current_user_id:
         st_stmt = select(Student).where(Student.user_id == current_user_id)
         st_res = await db.execute(st_stmt)
         student = st_res.scalar_one_or_none()
+        if student:
+            att_stmt = select(StudentAttendance).where(
+                StudentAttendance.session_id == session_id,
+                StudentAttendance.student_id == student.id,
+            )
+            att_res = await db.execute(att_stmt)
+            st_att = att_res.scalar_one_or_none()
+            if st_att:
+                roll_call_status = getattr(st_att, "roll_call_status", None) or st_att.status
+                if roll_call_status == "absent" or st_att.status == "absent":
+                    is_roll_call_absent = True
 
     activity_responses = []
     active_activity_id = None
@@ -330,6 +343,8 @@ async def get_hyperbuild_session_details(
         status=sess.status,
         total_activities=len(activity_responses),
         active_activity_id=active_activity_id,
+        is_roll_call_absent=is_roll_call_absent,
+        roll_call_status=roll_call_status,
         activities=activity_responses,
     )
 
@@ -691,6 +706,21 @@ async def verify_student_activity_presence(
             f"This activity is scheduled for {domain_name} students. If you believe this is a scheduling error, please contact your faculty."
         )
 
+    # 4b. Check Classroom Roll Call Status (Strict Policy: Absent in roll call cannot verify with secret key)
+    rc_stmt = select(StudentAttendance).where(
+        StudentAttendance.session_id == activity.session_id,
+        StudentAttendance.student_id == student.id,
+    )
+    rc_res = await db.execute(rc_stmt)
+    rc_rec = rc_res.scalar_one_or_none()
+    if rc_rec:
+        actual_rc = getattr(rc_rec, "roll_call_status", None) or rc_rec.status
+        if actual_rc == "absent" or rc_rec.status == "absent":
+            raise ValueError(
+                "Cannot verify attendance: You were marked Absent during classroom roll call. "
+                "Secret key verification is locked for students marked absent. If this is an error, please ask your faculty in class to update your roll call attendance first."
+            )
+
     # 5. Check Challenge Key
     now_utc = datetime.now(timezone.utc)
     if not activity.challenge_key:
@@ -758,13 +788,24 @@ async def verify_student_activity_presence(
         att_rec = StudentAttendance(
             session_id=activity.session_id,
             student_id=student.id,
+            roll_call_status="present",
             status="present",
+            remarks=f"Verified via HyperBuild Act #{activity.activity_no}",
         )
         db.add(att_rec)
     else:
-        att_rec.status = "present"
+        # Check roll call status to preserve absent if teacher marked absent
+        rc_status = getattr(att_rec, "roll_call_status", None) or att_rec.status
+        if rc_status != "absent":
+            att_rec.status = "present"
+            att_rec.remarks = f"Verified via HyperBuild Act #{activity.activity_no}"
 
     await db.commit()
+
+    # Recalculate batch attendance %
+    if activity.session and activity.session.batch_id:
+        from app.services.session_service import recalculate_batch_student_attendance
+        await recalculate_batch_student_attendance(db, activity.session.batch_id)
 
     await broadcast_session_event(
         activity.session_id,
@@ -827,25 +868,78 @@ async def get_activity_live_roster(
     verifications = v_res.scalars().all()
     verif_map = {v.student_id: v for v in verifications}
 
+    # Preload parent session roll call attendance
+    att_stmt = select(StudentAttendance).where(
+        StudentAttendance.session_id == activity.session_id
+    )
+    att_res = await db.execute(att_stmt)
+    roll_call_map = {a.student_id: a for a in att_res.scalars().all()}
+
+    PRESENT_STATUSES = ["present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"]
+
     roster_items = []
     total_eligible = 0
     total_verified = 0
+    roll_call_present_cnt = 0
+    roll_call_absent_cnt = 0
+    downgraded_cnt = 0
+    final_present_cnt = 0
+    final_absent_cnt = 0
 
     for st in all_students:
         is_elig, elig_reason = is_student_eligible_for_subject(st, activity.subject)
         v_rec = verif_map.get(st.id)
+        att_rec = roll_call_map.get(st.id)
+
+        # 1. Roll Call Status
+        rc_st = "unmarked"
+        if att_rec:
+            raw_rc = getattr(att_rec, "roll_call_status", None) or att_rec.status
+            if raw_rc in PRESENT_STATUSES:
+                rc_st = "present"
+            elif raw_rc == "absent":
+                rc_st = "absent"
+            else:
+                rc_st = raw_rc
 
         is_verif = False
         v_status = "unverified_absent"
         if not is_elig:
             v_status = "not_applicable"
-        elif v_rec and v_rec.is_key_valid:
-            is_verif = True
-            v_status = v_rec.verification_status
-            total_verified += 1
-
-        if is_elig:
+            key_st = "not_applicable"
+            final_st = "not_applicable"
+            is_downgraded = False
+        else:
             total_eligible += 1
+            if rc_st == "present":
+                roll_call_present_cnt += 1
+            elif rc_st == "absent":
+                roll_call_absent_cnt += 1
+
+            if v_rec and v_rec.is_key_valid:
+                is_verif = True
+                v_status = v_rec.verification_status
+                total_verified += 1
+                key_st = "verified"
+            else:
+                key_st = "blocked_absent" if rc_st == "absent" else "missing"
+
+            # Strict Dual Verification Evaluation:
+            if rc_st == "present" and is_verif:
+                final_st = "present"
+                is_downgraded = False
+                final_present_cnt += 1
+            elif rc_st == "present" and not is_verif:
+                # MARKED PRESENT IN ROLL CALL, BUT FAILED TO ENTER KEY -> MARKED ABSENT AUTOMATICALLY!
+                final_st = "absent"
+                is_downgraded = True
+                downgraded_cnt += 1
+                final_absent_cnt += 1
+            else:
+                # Roll call was absent or unmarked
+                final_st = "absent"
+                is_downgraded = False
+                final_absent_cnt += 1
 
         roster_items.append(
             HyperbuildLiveRosterStudentItem(
@@ -859,6 +953,10 @@ async def get_activity_live_roster(
                 is_eligible=is_elig,
                 is_verified=is_verif,
                 verification_status=v_status,
+                roll_call_status=rc_st,
+                key_status=key_st,
+                final_status=final_st,
+                is_downgraded=is_downgraded,
                 verified_at=v_rec.verified_at if v_rec else None,
                 submission_url=v_rec.submission_url if v_rec else None,
                 submission_text=v_rec.submission_text if v_rec else None,
@@ -869,7 +967,7 @@ async def get_activity_live_roster(
 
     roster_items.sort(
         key=lambda x: (
-            0 if x.is_verified else 1 if x.is_eligible else 2,
+            0 if x.is_downgraded else 1 if x.is_verified else 2 if x.is_eligible else 3,
             x.full_name,
         )
     )
@@ -888,6 +986,12 @@ async def get_activity_live_roster(
         total_batch_students=len(all_students),
         total_eligible_students=total_eligible,
         total_verified_present=total_verified,
+        roll_call_present_count=roll_call_present_cnt,
+        roll_call_absent_count=roll_call_absent_cnt,
+        keys_verified_count=total_verified,
+        downgraded_absent_count=downgraded_cnt,
+        final_present_count=final_present_cnt,
+        final_absent_count=final_absent_cnt,
         roster=roster_items,
     )
 
@@ -967,11 +1071,13 @@ async def update_activity_student_attendance(
                 session_id=sess_id,
                 student_id=student.id,
                 status="present",
+                roll_call_status="present",
                 remarks=req.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
             )
             db.add(att_rec)
         else:
             att_rec.status = "present"
+            att_rec.roll_call_status = "present"
             if req.remarks:
                 att_rec.remarks = req.remarks
     else:
@@ -1083,12 +1189,14 @@ async def bulk_update_activity_attendance(
                     session_id=sess_id,
                     student_id=item.student_id,
                     status="present",
+                    roll_call_status="present",
                     remarks=item.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
                 )
                 db.add(att_rec)
                 existing_atts[item.student_id] = att_rec
             else:
                 att_rec.status = "present"
+                att_rec.roll_call_status = "present"
         else:
             if att_rec:
                 att_rec.status = "absent"

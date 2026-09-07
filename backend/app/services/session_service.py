@@ -1406,6 +1406,8 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
         for st_id, act_id, v_st in v_res.all():
             verifs_by_student_act[(st_id, act_id)] = v_st
 
+    acts_with_verifs = {act_id for (_, act_id) in verifs_by_student_act.keys()}
+
     for student in students:
         total_eligible = 0
         attended_count = 0
@@ -1419,7 +1421,7 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
                     is_conducted = (
                         (act.status in ["active", "closed"])
                         or (act.challenge_key is not None)
-                        or ((student.id, act.id) in verifs_by_student_act)
+                        or (act.id in acts_with_verifs)
                         or (s.attendance_status == "marked")
                         or (s.status == "completed")
                     )
@@ -1430,12 +1432,27 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
 
                     total_eligible += 1
                     act_added += 1
+
+                    parent_st = student_records.get(s.id)
+                    parent_is_present = parent_st in PRESENT_STATUSES
                     v_st = verifs_by_student_act.get((student.id, act.id))
-                    if v_st and v_st in ["verified_present", "late_submission", "present"]:
-                        attended_count += 1
-                    elif not v_st:
-                        parent_st = student_records.get(s.id)
-                        if parent_st and parent_st in PRESENT_STATUSES:
+                    v_is_present = v_st in ["verified_present", "late_submission", "present"]
+
+                    act_required_key = (
+                        (act.challenge_key is not None)
+                        or (act.status in ["active", "closed"])
+                        or (act.id in acts_with_verifs)
+                    )
+
+                    if act_required_key:
+                        # Strict Dual Verification: Must be marked present in roll call AND verified secret key
+                        if parent_is_present and v_is_present:
+                            attended_count += 1
+                        # If parent_is_present is True but v_is_present is False: automatically absent (no credit)
+                        # If parent_is_present is False (roll-call absent): absent (no credit)
+                    else:
+                        # Session without secret key challenge: roll-call attendance applies
+                        if parent_is_present:
                             attended_count += 1
 
                 # Fallback to parent session if no activities were matched
