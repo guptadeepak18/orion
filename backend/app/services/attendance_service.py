@@ -2001,18 +2001,24 @@ async def get_student_class_attendance_ledger(
     session_id: Optional[UUID] = None,
     faculty_id: Optional[UUID] = None,
     attendance_status: Optional[str] = None,
+    status_filter: Optional[str] = None,
     search: Optional[str] = None,
+    search_query: Optional[str] = None,
     current_user_id: Optional[UUID] = None,
     user_roles: Optional[List[str]] = None,
     limit: Optional[int] = None,
     offset: Optional[int] = 0,
+    **kwargs,
 ) -> Dict[str, Any]:
     """
     Fetches granular student-by-student, class-by-class, day-by-day attendance ledger records
     with comprehensive filtering, faculty scoping, and cohort analytics.
     """
+    eff_status = attendance_status or status_filter
+    eff_search = search or search_query
+
     roles = user_roles or []
-    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly"] for r in roles)
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly", "finance", "admin", "super_admin"] for r in roles)
 
     query = (
         select(
@@ -2081,8 +2087,8 @@ async def get_student_class_attendance_ledger(
                 Session.faculty_external_id == faculty_id,
             )
         )
-    if attendance_status and attendance_status.lower() != "all":
-        st_lower = attendance_status.lower()
+    if eff_status and eff_status.lower() != "all":
+        st_lower = eff_status.lower()
         if st_lower == "present":
             query = query.where(StudentAttendance.status.in_(PRESENT_STATUSES))
         elif st_lower == "absent":
@@ -2090,8 +2096,8 @@ async def get_student_class_attendance_ledger(
         elif st_lower in ("late", "excused", "od_duty", "leave_approved"):
             query = query.where(StudentAttendance.status == st_lower)
 
-    if search and search.strip():
-        term = f"%{search.strip()}%"
+    if eff_search and eff_search.strip():
+        term = f"%{eff_search.strip()}%"
         query = query.where(
             or_(
                 Student.full_name.ilike(term),

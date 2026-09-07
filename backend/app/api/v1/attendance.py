@@ -362,12 +362,6 @@ async def get_student_class_attendance_ledger(
 ):
     user_id = UUID(payload.get("sub")) if payload.get("sub") else None
     roles = payload.get("roles", [])
-    is_admin = any(r in ["crc_admin", "crc_coordinator", "finance", "reporting_readonly"] for r in roles)
-    
-    # Scoping: if user is pure faculty, enforce scoping to their sessions
-    effective_faculty_id = faculty_id
-    if not is_admin and user_id:
-        effective_faculty_id = user_id
 
     ledger_data = await attendance_service.get_student_class_attendance_ledger(
         db=db,
@@ -376,9 +370,11 @@ async def get_student_class_attendance_ledger(
         batch_id=batch_id,
         subject_id=subject_id,
         session_id=session_id,
-        faculty_id=effective_faculty_id,
+        faculty_id=faculty_id,
         status_filter=status,
         search_query=search,
+        current_user_id=user_id,
+        user_roles=roles,
         limit=limit,
         offset=offset,
     )
@@ -397,11 +393,6 @@ async def export_student_ledger_excel(
 ):
     user_id = UUID(payload.get("sub")) if payload.get("sub") else None
     roles = payload.get("roles", [])
-    is_admin = any(r in ["crc_admin", "crc_coordinator", "finance", "reporting_readonly"] for r in roles)
-
-    effective_faculty_id = None
-    if not is_admin and user_id:
-        effective_faculty_id = user_id
 
     # Fetch complete matching dataset (limit=None)
     ledger_data = await attendance_service.get_student_class_attendance_ledger(
@@ -411,9 +402,11 @@ async def export_student_ledger_excel(
         batch_id=req.batch_id,
         subject_id=req.subject_id,
         session_id=req.session_id,
-        faculty_id=effective_faculty_id,
+        faculty_id=None,
         status_filter=req.status,
         search_query=req.search,
+        current_user_id=user_id,
+        user_roles=roles,
         limit=None,
         offset=0,
     )

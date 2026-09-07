@@ -647,6 +647,7 @@ export const AttendancePage: React.FC = () => {
   const {
     data: studentLedgerData,
     isPending: studentLedgerLoading,
+    error: studentLedgerError,
     refetch: refetchLedger,
   } = useQuery({
     queryKey: [
@@ -2545,6 +2546,23 @@ export const AttendancePage: React.FC = () => {
                       <td colSpan={8} className="p-12 text-center text-slate-400">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />
                         <span className="text-xs font-bold">Loading student class attendance ledger...</span>
+                      </td>
+                    </tr>
+                  ) : studentLedgerError ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center">
+                        <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-rose-900 dark:text-rose-200">Unable to load attendance ledger</p>
+                        <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 max-w-md mx-auto">
+                          {(studentLedgerError as any)?.response?.data?.detail || (studentLedgerError as Error).message || 'Server error occurred'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => refetchLedger()}
+                          className="mt-3 px-4 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 cursor-pointer"
+                        >
+                          Retry
+                        </button>
                       </td>
                     </tr>
                   ) : !studentLedgerData?.items || studentLedgerData.items.length === 0 ? (
