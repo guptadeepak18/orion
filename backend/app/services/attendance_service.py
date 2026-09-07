@@ -1151,9 +1151,167 @@ async def create_attendance_correction_request(
     )
     db.add(corr)
     await db.commit()
-    await db.refresh(corr)
+
+    # Eagerly load all relationships to prevent lazy-load / greenlet errors
+    fresh_corr = await get_correction_with_relations(db, corr.id)
+    if fresh_corr:
+        corr = fresh_corr
+        # Trigger email notification acknowledging dispute submission to student & alerting faculty
+        await _dispatch_dispute_email(db, "attendance_dispute_submitted", corr)
 
     return await format_correction_response(db, corr)
+
+
+async def get_correction_with_relations(db: AsyncSession, request_id: UUID) -> Optional[AttendanceCorrectionRequest]:
+    """
+    Eagerly loads all relationships required for review workflows, email triggers,
+    and format_correction_response to eliminate detached instance / MissingGreenlet exceptions.
+    """
+    stmt = (
+        select(AttendanceCorrectionRequest)
+        .options(
+            selectinload(AttendanceCorrectionRequest.attendance),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.subject),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.batch),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_internal),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_external),
+            selectinload(AttendanceCorrectionRequest.student),
+            selectinload(AttendanceCorrectionRequest.requested_by),
+            selectinload(AttendanceCorrectionRequest.faculty_approver),
+            selectinload(AttendanceCorrectionRequest.admin_approver),
+        )
+        .where(AttendanceCorrectionRequest.id == request_id)
+    )
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+async def _apply_attendance_correction(db: AsyncSession, corr: AttendanceCorrectionRequest, now_utc: datetime):
+    """
+    Applies attendance update to StudentAttendance, updates HyperBuild verifications,
+    and recalculates cumulative batch attendance percentages.
+    """
+    att = corr.attendance
+    if att:
+        att.status = corr.requested_status
+        att.roll_call_status = "present"
+        prev_remarks = att.remarks or ""
+        att.remarks = f"{prev_remarks} [Dual-Approved: {corr.requested_status} on {now_utc.strftime('%d/%m/%Y')}]".strip()
+
+    # If specific HyperBuild activities were disputed, mark student present in HyperbuildActivityVerification
+    if corr.activity_ids and isinstance(corr.activity_ids, list) and len(corr.activity_ids) > 0:
+        for act_id_str in corr.activity_ids:
+            try:
+                act_id = UUID(str(act_id_str))
+            except Exception:
+                continue
+            v_stmt = select(HyperbuildActivityVerification).where(
+                HyperbuildActivityVerification.activity_id == act_id,
+                HyperbuildActivityVerification.student_id == corr.student_id,
+            )
+            v_res = await db.execute(v_stmt)
+            v_rec = v_res.scalar_one_or_none()
+            if not v_rec:
+                act_obj = (await db.execute(select(HyperbuildActivity).where(HyperbuildActivity.id == act_id))).scalar_one_or_none()
+                v_rec = HyperbuildActivityVerification(
+                    activity_id=act_id,
+                    session_id=corr.session_id,
+                    student_id=corr.student_id,
+                    subject_id=act_obj.subject_id if act_obj else None,
+                    challenge_key_entered="DISPUTE_APPROVED",
+                    is_key_valid=True,
+                    is_geofence_valid=True,
+                    verification_status="verified_present",
+                    verified_at=now_utc,
+                )
+                db.add(v_rec)
+            else:
+                v_rec.is_key_valid = True
+                v_rec.verification_status = "verified_present"
+                v_rec.verified_at = now_utc
+                if not v_rec.challenge_key_entered:
+                    v_rec.challenge_key_entered = "DISPUTE_APPROVED"
+
+    # Recalculate automatic batch attendance %
+    if corr.session and corr.session.batch_id:
+        await recalculate_batch_student_attendance(db, corr.session.batch_id)
+
+
+async def _dispatch_dispute_email(
+    db: AsyncSession,
+    event_key: str,
+    corr: AttendanceCorrectionRequest,
+    context_extra: Optional[Dict[str, Any]] = None,
+):
+    """
+    Safely dispatches dispute lifecycle emails to the student and faculty.
+    """
+    try:
+        student = corr.student
+        student_email = (student.email_official or student.email) if student else None
+        student_name = student.full_name if student else "Student"
+        prn_number = (student.prn_number or student.roll_no) if student else ""
+
+        session = corr.session
+        subject_name = session.subject.name if (session and session.subject) else "Class Lecture"
+        subject_code = session.subject.code if (session and session.subject) else ""
+        session_date = str(session.session_date) if session else ""
+
+        faculty_name = "Subject Faculty"
+        faculty_email = None
+        if session:
+            if session.faculty_internal:
+                faculty_name = session.faculty_internal.full_name or "Faculty"
+                faculty_email = session.faculty_internal.email
+            elif session.faculty_external:
+                faculty_name = session.faculty_external.full_name or "Faculty"
+                faculty_email = session.faculty_external.email
+
+        context: Dict[str, Any] = {
+            "student_name": student_name,
+            "prn_number": prn_number,
+            "subject_name": subject_name,
+            "subject_code": subject_code,
+            "session_date": session_date,
+            "current_status": corr.current_status,
+            "requested_status": corr.requested_status,
+            "reason": corr.reason,
+            "faculty_name": faculty_name,
+            "app_name": "Orion Portal",
+            "support_email": "deepak.gupta@mile.education",
+        }
+        if context_extra:
+            context.update(context_extra)
+
+        # 1. Dispatch to Student
+        if student_email:
+            await trigger_activity_email(
+                db=db,
+                event_key=event_key,
+                recipient_email=student_email,
+                context=context,
+            )
+
+        # 2. Dispatch to Faculty on initial submission or when admin reviewed first
+        if event_key == "attendance_dispute_submitted" and faculty_email:
+            fac_ctx = dict(context)
+            await trigger_activity_email(
+                db=db,
+                event_key=event_key,
+                recipient_email=faculty_email,
+                context=fac_ctx,
+            )
+        elif event_key == "attendance_dispute_admin_reviewed" and faculty_email:
+            fac_ctx = dict(context)
+            fac_ctx["next_step_message"] = "Administrative review has been completed. Your faculty review is required to finalize the dispute."
+            await trigger_activity_email(
+                db=db,
+                event_key=event_key,
+                recipient_email=faculty_email,
+                context=fac_ctx,
+            )
+    except Exception as e:
+        logger.error(f"Failed to dispatch dispute email '{event_key}': {e}")
 
 
 async def review_attendance_correction_faculty(
@@ -1165,17 +1323,17 @@ async def review_attendance_correction_faculty(
 ) -> AttendanceCorrectionResponse:
     """
     Tier 1 Faculty Review:
-    If approved -> advances status to 'pending_admin_approval'.
-    If rejected -> sets status to 'rejected' (attendance unchanged).
+    - If approved:
+      - If Admin already approved -> marks status 'approved', applies attendance correction, dispatches resolution email.
+      - If Admin pending -> marks status 'pending_admin_approval', attendance unchanged, dispatches faculty review email.
+    - If rejected -> marks status 'rejected', attendance unchanged, dispatches rejection email.
     """
-    corr_stmt = select(AttendanceCorrectionRequest).where(AttendanceCorrectionRequest.id == request_id)
-    corr_res = await db.execute(corr_stmt)
-    corr = corr_res.scalar_one_or_none()
+    corr = await get_correction_with_relations(db, request_id)
     if not corr:
         raise ValueError("Correction request not found")
 
-    if corr.status != "pending_faculty_approval":
-        raise ValueError(f"Request is not awaiting faculty review (current status: {corr.status})")
+    if corr.status in ["approved", "rejected"]:
+        raise ValueError(f"Dispute request has already been finalized ({corr.status})")
 
     now_utc = datetime.now(timezone.utc)
     corr.faculty_approver_id = faculty_user_id
@@ -1192,14 +1350,61 @@ async def review_attendance_correction_faculty(
     })
     corr.audit_trail = {"history": history}
 
+    fac_user = (await db.execute(select(User).where(User.id == faculty_user_id))).unique().scalar_one_or_none()
+    fac_name = fac_user.full_name if fac_user else "Subject Faculty"
+
     if action == "approved":
-        corr.status = "pending_admin_approval"
+        if corr.admin_action == "approved":
+            # True Dual-Approval Achieved!
+            corr.status = "approved"
+            corr.resolved_at = now_utc
+            await _apply_attendance_correction(db, corr, now_utc)
+
+            pct_val = f"{corr.student.attendance_percentage:.1f}" if (corr.student and corr.student.attendance_percentage is not None) else "Updated"
+            adm_name = corr.admin_approver.full_name if corr.admin_approver else "Academic Administrator"
+            await _dispatch_dispute_email(
+                db,
+                "attendance_dispute_resolved",
+                corr,
+                {
+                    "corrected_status": corr.requested_status,
+                    "faculty_name": fac_name,
+                    "admin_name": adm_name,
+                    "updated_attendance_pct": pct_val,
+                }
+            )
+        else:
+            # Faculty approved, awaiting Admin review
+            corr.status = "pending_admin_approval"
+            await _dispatch_dispute_email(
+                db,
+                "attendance_dispute_faculty_reviewed",
+                corr,
+                {
+                    "faculty_name": fac_name,
+                    "faculty_action": action,
+                    "faculty_remarks": remarks or "Approved by Course Faculty",
+                    "next_step_message": "Your dispute has received Faculty approval and is now awaiting final validation from Academic Administration.",
+                }
+            )
     else:
+        # Rejected
         corr.status = "rejected"
         corr.resolved_at = now_utc
+        await _dispatch_dispute_email(
+            db,
+            "attendance_dispute_rejected",
+            corr,
+            {
+                "reviewer_role": "Subject Faculty",
+                "reviewer_name": fac_name,
+                "remarks": remarks or "Declined by Course Faculty",
+            }
+        )
 
     await db.commit()
-    await db.refresh(corr)
+    # Eagerly reload fresh with all relationships so format_correction_response will not trigger greenlet/lazy-load errors
+    corr = await get_correction_with_relations(db, corr.id)
     return await format_correction_response(db, corr)
 
 
@@ -1212,32 +1417,23 @@ async def review_attendance_correction_admin(
 ) -> AttendanceCorrectionResponse:
     """
     Tier 2 Admin Final Review:
-    If approved -> sets status to 'approved' and ATOMICALLY updates StudentAttendance.status
-                   in database and recalculates student attendance percentage.
-    If rejected -> sets status to 'rejected' (attendance unchanged).
+    - If approved:
+      - If Faculty already approved -> marks status 'approved', applies attendance correction, dispatches resolution email.
+      - If Faculty pending -> marks status 'pending_faculty_approval', attendance UNCHANGED, dispatches admin review notice.
+    - If rejected -> marks status 'rejected', attendance unchanged, dispatches rejection email.
     """
-    corr_stmt = (
-        select(AttendanceCorrectionRequest)
-        .options(
-            selectinload(AttendanceCorrectionRequest.attendance),
-            selectinload(AttendanceCorrectionRequest.session),
-        )
-        .where(AttendanceCorrectionRequest.id == request_id)
-    )
-    corr_res = await db.execute(corr_stmt)
-    corr = corr_res.scalar_one_or_none()
+    corr = await get_correction_with_relations(db, request_id)
     if not corr:
         raise ValueError("Correction request not found")
 
-    if corr.status not in ["pending_admin_approval", "pending_faculty_approval"]:
-        raise ValueError(f"Request is not pending review (current status: {corr.status})")
+    if corr.status in ["approved", "rejected"]:
+        raise ValueError(f"Dispute request has already been finalized ({corr.status})")
 
     now_utc = datetime.now(timezone.utc)
     corr.admin_approver_id = admin_user_id
     corr.admin_action = action
     corr.admin_acted_at = now_utc
     corr.admin_remarks = remarks
-    corr.resolved_at = now_utc
 
     history = corr.audit_trail.get("history", []) if corr.audit_trail else []
     history.append({
@@ -1248,59 +1444,67 @@ async def review_attendance_correction_admin(
     })
     corr.audit_trail = {"history": history}
 
+    adm_user = (await db.execute(select(User).where(User.id == admin_user_id))).unique().scalar_one_or_none()
+    adm_name = adm_user.full_name if adm_user else "Academic Administration"
+
+    fac_name = "Subject Faculty"
+    if corr.faculty_approver and corr.faculty_approver.full_name:
+        fac_name = corr.faculty_approver.full_name
+    elif corr.session and corr.session.faculty_internal and corr.session.faculty_internal.full_name:
+        fac_name = corr.session.faculty_internal.full_name
+
     if action == "approved":
-        corr.status = "approved"
+        if corr.faculty_action == "approved":
+            # True Dual-Approval Achieved!
+            corr.status = "approved"
+            corr.resolved_at = now_utc
+            await _apply_attendance_correction(db, corr, now_utc)
 
-        # ATOMICALLY UPDATE ATTENDANCE RECORD
-        att = corr.attendance
-        if att:
-            att.status = corr.requested_status
-            att.roll_call_status = "present"
-            prev_remarks = att.remarks or ""
-            att.remarks = f"{prev_remarks} [Dual-Approved: {corr.requested_status} on {now_utc.strftime('%d/%m/%Y')}]".strip()
-
-            # If specific HyperBuild activities were disputed, mark student present in HyperbuildActivityVerification for those activities
-            if corr.activity_ids and isinstance(corr.activity_ids, list) and len(corr.activity_ids) > 0:
-                for act_id_str in corr.activity_ids:
-                    try:
-                        act_id = UUID(str(act_id_str))
-                    except Exception:
-                        continue
-                    v_stmt = select(HyperbuildActivityVerification).where(
-                        HyperbuildActivityVerification.activity_id == act_id,
-                        HyperbuildActivityVerification.student_id == corr.student_id,
-                    )
-                    v_res = await db.execute(v_stmt)
-                    v_rec = v_res.scalar_one_or_none()
-                    if not v_rec:
-                        act_obj = (await db.execute(select(HyperbuildActivity).where(HyperbuildActivity.id == act_id))).scalar_one_or_none()
-                        v_rec = HyperbuildActivityVerification(
-                            activity_id=act_id,
-                            session_id=corr.session_id,
-                            student_id=corr.student_id,
-                            subject_id=act_obj.subject_id if act_obj else None,
-                            challenge_key_entered="DISPUTE_APPROVED",
-                            is_key_valid=True,
-                            is_geofence_valid=True,
-                            verification_status="verified_present",
-                            verified_at=now_utc,
-                        )
-                        db.add(v_rec)
-                    else:
-                        v_rec.is_key_valid = True
-                        v_rec.verification_status = "verified_present"
-                        v_rec.verified_at = now_utc
-                        if not v_rec.challenge_key_entered:
-                            v_rec.challenge_key_entered = "DISPUTE_APPROVED"
-
-            # Recalculate automatic batch attendance %
-            if corr.session and corr.session.batch_id:
-                await recalculate_batch_student_attendance(db, corr.session.batch_id)
+            pct_val = f"{corr.student.attendance_percentage:.1f}" if (corr.student and corr.student.attendance_percentage is not None) else "Updated"
+            await _dispatch_dispute_email(
+                db,
+                "attendance_dispute_resolved",
+                corr,
+                {
+                    "corrected_status": corr.requested_status,
+                    "faculty_name": fac_name,
+                    "admin_name": adm_name,
+                    "updated_attendance_pct": pct_val,
+                }
+            )
+        else:
+            # Admin approved, but Faculty approval is still pending!
+            # Attendance is NOT changed until faculty also approves!
+            corr.status = "pending_faculty_approval"
+            await _dispatch_dispute_email(
+                db,
+                "attendance_dispute_admin_reviewed",
+                corr,
+                {
+                    "admin_name": adm_name,
+                    "admin_action": action,
+                    "admin_remarks": remarks or "Approved by Academic Administration",
+                    "next_step_message": "Administrative review is complete. Your dispute is now awaiting review and concurrence from your Subject Faculty before the official attendance record is updated.",
+                }
+            )
     else:
+        # Rejected by Admin
         corr.status = "rejected"
+        corr.resolved_at = now_utc
+        await _dispatch_dispute_email(
+            db,
+            "attendance_dispute_rejected",
+            corr,
+            {
+                "reviewer_role": "Academic Administration",
+                "reviewer_name": adm_name,
+                "remarks": remarks or "Declined by Academic Administration",
+            }
+        )
 
     await db.commit()
-    await db.refresh(corr)
+    # Eagerly reload fresh with all relationships so format_correction_response will not trigger greenlet/lazy-load errors
+    corr = await get_correction_with_relations(db, corr.id)
     return await format_correction_response(db, corr)
 
 
@@ -1327,6 +1531,8 @@ async def list_attendance_corrections(
             selectinload(AttendanceCorrectionRequest.attendance),
             selectinload(AttendanceCorrectionRequest.session).selectinload(Session.subject),
             selectinload(AttendanceCorrectionRequest.session).selectinload(Session.batch),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_internal),
+            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_external),
             selectinload(AttendanceCorrectionRequest.student),
             selectinload(AttendanceCorrectionRequest.faculty_approver),
             selectinload(AttendanceCorrectionRequest.admin_approver),
@@ -1334,7 +1540,12 @@ async def list_attendance_corrections(
     )
 
     if status_filter:
-        query = query.where(AttendanceCorrectionRequest.status == status_filter)
+        if status_filter in ["pending_faculty", "pending_faculty_approval"]:
+            query = query.where(AttendanceCorrectionRequest.status.in_(["pending_faculty", "pending_faculty_approval"]))
+        elif status_filter in ["pending_admin", "pending_admin_approval"]:
+            query = query.where(AttendanceCorrectionRequest.status.in_(["pending_admin", "pending_admin_approval"]))
+        else:
+            query = query.where(AttendanceCorrectionRequest.status == status_filter)
 
     if is_student:
         student_subquery = select(Student.id).where(Student.user_id == user_id)
@@ -1647,20 +1858,26 @@ async def get_class_attendance_register(
                     "remarks": a.remarks,
                 })
 
-        pct = round((present_count / total_students * 100), 1) if total_students > 0 else 0.0
+        today_date = date.today()
+        is_future = bool(s.session_date and s.session_date > today_date)
+        is_marked = total_students > 0 and (s.attendance_status == "marked" or any(a.status for a in atts))
+
+        # Check status filter
+        if attendance_status in ["marked", "finalized"] and not is_marked:
+            continue
+        elif attendance_status == "pending" and (is_marked or is_future):
+            continue
+        elif attendance_status in ["upcoming", "scheduled"] and not is_future:
+            continue
+
+        pct = round((present_count / total_students * 100), 1) if (is_marked and total_students > 0) else None
+        calc_status = "marked" if is_marked else ("upcoming" if is_future else "pending")
 
         fac_name = "Unassigned"
         if s.faculty_internal:
             fac_name = s.faculty_internal.full_name or "Internal Faculty"
         elif s.faculty_external:
             fac_name = s.faculty_external.name or "External Faculty"
-
-        # Check status filter
-        is_marked = total_students > 0
-        if attendance_status == "marked" and not is_marked:
-            continue
-        elif attendance_status == "pending" and is_marked:
-            continue
 
         register_out.append({
             "id": str(s.id),
@@ -1677,16 +1894,16 @@ async def get_class_attendance_register(
             "subject_code": s.subject.code if s.subject else ("HB" if s.session_type == "hyperbuild" else "SUB"),
             "venue": s.venue or "Campus Classroom",
             "faculty_name": fac_name,
-            "attendance_status": "marked" if is_marked else "pending",
+            "attendance_status": calc_status,
             "is_locked": any(a.is_locked for a in atts) if atts else False,
-            "total_students": total_students,
-            "present_count": present_count,
-            "absent_count": absent_count,
-            "late_count": late_count,
-            "excused_count": excused_count,
-            "od_count": od_count,
+            "total_students": total_students if is_marked else 0,
+            "present_count": present_count if is_marked else 0,
+            "absent_count": absent_count if is_marked else 0,
+            "late_count": late_count if is_marked else 0,
+            "excused_count": excused_count if is_marked else 0,
+            "od_count": od_count if is_marked else 0,
             "attendance_percentage": pct,
-            "absentees": absentees,
+            "absentees": absentees if is_marked else [],
         })
 
     return register_out
@@ -1801,14 +2018,18 @@ async def get_subject_attendance_matrix(
 
     # Combine regular sessions and hyperbuild activities in chronological order
     combined_sessions: List[Dict[str, Any]] = []
+    sessions_with_attendance = {s_id for (_, s_id) in att_map.keys()}
+
     for s in all_sessions:
         s_date = s.session_date or date.min
         s_time = s.start_time or time.min
+        is_conducted = (s.attendance_status == "marked") or (s.status == "completed") or (s.id in sessions_with_attendance)
         combined_sessions.append({
             "type": "regular",
             "date": s_date,
             "time": s_time,
             "obj": s,
+            "is_conducted": is_conducted,
         })
     for act in conducted_hb_activities:
         s_date = act.session.session_date if act.session else date.min
@@ -1818,6 +2039,7 @@ async def get_subject_attendance_matrix(
             "date": s_date,
             "time": s_time,
             "obj": act,
+            "is_conducted": True,
         })
 
     combined_sessions.sort(key=lambda x: (x["date"], x["time"]))
@@ -1825,6 +2047,7 @@ async def get_subject_attendance_matrix(
     # Build sessions header
     sessions_header = []
     for idx, item in enumerate(combined_sessions):
+        is_cond = item.get("is_conducted", True)
         if item["type"] == "regular":
             s = item["obj"]
             fac_name = "Faculty"
@@ -1833,10 +2056,14 @@ async def get_subject_attendance_matrix(
             elif s.faculty_external:
                 fac_name = s.faculty_external.name
 
-            p_count = sum(
-                1 for st in students if (st.id, s.id) in att_map and att_map[(st.id, s.id)].status in PRESENT_STATUSES
-            )
-            pct = round((p_count / len(students) * 100), 1) if students else 0.0
+            if is_cond:
+                p_count = sum(
+                    1 for st in students if (st.id, s.id) in att_map and att_map[(st.id, s.id)].status in PRESENT_STATUSES
+                )
+                pct = round((p_count / len(students) * 100), 1) if students else 0.0
+            else:
+                p_count = 0
+                pct = 0.0
 
             sessions_header.append({
                 "id": str(s.id),
@@ -1849,6 +2076,8 @@ async def get_subject_attendance_matrix(
                 "present_count": p_count,
                 "total_students": len(students),
                 "percentage": pct,
+                "is_conducted": is_cond,
+                "is_hyperbuild": False,
             })
         else:
             act = item["obj"]
@@ -1892,12 +2121,14 @@ async def get_subject_attendance_matrix(
                 "present_count": p_count,
                 "total_students": len(students),
                 "percentage": pct,
+                "is_conducted": True,
                 "is_hyperbuild": True,
                 "activity_title": act.title,
             })
 
-    # Build students matrix rows
-    total_conducted = len(combined_sessions)
+    # Build students matrix rows based ONLY on conducted sessions
+    total_conducted = sum(1 for item in combined_sessions if item.get("is_conducted", True))
+    total_scheduled = len(combined_sessions)
     students_matrix = []
     safe_count = 0
     warning_count = 0
@@ -1911,10 +2142,13 @@ async def get_subject_attendance_matrix(
             if item["type"] == "regular":
                 s = item["obj"]
                 rec = att_map.get((st.id, s.id))
-                if rec:
-                    records[str(s.id)] = rec.status
-                    if rec.status in PRESENT_STATUSES:
-                        attended += 1
+                if item.get("is_conducted", True):
+                    if rec:
+                        records[str(s.id)] = rec.status
+                        if rec.status in PRESENT_STATUSES:
+                            attended += 1
+                    else:
+                        records[str(s.id)] = "unmarked"
                 else:
                     records[str(s.id)] = "unmarked"
             else:
@@ -1973,14 +2207,17 @@ async def get_subject_attendance_matrix(
         })
 
     avg_pct = round(
-        sum(st["percentage"] for st in students_matrix) / len(students_matrix), 1
-    ) if students_matrix else 0.0
+        sum(st["percentage"] for st in students_matrix if st["tier"] != "not_started") / sum(1 for st in students_matrix if st["tier"] != "not_started"), 1
+    ) if (students_matrix and any(st["tier"] != "not_started" for st in students_matrix)) else 0.0
 
     return {
         "subject_id": str(subject.id),
         "subject_name": subject.name,
-        "subject_code": subject.code,
+        "subject_code": subject.code or subject.course_code or "SUB",
+        "batch_id": str(batch_id) if batch_id else None,
         "total_sessions": total_conducted,
+        "total_conducted": total_conducted,
+        "total_scheduled": total_scheduled,
         "total_students": len(students),
         "average_attendance_percentage": avg_pct,
         "safe_count": safe_count,
@@ -1989,6 +2226,7 @@ async def get_subject_attendance_matrix(
         "sessions": sessions_header,
         "students": students_matrix,
     }
+
 
 
 async def get_student_class_attendance_ledger(

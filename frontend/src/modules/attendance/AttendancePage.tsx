@@ -24,7 +24,10 @@ import {
   Layers,
   ShieldCheck,
   ClipboardList,
+  Filter,
+  RotateCcw,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../lib/store';
 import { AttendanceCorrectionModal } from './AttendanceCorrectionModal';
@@ -37,6 +40,7 @@ export const AttendancePage: React.FC = () => {
 
   const userRoles = user?.roles || [];
   const isFaculty = userRoles.includes('faculty_internal') || userRoles.includes('faculty_external');
+  const isAdmin = userRoles.includes('crc_admin') || userRoles.includes('crc_coordinator') || userRoles.includes('admin') || userRoles.includes('approver');
   const isStudent = Boolean(userRoles.includes('student') && !userRoles.includes('crc_admin'));
 
   // URL sync state
@@ -409,7 +413,7 @@ export const AttendancePage: React.FC = () => {
       r.total_students,
       r.present_count,
       r.absent_count,
-      `${r.attendance_percentage}%`,
+      r.attendance_status === 'marked' && typeof r.attendance_percentage === 'number' ? `${r.attendance_percentage}%` : 'N/A',
       `"${(r.absentees || []).map((a: any) => `${a.student_name} (${a.student_prn})`).join('; ')}"`,
     ]);
 
@@ -521,23 +525,136 @@ export const AttendancePage: React.FC = () => {
     enabled: !isStudent,
   });
 
+  const { data: programsListData = [] } = useQuery({
+    queryKey: ['programs_list_for_dossier'],
+    queryFn: async () => {
+      const res = await api.get('/academic/programs');
+      return (res.data?.data || []) as any[];
+    },
+    enabled: !isStudent,
+  });
+
+  const { data: batchesListData = [] } = useQuery({
+    queryKey: ['batches_list_for_attendance'],
+    queryFn: async () => {
+      const res = await api.get('/academic/batches');
+      return (res.data?.data || []) as any[];
+    },
+    enabled: !isStudent,
+  });
+
+  const { data: divisionsListData = [] } = useQuery({
+    queryKey: ['divisions_list_for_dossier'],
+    queryFn: async () => {
+      const res = await api.get('/academic/divisions');
+      return (res.data?.data || []) as any[];
+    },
+    enabled: !isStudent,
+  });
+
   const studentProfileId = myStudentProfile?.student?.id || myStudentProfile?.id || '';
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     isStudent ? (studentProfileId || 'me') : (selectedStudentIdParam || '')
   );
 
+  // Filter states for Student Records tab
+  const [dossierProgramFilter, setDossierProgramFilter] = useState<string>('');
+  const [dossierBatchFilter, setDossierBatchFilter] = useState<string>('');
+  const [dossierDivisionFilter, setDossierDivisionFilter] = useState<string>('');
+  const [dossierStudentSearch, setDossierStudentSearch] = useState<string>('');
+
+  // Extract available Programs, Batches, and Divisions dynamically
+  const availableDossierPrograms = useMemo(() => {
+    const map = new Map<string, string>();
+    (programsListData || []).forEach((p: any) => {
+      if (p.id && p.name) map.set(p.id, p.name);
+    });
+    (studentsListData || []).forEach((st: any) => {
+      if (st.program_id && st.program_name) map.set(st.program_id, st.program_name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [programsListData, studentsListData]);
+
+  const availableDossierBatches = useMemo(() => {
+    const map = new Map<string, string>();
+    (batchesListData || []).forEach((b: any) => {
+      if (b.id && b.name) map.set(b.id, b.name);
+    });
+    (studentsListData || []).forEach((st: any) => {
+      if (st.batch_id && st.batch_name) map.set(st.batch_id, st.batch_name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [batchesListData, studentsListData]);
+
+  const availableDossierDivisions = useMemo(() => {
+    const map = new Map<string, string>();
+    (divisionsListData || []).forEach((d: any) => {
+      if (d.id && d.name) map.set(d.id, d.name);
+    });
+    (studentsListData || []).forEach((st: any) => {
+      if (Array.isArray(st.division_ids) && Array.isArray(st.division_names)) {
+        st.division_ids.forEach((dId: string, idx: number) => {
+          if (dId && st.division_names[idx]) map.set(dId, st.division_names[idx]);
+        });
+      } else if (st.division) {
+        map.set(st.division, st.division);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [divisionsListData, studentsListData]);
+
+  // Filter students based on Program, Batch, Division, and Search text
+  const filteredDossierStudents = useMemo(() => {
+    if (!studentsListData || studentsListData.length === 0) return [];
+    return studentsListData.filter((st: any) => {
+      // Program filter
+      if (dossierProgramFilter && st.program_id !== dossierProgramFilter && st.program_name !== dossierProgramFilter) {
+        return false;
+      }
+      // Batch filter
+      if (dossierBatchFilter && st.batch_id !== dossierBatchFilter && st.batch_name !== dossierBatchFilter) {
+        return false;
+      }
+      // Division filter
+      if (dossierDivisionFilter) {
+        const hasDivId = Array.isArray(st.division_ids) && st.division_ids.includes(dossierDivisionFilter);
+        const hasDivName = Array.isArray(st.division_names) && st.division_names.includes(dossierDivisionFilter);
+        const matchesSingle = st.division === dossierDivisionFilter;
+        if (!hasDivId && !hasDivName && !matchesSingle) {
+          return false;
+        }
+      }
+      // Student Search (Name, PRN, Roll No, Email)
+      if (dossierStudentSearch.trim()) {
+        const q = dossierStudentSearch.toLowerCase().trim();
+        const fullName = `${st.first_name || ''} ${st.last_name || ''} ${st.full_name || ''}`.toLowerCase();
+        const prn = (st.prn_number || '').toLowerCase();
+        const roll = (st.roll_no || '').toLowerCase();
+        const email = (st.email_official || st.email || '').toLowerCase();
+        if (!fullName.includes(q) && !prn.includes(q) && !roll.includes(q) && !email.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [studentsListData, dossierProgramFilter, dossierBatchFilter, dossierDivisionFilter, dossierStudentSearch]);
+
+  // Sync selected student when filtered list changes or initial load
   useEffect(() => {
     if (activeTab === 'students') {
       if (isStudent && studentProfileId) {
         setSelectedStudentId(studentProfileId);
-      } else if (!isStudent && !selectedStudentId && studentsListData && studentsListData.length > 0) {
-        const firstId = selectedStudentIdParam || studentsListData[0].id;
-        setSelectedStudentId(firstId);
-        updateParams({ studentId: firstId });
+      } else if (!isStudent && filteredDossierStudents.length > 0) {
+        const isCurrentInList = filteredDossierStudents.some((st: any) => st.id === selectedStudentId);
+        if (!isCurrentInList) {
+          const nextId = filteredDossierStudents[0].id;
+          setSelectedStudentId(nextId);
+          updateParams({ studentId: nextId });
+        }
       }
     }
-  }, [activeTab, isStudent, studentProfileId, studentsListData, selectedStudentId, selectedStudentIdParam]);
+  }, [activeTab, isStudent, studentProfileId, filteredDossierStudents, selectedStudentId]);
 
   const effectiveDossierId = isStudent ? (studentProfileId || 'me') : (selectedStudentId || selectedStudentIdParam || '');
 
@@ -553,11 +670,120 @@ export const AttendancePage: React.FC = () => {
     enabled: isStudent ? true : !!effectiveDossierId,
   });
 
+  // Export Student Attendance Dossier to Excel (.xlsx) matching Daily Student Ledger format
+  const handleExportDossierExcel = () => {
+    if (!studentDossierData) return;
+
+    const workbook = XLSX.utils.book_new();
+
+    // ── Sheet 1: Session Attendance History (matches Daily Student Ledger format) ──
+    const ledgerRows = (studentDossierData.session_records || []).map((rec: any) => {
+      let dayOfWeek = '';
+      if (rec.session_date) {
+        try {
+          const d = new Date(rec.session_date + 'T00:00:00');
+          dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' });
+        } catch (e) {}
+      }
+      const timeSlot = rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time} - ${rec.end_time}` : '');
+      return {
+        'Roll No': studentDossierData.roll_no || '—',
+        'PRN Number': studentDossierData.student_prn,
+        'Student Name': studentDossierData.student_name,
+        'Academic Program': studentDossierData.program_name || '—',
+        'Batch': studentDossierData.batch_name || '—',
+        'Session Date': rec.session_date,
+        'Day of Week': dayOfWeek,
+        'Time Slot': timeSlot,
+        'Subject Code': rec.subject_code || '—',
+        'Subject Name': rec.subject_name,
+        'Faculty Name': rec.faculty_name || 'Faculty',
+        'Venue / Classroom': rec.venue || '—',
+        'Attendance Status': (rec.status || '').toUpperCase(),
+        'Remarks / Notes': rec.remarks || (rec.activity_title ? `Activity: ${rec.activity_title}` : ''),
+      };
+    });
+
+    const wsLedger = XLSX.utils.json_to_sheet(ledgerRows);
+    wsLedger['!cols'] = [
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 30 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 32 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, wsLedger, 'Attendance Ledger');
+
+    // ── Sheet 2: Subject Breakdown Summary ──
+    const subjectRows = (studentDossierData.subjects_breakdown || []).map((sb: any) => ({
+      'Subject Code': sb.subject_code || '—',
+      'Subject Name': sb.subject_name,
+      'Classes Attended': sb.attended,
+      'Classes Conducted': sb.total_sessions,
+      'Attendance %': `${sb.percentage}%`,
+      'Compliance Standing':
+        sb.percentage >= 75
+          ? 'Safe (≥75%)'
+          : sb.percentage >= 60
+          ? 'Warning (60-74%)'
+          : 'Debarred (<60%)',
+    }));
+    const wsSubjects = XLSX.utils.json_to_sheet(subjectRows);
+    wsSubjects['!cols'] = [
+      { wch: 14 },
+      { wch: 32 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 24 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, wsSubjects, 'Subject Summary');
+
+    // ── Sheet 3: Student Overview Profile ──
+    const profileRows = [
+      { 'Field': 'Student Name', 'Details': studentDossierData.student_name },
+      { 'Field': 'PRN Number', 'Details': studentDossierData.student_prn },
+      { 'Field': 'Roll Number', 'Details': studentDossierData.roll_no || '—' },
+      { 'Field': 'Academic Program', 'Details': studentDossierData.program_name || '—' },
+      { 'Field': 'Batch', 'Details': studentDossierData.batch_name || '—' },
+      { 'Field': 'Total Classes Conducted', 'Details': studentDossierData.total_classes_conducted || 0 },
+      { 'Field': 'Total Classes Attended', 'Details': studentDossierData.total_classes_attended || 0 },
+      { 'Field': 'Cumulative Attendance %', 'Details': `${studentDossierData.overall_attendance_percentage ?? 0}%` },
+      {
+        'Field': 'Compliance Standing',
+        'Details':
+          (studentDossierData.overall_attendance_percentage ?? 0) >= 75
+            ? 'Safe (≥75%)'
+            : (studentDossierData.overall_attendance_percentage ?? 0) >= 60
+            ? 'Warning (60-74%)'
+            : 'Debarred (<60%)',
+      },
+      { 'Field': 'Exported At', 'Details': new Date().toLocaleString() },
+    ];
+    const wsProfile = XLSX.utils.json_to_sheet(profileRows);
+    wsProfile['!cols'] = [{ wch: 28 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(workbook, wsProfile, 'Student Overview');
+
+    const safePrn = (studentDossierData.student_prn || 'Record').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `Student_Attendance_Dossier_${safePrn}_${dateStr}.xlsx`);
+  };
+
   // ─────────────────────────────────────────────────────────────────────────────
   // TAB 5: DUAL-APPROVAL QUEUE
   // ─────────────────────────────────────────────────────────────────────────────
   const [correctionStatusFilter, setCorrectionStatusFilter] = useState<string>('all');
   const [reviewingCorrection, setReviewingCorrection] = useState<any | null>(null);
+  const [reviewAsRole, setReviewAsRole] = useState<'admin' | 'faculty'>('admin');
   const [reviewAction, setReviewAction] = useState<'approved' | 'rejected'>('approved');
   const [reviewRemarks, setReviewRemarks] = useState<string>('');
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -581,6 +807,13 @@ export const AttendancePage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance_corrections_list'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance_allocated_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['session_attendance_sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['subject_attendance_matrix'] });
+      queryClient.invalidateQueries({ queryKey: ['student_attendance_dossier'] });
+      queryClient.invalidateQueries({ queryKey: ['debarment_risk'] });
+      queryClient.invalidateQueries({ queryKey: ['class_attendance_register'] });
+      queryClient.invalidateQueries({ queryKey: ['daily_student_class_ledger'] });
       setReviewingCorrection(null);
     },
     onError: (err: any) => {
@@ -601,6 +834,7 @@ export const AttendancePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['student_attendance_dossier'] });
       queryClient.invalidateQueries({ queryKey: ['debarment_risk'] });
       queryClient.invalidateQueries({ queryKey: ['class_attendance_register'] });
+      queryClient.invalidateQueries({ queryKey: ['daily_student_class_ledger'] });
       setReviewingCorrection(null);
     },
     onError: (err: any) => {
@@ -624,15 +858,6 @@ export const AttendancePage: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   // TAB: DAILY STUDENT CLASS ATTENDANCE LEDGER
   // ─────────────────────────────────────────────────────────────────────────────
-  const { data: batchesListData = [] } = useQuery({
-    queryKey: ['batches_list_for_attendance'],
-    queryFn: async () => {
-      const res = await api.get('/academic/batches');
-      return (res.data?.data || []) as any[];
-    },
-    enabled: !isStudent,
-  });
-
   const [ledgerStartDate, setLedgerStartDate] = useState<string>('');
   const [ledgerEndDate, setLedgerEndDate] = useState<string>('');
   const [ledgerBatchId, setLedgerBatchId] = useState<string>('');
@@ -1347,8 +1572,9 @@ export const AttendancePage: React.FC = () => {
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white"
                 >
                   <option value="">All Statuses</option>
-                  <option value="marked">Marked & Locked</option>
-                  <option value="pending">Pending Marking</option>
+                  <option value="marked">Conducted &amp; Finalized</option>
+                  <option value="pending">Pending Roll-Call</option>
+                  <option value="upcoming">Upcoming / Scheduled</option>
                 </select>
               </div>
 
@@ -1374,9 +1600,9 @@ export const AttendancePage: React.FC = () => {
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-50/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10.5px]">
                   <tr>
-                    <th className="p-3.5">Date & Time</th>
-                    <th className="p-3.5">Subject & Activity</th>
-                    <th className="p-3.5">Batch & Venue</th>
+                    <th className="p-3.5">Date &amp; Time</th>
+                    <th className="p-3.5">Subject &amp; Activity</th>
+                    <th className="p-3.5">Batch &amp; Venue</th>
                     <th className="p-3.5">Faculty</th>
                     <th className="p-3.5 text-center">Attendance %</th>
                     <th className="p-3.5 text-center">Breakdown (P / A / OD)</th>
@@ -1395,8 +1621,11 @@ export const AttendancePage: React.FC = () => {
                     </tr>
                   ) : (
                     filteredRegisterData.map((reg: any) => {
-                      const isHigh = reg.attendance_percentage >= 75;
-                      const isMid = reg.attendance_percentage >= 60 && reg.attendance_percentage < 75;
+                      const isMarked = reg.attendance_status === 'marked' && (reg.total_students || 0) > 0;
+                      const isFuture = reg.attendance_status === 'upcoming' || (reg.session_date && new Date(reg.session_date) > new Date(new Date().toISOString().split('T')[0]));
+                      const hasPct = typeof reg.attendance_percentage === 'number';
+                      const isHigh = hasPct && reg.attendance_percentage >= 75;
+                      const isMid = hasPct && reg.attendance_percentage >= 60 && reg.attendance_percentage < 75;
                       return (
                         <tr key={reg.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                           <td className="p-3.5 whitespace-nowrap">
@@ -1422,31 +1651,45 @@ export const AttendancePage: React.FC = () => {
                             {reg.faculty_name}
                           </td>
                           <td className="p-3.5 text-center">
-                            <span
-                              className={`px-2.5 py-1 rounded-full font-black text-xs ${
-                                isHigh
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                  : isMid
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
-                              }`}
-                            >
-                              {reg.attendance_percentage}%
-                            </span>
+                            {isMarked && hasPct ? (
+                              <span
+                                className={`px-2.5 py-1 rounded-full font-black text-xs ${
+                                  isHigh
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                    : isMid
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
+                                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                }`}
+                              >
+                                {reg.attendance_percentage}%
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                {isFuture ? 'Scheduled' : 'Unmarked'}
+                              </span>
+                            )}
                           </td>
                           <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className="font-bold text-emerald-600">{reg.present_count} P</span>
-                            <span className="text-slate-300 mx-1">/</span>
-                            <span className="font-bold text-rose-600">{reg.absent_count} A</span>
-                            {reg.od_count > 0 && (
+                            {isMarked ? (
                               <>
+                                <span className="font-bold text-emerald-600">{reg.present_count} P</span>
                                 <span className="text-slate-300 mx-1">/</span>
-                                <span className="font-bold text-cyan-600">{reg.od_count} OD</span>
+                                <span className="font-bold text-rose-600">{reg.absent_count} A</span>
+                                {reg.od_count > 0 && (
+                                  <>
+                                    <span className="text-slate-300 mx-1">/</span>
+                                    <span className="font-bold text-cyan-600">{reg.od_count} OD</span>
+                                  </>
+                                )}
                               </>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-[11px]">—</span>
                             )}
                           </td>
                           <td className="p-3.5 text-center">
-                            {reg.absentees && reg.absentees.length > 0 ? (
+                            {!isMarked ? (
+                              <span className="text-slate-400 text-[11px] font-medium">—</span>
+                            ) : reg.absentees && reg.absentees.length > 0 ? (
                               <button
                                 type="button"
                                 onClick={() => setSelectedAbsenteesModal({ session: reg, absentees: reg.absentees })}
@@ -1459,15 +1702,19 @@ export const AttendancePage: React.FC = () => {
                             )}
                           </td>
                           <td className="p-3.5 text-right">
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                reg.attendance_status === 'marked'
-                                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
-                              {reg.attendance_status === 'marked' ? 'Finalized' : 'Pending'}
-                            </span>
+                            {isMarked ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                Finalized
+                              </span>
+                            ) : isFuture ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80">
+                                Scheduled
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                                Pending
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1522,6 +1769,9 @@ export const AttendancePage: React.FC = () => {
                   { id: 'safe', label: 'Safe (≥75%)' },
                   { id: 'warning', label: 'Warning (60-74%)' },
                   { id: 'debarred', label: 'Debarred (<60%)' },
+                  ...(subjectMatrixData?.students?.some((st: any) => st.tier === 'not_started')
+                    ? [{ id: 'not_started', label: 'Not Started' }]
+                    : []),
                 ].map((tier) => (
                   <button
                     key={tier.id}
@@ -1556,11 +1806,22 @@ export const AttendancePage: React.FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Classes</div>
-                <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{subjectMatrixData.total_sessions}</div>
+                <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
+                  {subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions}
+                  {(subjectMatrixData.total_scheduled || 0) > (subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions) && (
+                    <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 ml-1">
+                      / {subjectMatrixData.total_scheduled} sched
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Class Average</div>
-                <div className="text-lg font-black text-indigo-600 dark:text-indigo-400 mt-0.5">{subjectMatrixData.average_attendance_percentage}%</div>
+                <div className="text-lg font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                  {(subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions) === 0
+                    ? '—'
+                    : `${subjectMatrixData.average_attendance_percentage}%`}
+                </div>
               </div>
               <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 text-center">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Safe (≥ 75%)</div>
@@ -1586,11 +1847,23 @@ export const AttendancePage: React.FC = () => {
                     <th className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-30 min-w-[70px]">Roll No</th>
                     <th className="p-3.5 sticky left-[70px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[120px]">PRN</th>
                     <th className="p-3.5 sticky left-[190px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[180px]">Student Name</th>
-                    <th className="p-3.5 text-center min-w-[90px]">Overall %</th>
+                    <th className="p-3.5 text-center min-w-[95px]">Overall %</th>
                     <th className="p-3.5 text-center min-w-[90px]">Attended</th>
                     {subjectMatrixData?.sessions?.map((s: any) => (
-                      <th key={s.id} className="p-3 text-center min-w-[60px] font-mono text-[10px]">
-                        <div>S{s.session_no}</div>
+                      <th
+                        key={s.id}
+                        className={`p-3 text-center min-w-[60px] font-mono text-[10px] ${
+                          s.is_conducted === false ? 'opacity-70 bg-slate-100/50 dark:bg-slate-800/40' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>S{s.session_no}</span>
+                          {s.is_conducted === false && (
+                            <span className="px-1 py-0.2 text-[8px] font-sans font-bold uppercase rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400" title="Scheduled / Future lecture">
+                              Sched
+                            </span>
+                          )}
+                        </div>
                         <div className="text-slate-400 font-normal">{s.session_date.slice(5)}</div>
                       </th>
                     ))}
@@ -1621,28 +1894,37 @@ export const AttendancePage: React.FC = () => {
                             {st.student_name}
                           </td>
                           <td className="p-3 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
-                                isHigh
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                  : isMid
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
-                              }`}
-                            >
-                              {st.percentage}%
-                            </span>
+                            {st.total_conducted === 0 || st.tier === 'not_started' ? (
+                              <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                Not Started
+                              </span>
+                            ) : (
+                              <span
+                                className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
+                                  isHigh
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                    : isMid
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
+                                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                }`}
+                              >
+                                {st.percentage}%
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 text-center font-semibold text-slate-700 dark:text-slate-300">
                             {st.total_attended} / {st.total_conducted}
                           </td>
                           {subjectMatrixData?.sessions?.map((s: any) => {
                             const stat = st.attendance_by_session?.[s.id] || 'unmarked';
+                            const isScheduled = s.is_conducted === false;
                             return (
                               <td key={s.id} className="p-2 text-center">
                                 <span
                                   className={`inline-block w-6 h-6 rounded-md text-[10px] font-black leading-6 text-center ${
-                                    stat === 'present'
+                                    isScheduled
+                                      ? 'text-slate-300 dark:text-slate-600 font-normal'
+                                      : stat === 'present'
                                       ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
                                       : stat === 'absent'
                                       ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
@@ -1654,9 +1936,25 @@ export const AttendancePage: React.FC = () => {
                                       ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
                                       : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
                                   }`}
-                                  title={`Session ${s.session_no}: ${stat.toUpperCase()}`}
+                                  title={
+                                    isScheduled
+                                      ? `Session ${s.session_no}: Scheduled (Future class)`
+                                      : `Session ${s.session_no}: ${stat.toUpperCase()}`
+                                  }
                                 >
-                                  {stat === 'present' ? 'P' : stat === 'absent' ? 'A' : stat === 'od_duty' ? 'OD' : stat === 'excused' ? 'E' : stat === 'late' ? 'L' : '-'}
+                                  {isScheduled
+                                    ? '·'
+                                    : stat === 'present'
+                                    ? 'P'
+                                    : stat === 'absent'
+                                    ? 'A'
+                                    : stat === 'od_duty'
+                                    ? 'OD'
+                                    : stat === 'excused'
+                                    ? 'E'
+                                    : stat === 'late'
+                                    ? 'L'
+                                    : '-'}
                                 </span>
                               </td>
                             );
@@ -1678,22 +1976,157 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'students' && (
         <div className="space-y-6">
           {!isStudent && (
-            <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3">
-              <Users className="h-5 w-5 text-indigo-600 shrink-0" />
-              <select
-                value={selectedStudentId}
-                onChange={(e) => {
-                  setSelectedStudentId(e.target.value);
-                  updateParams({ studentId: e.target.value });
-                }}
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white w-full sm:w-80"
-              >
-                {(studentsListData || []).map((st: any) => (
-                  <option key={st.id} value={st.id}>
-                    {st.first_name} {st.last_name || ''} ({st.prn_number || st.roll_no || 'PRN'})
-                  </option>
-                ))}
-              </select>
+            <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <Filter className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Filter Student Records</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                    {filteredDossierStudents.length} of {studentsListData.length} students
+                  </span>
+                </div>
+
+                {(dossierProgramFilter || dossierBatchFilter || dossierDivisionFilter || dossierStudentSearch) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDossierProgramFilter('');
+                      setDossierBatchFilter('');
+                      setDossierDivisionFilter('');
+                      setDossierStudentSearch('');
+                    }}
+                    className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Reset Filters
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Row: Program, Batch, Division, Search */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Program Filter */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Program
+                  </label>
+                  <select
+                    value={dossierProgramFilter}
+                    onChange={(e) => setDossierProgramFilter(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    <option value="">All Programs</option>
+                    {availableDossierPrograms.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Batch Filter */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Batch
+                  </label>
+                  <select
+                    value={dossierBatchFilter}
+                    onChange={(e) => setDossierBatchFilter(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    <option value="">All Batches</option>
+                    {availableDossierBatches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Division Filter */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Division
+                  </label>
+                  <select
+                    value={dossierDivisionFilter}
+                    onChange={(e) => setDossierDivisionFilter(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    <option value="">All Divisions</option>
+                    {availableDossierDivisions.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search Student Input */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Search Student
+                  </label>
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={dossierStudentSearch}
+                      onChange={(e) => setDossierStudentSearch(e.target.value)}
+                      placeholder="Name, PRN, or Roll..."
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400"
+                    />
+                    {dossierStudentSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setDossierStudentSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Student Dropdown & Export Action */}
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <Users className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <select
+                      value={selectedStudentId}
+                      onChange={(e) => {
+                        setSelectedStudentId(e.target.value);
+                        updateParams({ studentId: e.target.value });
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white cursor-pointer"
+                    >
+                      {filteredDossierStudents.length === 0 ? (
+                        <option value="" disabled>
+                          No students match the selected filters
+                        </option>
+                      ) : (
+                        filteredDossierStudents.map((st: any) => (
+                          <option key={st.id} value={st.id}>
+                            {st.first_name} {st.last_name || ''} ({st.prn_number || 'No PRN'}{st.roll_no ? ` · Roll: ${st.roll_no}` : ''})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportDossierExcel}
+                  disabled={!studentDossierData}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Export Dossier (Excel)
+                </button>
+              </div>
             </div>
           )}
 
@@ -1713,6 +2146,14 @@ export const AttendancePage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleExportDossierExcel}
+                    disabled={!studentDossierData}
+                    className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" /> Export to Excel
+                  </button>
                   <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-center">
                     <div className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">Cumulative Attendance</div>
                     <div className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">
@@ -1879,18 +2320,20 @@ export const AttendancePage: React.FC = () => {
                   <th className="p-3.5">Session</th>
                   <th className="p-3.5 text-center">Current &rarr; Requested</th>
                   <th className="p-3.5">Reason</th>
-                  <th className="p-3.5 text-center">Status</th>
+                  <th className="p-3.5 text-center">Faculty Review</th>
+                  <th className="p-3.5 text-center">Admin Review</th>
+                  <th className="p-3.5 text-center">Resolution</th>
                   <th className="p-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {correctionsLoading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-400">Loading requests...</td>
+                    <td colSpan={8} className="p-8 text-center text-slate-400">Loading requests...</td>
                   </tr>
                 ) : (correctionsData || []).length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-400">No correction requests found.</td>
+                    <td colSpan={8} className="p-8 text-center text-slate-400">No correction requests found.</td>
                   </tr>
                 ) : (
                   (correctionsData || []).map((corr: any) => (
@@ -1922,15 +2365,96 @@ export const AttendancePage: React.FC = () => {
                       </td>
                       <td className="p-3.5 max-w-xs truncate text-slate-600 dark:text-slate-400">{corr.reason}</td>
                       <td className="p-3.5 text-center">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 capitalize">
-                          {corr.status.replace('_', ' ')}
-                        </span>
+                        {corr.faculty_action === 'approved' ? (
+                          <div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ✓ Approved
+                            </span>
+                            {corr.faculty_approver_name && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.faculty_approver_name}>
+                                {corr.faculty_approver_name}
+                              </div>
+                            )}
+                          </div>
+                        ) : corr.faculty_action === 'rejected' ? (
+                          <div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              ✗ Rejected
+                            </span>
+                            {corr.faculty_approver_name && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.faculty_approver_name}>
+                                {corr.faculty_approver_name}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            ⏳ Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {corr.admin_action === 'approved' ? (
+                          <div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ✓ Approved
+                            </span>
+                            {corr.admin_approver_name && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.admin_approver_name}>
+                                {corr.admin_approver_name}
+                              </div>
+                            )}
+                          </div>
+                        ) : corr.admin_action === 'rejected' ? (
+                          <div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              ✗ Rejected
+                            </span>
+                            {corr.admin_approver_name && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.admin_approver_name}>
+                                {corr.admin_approver_name}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            ⏳ Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {corr.status === 'approved' ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-500 text-white shadow-xs">
+                            DUAL APPROVED ✓
+                          </span>
+                        ) : corr.status === 'rejected' ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                            REJECTED ✗
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            PENDING REVIEW
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5 text-right">
-                        {!isStudent && (
+                        {!isStudent && corr.status !== 'approved' && corr.status !== 'rejected' && (
                           <button
                             type="button"
-                            onClick={() => setReviewingCorrection(corr)}
+                            onClick={() => {
+                              setReviewError(null);
+                              setReviewRemarks('');
+                              setReviewAction('approved');
+                              const facDone = corr.faculty_action === 'approved' || corr.faculty_action === 'rejected';
+                              if (isFaculty && !isAdmin) {
+                                setReviewAsRole('faculty');
+                              } else if (isAdmin && !isFaculty) {
+                                setReviewAsRole('admin');
+                              } else if (isAdmin && isFaculty) {
+                                setReviewAsRole(facDone ? 'admin' : 'faculty');
+                              }
+                              setReviewingCorrection(corr);
+                            }}
                             className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-[11px] shadow-sm hover:bg-indigo-700 cursor-pointer"
                           >
                             Review
@@ -3017,18 +3541,24 @@ export const AttendancePage: React.FC = () => {
         <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white">Review Dispute Request</h4>
+              <div>
+                <h4 className="font-bold text-sm text-slate-900 dark:text-white">Review Dispute Request</h4>
+                <p className="text-[11px] text-slate-500">Tiered Verification: Course Faculty &amp; Academic Administration</p>
+              </div>
               <button onClick={() => setReviewingCorrection(null)} className="text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
+              {/* Student & Session Summary */}
               <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-1">
-                <div><span className="font-semibold text-slate-500">Student:</span> <span className="font-bold text-slate-900 dark:text-white">{reviewingCorrection.student_name}</span></div>
-                <div><span className="font-semibold text-slate-500">Subject:</span> {reviewingCorrection.subject_name}</div>
-                <div><span className="font-semibold text-slate-500">Session:</span> {reviewingCorrection.session_date}</div>
+                <div><span className="font-semibold text-slate-500">Student:</span> <span className="font-bold text-slate-900 dark:text-white">{reviewingCorrection.student_name}</span> <span className="font-mono text-[10px] text-slate-400">({reviewingCorrection.student_prn})</span></div>
+                <div><span className="font-semibold text-slate-500">Subject:</span> {reviewingCorrection.subject_name} {reviewingCorrection.subject_code && `(${reviewingCorrection.subject_code})`}</div>
+                <div><span className="font-semibold text-slate-500">Session:</span> {reviewingCorrection.session_date} {reviewingCorrection.session_time && `• ${reviewingCorrection.session_time}`}</div>
                 <div><span className="font-semibold text-slate-500">Dispute:</span> <span className="text-rose-600 uppercase font-bold">{reviewingCorrection.current_status}</span> &rarr; <span className="text-emerald-600 uppercase font-bold">{reviewingCorrection.requested_status}</span></div>
+                <div className="pt-1 text-slate-600 dark:text-slate-300"><span className="font-semibold text-slate-500">Student Reason:</span> <em>"{reviewingCorrection.reason}"</em></div>
+
                 {reviewingCorrection.activities_details && reviewingCorrection.activities_details.length > 0 && (
                   <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
                     <span className="font-semibold text-slate-500 block mb-1">Disputed Activities ({reviewingCorrection.activities_details.length}):</span>
@@ -3049,9 +3579,107 @@ export const AttendancePage: React.FC = () => {
                 )}
               </div>
 
+              {/* Dual Approval Progress Status Card */}
+              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl space-y-2">
+                <div className="font-bold text-[11px] text-indigo-900 dark:text-indigo-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
+                  Dual-Approval Verification Pipeline
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <div className="font-semibold text-slate-500 text-[10px]">Tier 1: Course Faculty</div>
+                    <div className="mt-0.5 font-bold">
+                      {reviewingCorrection.faculty_action === 'approved' ? (
+                        <span className="text-emerald-600">✓ Approved</span>
+                      ) : reviewingCorrection.faculty_action === 'rejected' ? (
+                        <span className="text-rose-600">✗ Rejected</span>
+                      ) : (
+                        <span className="text-amber-600">⏳ Pending Sign-off</span>
+                      )}
+                    </div>
+                    {reviewingCorrection.faculty_approver_name && (
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5">By: {reviewingCorrection.faculty_approver_name}</div>
+                    )}
+                    {reviewingCorrection.faculty_remarks && (
+                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.faculty_remarks}"</div>
+                    )}
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <div className="font-semibold text-slate-500 text-[10px]">Tier 2: Academic Admin</div>
+                    <div className="mt-0.5 font-bold">
+                      {reviewingCorrection.admin_action === 'approved' ? (
+                        <span className="text-emerald-600">✓ Approved</span>
+                      ) : reviewingCorrection.admin_action === 'rejected' ? (
+                        <span className="text-rose-600">✗ Rejected</span>
+                      ) : (
+                        <span className="text-amber-600">⏳ Pending Review</span>
+                      )}
+                    </div>
+                    {reviewingCorrection.admin_approver_name && (
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5">By: {reviewingCorrection.admin_approver_name}</div>
+                    )}
+                    {reviewingCorrection.admin_remarks && (
+                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.admin_remarks}"</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Reviewing As Role Selector (if user has multiple roles) */}
+              {isFaculty && isAdmin && (
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-between">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Submit Review As:</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setReviewAsRole('faculty')}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                        reviewAsRole === 'faculty'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border'
+                      }`}
+                    >
+                      Course Faculty
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewAsRole('admin')}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                        reviewAsRole === 'admin'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border'
+                      }`}
+                    >
+                      Academic Admin
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Informative Guidance Alert on Dual-Approval Policy */}
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300">
+                {reviewAsRole === 'admin' && reviewingCorrection.faculty_action !== 'approved' && (
+                  <p>
+                    ⚠️ <strong>Notice:</strong> Faculty review is still pending. Your administrative approval will be saved, but the student's attendance record and cumulative matrix will only update once the Course Faculty also grants approval.
+                  </p>
+                )}
+                {reviewAsRole === 'faculty' && reviewingCorrection.admin_action !== 'approved' && (
+                  <p>
+                    ℹ️ <strong>Notice:</strong> Your faculty review will be recorded. The attendance correction will be officially applied to the student's records once Academic Administration completes final review.
+                  </p>
+                )}
+                {((reviewAsRole === 'admin' && reviewingCorrection.faculty_action === 'approved') ||
+                  (reviewAsRole === 'faculty' && reviewingCorrection.admin_action === 'approved')) && (
+                  <p className="text-emerald-800 dark:text-emerald-300">
+                    ✓ <strong>Final Sign-off:</strong> The other party has already approved! Submitting your approval now will complete the dual-approval requirements, update the student's attendance record, and dispatch a resolution confirmation email.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Decision</label>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-600">
                     <input
                       type="radio"
@@ -3061,7 +3689,7 @@ export const AttendancePage: React.FC = () => {
                       onChange={() => setReviewAction('approved')}
                       className="accent-emerald-600"
                     />
-                    Approve
+                    Approve Request
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer font-bold text-rose-600">
                     <input
@@ -3072,18 +3700,18 @@ export const AttendancePage: React.FC = () => {
                       onChange={() => setReviewAction('rejected')}
                       className="accent-rose-600"
                     />
-                    Reject
+                    Reject Request
                   </label>
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Review Remarks</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Review Remarks / Rationale</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={reviewRemarks}
                   onChange={(e) => setReviewRemarks(e.target.value)}
-                  placeholder="Enter decision rationale..."
+                  placeholder="Enter decision rationale or justification..."
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                 />
               </div>
@@ -3095,24 +3723,23 @@ export const AttendancePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setReviewingCorrection(null)}
-                className="px-4 py-2 rounded-xl border text-slate-600 font-bold text-xs"
+                className="px-4 py-2 rounded-xl border text-slate-600 font-bold text-xs cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  const isPendingFac = reviewingCorrection.status === 'pending_faculty';
-                  if (isPendingFac && isFaculty) {
+                  if (reviewAsRole === 'faculty') {
                     facultyReviewMutation.mutate({ id: reviewingCorrection.id, action: reviewAction, remarks: reviewRemarks });
                   } else {
                     adminReviewMutation.mutate({ id: reviewingCorrection.id, action: reviewAction, remarks: reviewRemarks });
                   }
                 }}
                 disabled={facultyReviewMutation.isPending || adminReviewMutation.isPending}
-                className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs disabled:opacity-50"
+                className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs disabled:opacity-50 cursor-pointer shadow-sm hover:bg-indigo-700"
               >
-                Submit Review
+                {facultyReviewMutation.isPending || adminReviewMutation.isPending ? 'Submitting...' : `Submit as ${reviewAsRole === 'faculty' ? 'Faculty' : 'Admin'}`}
               </button>
             </div>
           </div>

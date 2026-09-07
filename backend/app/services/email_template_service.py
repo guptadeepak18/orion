@@ -1065,6 +1065,534 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 </body>
 </html>""",
     },
+    {
+        "event_key": "attendance_dispute_submitted",
+        "name": "Attendance Dispute Submitted Confirmation",
+        "category": "Academic & Attendance",
+        "description": "Sent to student acknowledging their dispute request, and alerting the allocated faculty of pending review.",
+        "subject": "Attendance Dispute Received: {{subject_name}} on {{session_date}}",
+        "variables": ["student_name", "prn_number", "subject_name", "subject_code", "session_date", "current_status", "requested_status", "reason", "faculty_name", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #e0e7ff; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 20px 0; }
+    .status-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Attendance Dispute Submitted</h1>
+      <p>{{app_name}} — Academic Operations & Attendance Audit</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Your attendance correction request has been officially recorded and routed for <strong>Dual-Tier Verification</strong> (Classroom Faculty & Academic Administration).</p>
+      
+      <div class="detail-card">
+        <div style="margin-bottom: 8px;"><strong>Subject:</strong> {{subject_name}} ({{subject_code}})</div>
+        <div style="margin-bottom: 8px;"><strong>Lecture Date:</strong> {{session_date}}</div>
+        <div style="margin-bottom: 8px;"><strong>Allocated Faculty:</strong> {{faculty_name}}</div>
+        <div style="margin-bottom: 8px;">
+          <strong>Status Change:</strong> 
+          <span style="color: #e11d48; font-weight: 700;">{{current_status}}</span> &rarr; 
+          <span style="color: #059669; font-weight: 700;">{{requested_status}}</span>
+        </div>
+        <div><strong>Stated Reason:</strong> <em>{{reason}}</em></div>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">
+        <strong>Next Steps:</strong> The assigned faculty will verify classroom presence. Upon faculty signoff, the academic administrator will perform final validation before the correction is reflected on your official dossier.
+      </p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "attendance_dispute_faculty_reviewed",
+        "name": "Attendance Dispute Faculty Review Notice",
+        "category": "Academic & Attendance",
+        "description": "Sent to student and admin when the allocated faculty approves or reviews an attendance dispute.",
+        "subject": "Dispute Update: Faculty {{faculty_action}} your attendance request for {{subject_name}}",
+        "variables": ["student_name", "faculty_name", "subject_name", "session_date", "faculty_action", "faculty_remarks", "next_step_message", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #dbeafe; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 20px 0; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Tier 1: Faculty Review Completed</h1>
+      <p>{{app_name}} — Attendance Verification</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Your course faculty, <strong>{{faculty_name}}</strong>, has completed Tier-1 review of your attendance dispute for <strong>{{subject_name}}</strong> ({{session_date}}).</p>
+      
+      <div class="detail-card">
+        <div style="margin-bottom: 8px;"><strong>Faculty Decision:</strong> <span style="font-weight: 800; text-transform: uppercase; color: #2563eb;">{{faculty_action}}</span></div>
+        <div><strong>Faculty Remarks:</strong> <em>{{faculty_remarks}}</em></div>
+      </div>
+
+      <p style="font-size: 13px; color: #475569;">
+        {{next_step_message}}
+      </p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "attendance_dispute_admin_reviewed",
+        "name": "Attendance Dispute Admin Review Notice",
+        "category": "Academic & Attendance",
+        "description": "Sent to student and faculty when an administrator reviews an attendance dispute.",
+        "subject": "Dispute Update: Admin {{admin_action}} your attendance request for {{subject_name}}",
+        "variables": ["student_name", "admin_name", "subject_name", "session_date", "admin_action", "admin_remarks", "next_step_message", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ccfbf1; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 20px 0; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Administrative Review Update</h1>
+      <p>{{app_name}} — Attendance Verification</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>An Academic Administrator has reviewed your attendance dispute for <strong>{{subject_name}}</strong> ({{session_date}}).</p>
+      
+      <div class="detail-card">
+        <div style="margin-bottom: 8px;"><strong>Admin Action:</strong> <span style="font-weight: 800; text-transform: uppercase; color: #0d9488;">{{admin_action}}</span></div>
+        <div><strong>Admin Remarks:</strong> <em>{{admin_remarks}}</em></div>
+      </div>
+
+      <p style="font-size: 13px; color: #475569;">
+        {{next_step_message}}
+      </p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "attendance_dispute_resolved",
+        "name": "Attendance Dispute Fully Approved & Corrected",
+        "category": "Academic & Attendance",
+        "description": "Sent to student when both Faculty and Admin have granted approval, confirming that the attendance record has been updated.",
+        "subject": "Attendance Corrected: {{subject_name}} ({{session_date}}) is now {{corrected_status}}",
+        "variables": ["student_name", "prn_number", "subject_name", "session_date", "corrected_status", "faculty_name", "admin_name", "updated_attendance_pct", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #d1fae5; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .success-card { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 14px; padding: 20px; margin: 20px 0; color: #065f46; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>✓ Attendance Record Corrected</h1>
+      <p>{{app_name}} — Dual Approval Complete</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Good news! Your attendance correction request has been <strong>fully dual-approved</strong> by both your Subject Faculty and Academic Administration.</p>
+      
+      <div class="success-card">
+        <div style="font-size: 16px; font-weight: 800; margin-bottom: 8px;">Official Status Updated to {{corrected_status}}</div>
+        <div><strong>Course:</strong> {{subject_name}}</div>
+        <div><strong>Lecture Date:</strong> {{session_date}}</div>
+        <div><strong>Approved by Faculty:</strong> {{faculty_name}}</div>
+        <div><strong>Validated by Admin:</strong> {{admin_name}}</div>
+        <div style="margin-top: 8px; font-weight: 700;">Updated Cumulative Attendance: {{updated_attendance_pct}}%</div>
+      </div>
+
+      <p>Your official academic ledger and cumulative attendance matrices have been updated in real-time. You can view your updated dossier anytime on the Student Portal.</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "attendance_dispute_rejected",
+        "name": "Attendance Dispute Declined Notice",
+        "category": "Academic & Attendance",
+        "description": "Sent to student when an attendance dispute request is rejected by faculty or admin.",
+        "subject": "Attendance Dispute Declined: {{subject_name}} ({{session_date}})",
+        "variables": ["student_name", "prn_number", "subject_name", "session_date", "reviewer_role", "reviewer_name", "remarks", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ffe4e6; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .decline-card { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 14px; padding: 20px; margin: 20px 0; color: #9f1239; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Attendance Dispute Declined</h1>
+      <p>{{app_name}} — Review Decision</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Your attendance correction request for <strong>{{subject_name}}</strong> on <strong>{{session_date}}</strong> has been reviewed and declined.</p>
+      
+      <div class="decline-card">
+        <div style="font-weight: 700; margin-bottom: 6px;">Reviewed by: {{reviewer_role}} ({{reviewer_name}})</div>
+        <div><strong>Decision Rationale:</strong> {{remarks}}</div>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">
+        If you have supporting official documentation or wish to clarify this review, please contact the Academic Operations office or write to <a href="mailto:{{support_email}}">{{support_email}}</a>.
+      </p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "class_session_rescheduled",
+        "name": "Class Session Rescheduled Alert",
+        "category": "Academic & Attendance",
+        "description": "Sent to enrolled batch students and faculty when a lecture date, time, or venue is modified.",
+        "subject": "Schedule Update: {{subject_name}} Rescheduled to {{session_date}} at {{start_time}}",
+        "variables": ["recipient_name", "subject_name", "subject_code", "session_date", "start_time", "end_time", "venue", "faculty_name", "batch_name", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #fef3c7; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .schedule-card { background: #fffbeb; border: 1px solid #fde68a; border-radius: 14px; padding: 20px; margin: 20px 0; color: #92400e; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Lecture Schedule Update</h1>
+      <p>{{app_name}} — Academic Timetable Notification</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{recipient_name}}</strong>,</p>
+      <p>Please take note that the schedule for the following lecture session has been updated on the institutional timetable:</p>
+      
+      <div class="schedule-card">
+        <div style="font-size: 16px; font-weight: 800; margin-bottom: 8px;">{{subject_name}} ({{subject_code}})</div>
+        <div>📅 <strong>New Date:</strong> {{session_date}}</div>
+        <div>⏰ <strong>New Time Slot:</strong> {{start_time}} - {{end_time}}</div>
+        <div>📍 <strong>Venue:</strong> {{venue}}</div>
+        <div>👨‍🏫 <strong>Faculty:</strong> {{faculty_name}}</div>
+        <div>🎓 <strong>Batch:</strong> {{batch_name}}</div>
+      </div>
+
+      <p>Please review your daily calendar on the portal to ensure timely attendance.</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations & Timetable Office</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "lms_assignment_published",
+        "name": "New LMS Assignment / Coursework Published",
+        "category": "Coursework & LMS",
+        "description": "Sent to enrolled students when a faculty publishes a new assignment or coursework module.",
+        "subject": "New Assignment: {{assignment_title}} in {{subject_name}}",
+        "variables": ["student_name", "assignment_title", "subject_name", "due_date", "max_marks", "faculty_name", "lms_link", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #ede9fe; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .assignment-card { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 14px; padding: 20px; margin: 20px 0; color: #6b21a8; }
+    .btn { display: inline-block; background: #7c3aed; color: #ffffff !important; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 13px; margin-top: 12px; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>New Coursework Assignment</h1>
+      <p>{{app_name}} — Learning Management System</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>A new coursework assignment has been published for your course <strong>{{subject_name}}</strong> by <strong>{{faculty_name}}</strong>.</p>
+      
+      <div class="assignment-card">
+        <div style="font-size: 16px; font-weight: 800; margin-bottom: 8px;">{{assignment_title}}</div>
+        <div><strong>Course:</strong> {{subject_name}}</div>
+        <div>📅 <strong>Submission Deadline:</strong> {{due_date}}</div>
+        <div>🎯 <strong>Maximum Marks:</strong> {{max_marks}} pts</div>
+      </div>
+
+      <div style="text-align: center;">
+        <a href="https://orion.mile.education/lms" class="btn">View & Submit on LMS &rarr;</a>
+      </div>
+
+      <p style="margin-top: 24px;">Happy Learning,<br /><strong>Academic Faculty & LMS Support</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "lms_grade_released",
+        "name": "LMS Assignment Grade & Evaluation Released",
+        "category": "Coursework & LMS",
+        "description": "Sent to student when their coursework submission is evaluated and feedback is posted.",
+        "subject": "Grade Released: {{assignment_title}} ({{score}}/{{max_marks}})",
+        "variables": ["student_name", "assignment_title", "subject_name", "score", "max_marks", "grade", "feedback", "graded_by", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #e0f2fe; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .grade-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 14px; padding: 20px; margin: 20px 0; color: #0369a1; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Coursework Grade & Feedback</h1>
+      <p>{{app_name}} — Academic Assessment</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>Your submission for <strong>{{assignment_title}}</strong> in <strong>{{subject_name}}</strong> has been evaluated.</p>
+      
+      <div class="grade-card">
+        <div style="font-size: 22px; font-weight: 900; margin-bottom: 6px;">Score: {{score}} / {{max_marks}} <span style="font-size: 16px;">({{grade}})</span></div>
+        <div><strong>Evaluator:</strong> {{graded_by}}</div>
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #bae6fd;">
+          <strong>Faculty Feedback:</strong> <em>{{feedback}}</em>
+        </div>
+      </div>
+
+      <p>You can review your detailed rubric evaluation and submission file history on the LMS portal.</p>
+      <p style="margin-top: 24px;">Sincerely,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "crc_job_offer_released",
+        "name": "Official Campus Placement Job Offer",
+        "category": "Corporate Relations & Placements",
+        "description": "Sent to celebrate and formally record a campus placement job offer released to a student.",
+        "subject": "Congratulations {{student_name}}! Job Offer Released by {{company_name}}",
+        "variables": ["student_name", "company_name", "role_title", "ctc_lpa", "location", "joining_date", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 32px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; }
+    .header p { color: #d1fae5; margin: 6px 0 0; font-size: 14px; font-weight: 600; }
+    .content { padding: 36px; }
+    .offer-card { background: #ecfdf5; border: 2px solid #6ee7b7; border-radius: 16px; padding: 24px; margin: 20px 0; color: #065f46; text-align: center; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>🎉 Hearty Congratulations!</h1>
+      <p>Campus Placement Offer Released</p>
+    </div>
+    <div class="content">
+      <p>Dear <strong>{{student_name}}</strong>,</p>
+      <p>The Corporate Relations Cell (CRC) is thrilled to announce that you have been selected and offered a position by <strong>{{company_name}}</strong>!</p>
+      
+      <div class="offer-card">
+        <div style="font-size: 20px; font-weight: 900; color: #047857;">{{company_name}}</div>
+        <div style="font-size: 15px; font-weight: 700; color: #065f46; margin: 6px 0;">Role: {{role_title}}</div>
+        <div style="font-size: 18px; font-weight: 900; color: #059669; margin: 10px 0;">Package: {{ctc_lpa}} LPA</div>
+        <div style="font-size: 13px; color: #047857;">📍 Location: {{location}} • Joining: {{joining_date}}</div>
+      </div>
+
+      <p>We commend your hard work, preparation, and perseverance. Please check your CRC portal for official offer documentation and joining formalities.</p>
+      <p style="margin-top: 24px;">With proud best wishes,<br /><strong>Corporate Relations Cell (CRC)</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Placement Portal
+    </div>
+  </div>
+</body>
+</html>""",
+    },
+    {
+        "event_key": "faculty_engagement_allocated",
+        "name": "Faculty Course & Workload Allocation Notice",
+        "category": "Academic & Operations",
+        "description": "Sent to faculty members when assigned a new subject, course batch, or lecture module.",
+        "subject": "Faculty Course Allocation: {{subject_name}} ({{batch_name}})",
+        "variables": ["faculty_name", "subject_name", "subject_code", "batch_name", "program_name", "total_sessions", "credits", "app_name", "support_email"],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .header { background: linear-gradient(135deg, #0e7490 0%, #06b6d4 100%); padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { color: #cffafe; margin: 4px 0 0; font-size: 13px; }
+    .content { padding: 36px; }
+    .alloc-card { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 14px; padding: 20px; margin: 20px 0; color: #0f766e; }
+    .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Faculty Course Allocation</h1>
+      <p>{{app_name}} — Academic Operations</p>
+    </div>
+    <div class="content">
+      <p>Dear Professor <strong>{{faculty_name}}</strong>,</p>
+      <p>You have been formally allocated the academic module described below for the upcoming term:</p>
+      
+      <div class="alloc-card">
+        <div style="font-size: 16px; font-weight: 800; margin-bottom: 6px;">{{subject_name}} ({{subject_code}})</div>
+        <div>🎓 <strong>Academic Program:</strong> {{program_name}}</div>
+        <div>👥 <strong>Batch:</strong> {{batch_name}}</div>
+        <div>📚 <strong>Course Credits:</strong> {{credits}} Credits</div>
+        <div>📅 <strong>Planned Lectures:</strong> {{total_sessions}} Sessions</div>
+      </div>
+
+      <p>You can access your session roster, syllabus builder, and attendance register directly on your Orion Faculty Dashboard.</p>
+      <p style="margin-top: 24px;">Warm regards,<br /><strong>Office of the Dean & Academic Operations</strong><br />Lexicon MILE</p>
+    </div>
+    <div class="footer">
+      © 2026 Lexicon MILE · Orion Academic Management Platform
+    </div>
+  </div>
+</body>
+</html>""",
+    },
 ]
 
 def render_placeholders(template_str: str, context: Dict[str, Any]) -> str:
