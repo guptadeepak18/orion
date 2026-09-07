@@ -41,6 +41,31 @@ async def list_templates(
 
 
 @router.get(
+    "/provider-status",
+    response_model=ResponseEnvelope[dict],
+)
+async def get_email_provider_info():
+    """Returns diagnostics and current availability status across configured email providers (Hostinger & Brevo)."""
+    return ResponseEnvelope(data=get_email_provider_status())
+
+
+@router.get("/test-brevo", response_model=ResponseEnvelope[dict])
+@router.post("/test-brevo", response_model=ResponseEnvelope[dict])
+async def test_brevo_endpoint(
+    recipient: Optional[str] = Query("deepak.gupta@mile.education", description="Target recipient email"),
+):
+    """Explicitly tests transactional email delivery directly via Brevo HTTPS REST API (Port 443)."""
+    target = (recipient or "deepak.gupta@mile.education").strip()
+    result = send_brevo_test_email(to_email=target)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result,
+        )
+    return ResponseEnvelope(data=result)
+
+
+@router.get(
     "/{template_id}",
     response_model=ResponseEnvelope[EmailTemplateResponse],
     dependencies=[Depends(require_permission("system_settings", "view"))],
@@ -153,29 +178,7 @@ async def preview_template(req: EmailTemplatePreviewRequest):
     )
 
 
-@router.get(
-    "/provider-status",
-    response_model=ResponseEnvelope[dict],
-)
-async def get_email_provider_info():
-    """Returns diagnostics and current availability status across configured email providers (Hostinger & Brevo)."""
-    return ResponseEnvelope(data=get_email_provider_status())
 
-
-@router.get("/test-brevo", response_model=ResponseEnvelope[dict])
-@router.post("/test-brevo", response_model=ResponseEnvelope[dict])
-async def test_brevo_endpoint(
-    recipient: Optional[str] = Query("deepak.gupta@mile.education", description="Target recipient email"),
-):
-    """Explicitly tests transactional email delivery directly via Brevo HTTPS REST API (Port 443)."""
-    target = (recipient or "deepak.gupta@mile.education").strip()
-    result = send_brevo_test_email(to_email=target)
-    if not result.get("success"):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=result,
-        )
-    return ResponseEnvelope(data=result)
 
 
 @router.post(

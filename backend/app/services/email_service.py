@@ -726,4 +726,7 @@ def get_email_provider_status() -> dict:
             "mailbox_id": getattr(settings, "HOSTINGER_MAILBOX_ID", "") or os.environ.get("HOSTINGER_MAILBOX_ID", ""),
             "available": _is_provider_available("hostinger"),
         },
+        "detected_env_vars": [
+            k for k in sorted(os.environ.keys()) if any(x in k.upper() for x in ["BREVO", "MAIL", "SMTP", "SENDER", "HOSTINGER"])
+        ],
     }
