@@ -294,8 +294,23 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
         "name": "New Lecture & Class Timetable Scheduled",
         "category": "Academic & Schedule",
         "description": "Sent to enrolled students and faculty when a new class or session is scheduled.",
-        "subject": "Class Scheduled: {{subject_name}} on {{session_date}} at {{session_time}} (Venue: {{venue}})",
-        "variables": ["recipient_name", "subject_name", "faculty_name", "session_date", "session_time", "venue", "batch_name", "division_name", "app_name"],
+        "subject": "[{{class_type}}] Timetable Scheduled: {{subject_name}} on {{session_date}} at {{session_time}} (Venue: {{venue}})",
+        "variables": [
+            "recipient_name",
+            "full_name",
+            "subject_name",
+            "faculty_name",
+            "session_date",
+            "session_time",
+            "venue",
+            "batch_name",
+            "division_name",
+            "app_name",
+            "class_type",
+            "header_title",
+            "intro_text",
+            "activities_section",
+        ],
         "is_active": True,
         "is_system": True,
         "html_content": """<!DOCTYPE html>
@@ -304,11 +319,11 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
   <meta charset="utf-8" />
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; margin: 0; padding: 20px; color: #334155; }
-    .card { max-width: 540px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .card { max-width: 560px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
     .header { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 28px 32px; }
     .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; }
     .header p { color: #e0e7ff; margin: 4px 0 0; font-size: 13px; }
-    .content { padding: 36px; }
+    .content { padding: 32px; }
     .content p { font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px; }
     .session-card { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 14px; padding: 20px; margin: 20px 0; }
     .footer { background: #f8fafc; padding: 20px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }
@@ -320,7 +335,7 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
         <tr>
           <td style="vertical-align: middle; text-align: left;">
-            <h1>Class Session Scheduled 📅</h1>
+            <h1>{{header_title}}</h1>
             <p>{{app_name}} — Timetable Update</p>
           </td>
           <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
@@ -338,18 +353,21 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
     </div>
     <div class="content">
       <p>Hello <strong>{{recipient_name}}</strong>,</p>
-      <p>A new academic lecture has been scheduled on your timetable:</p>
+      <p>{{intro_text}}</p>
       
       <div class="session-card">
         <div style="font-size: 14px; line-height: 1.8; color: #312e81;">
+          <div><strong>Session Type:</strong> <span style="display: inline-block; background: #e0e7ff; color: #4338ca; padding: 2px 9px; border-radius: 6px; font-weight: 800; font-size: 12px; letter-spacing: 0.3px;">{{class_type}}</span></div>
           <div><strong>Subject:</strong> {{subject_name}}</div>
           <div><strong>Faculty:</strong> {{faculty_name}}</div>
           <div><strong>Date:</strong> {{session_date}}</div>
           <div><strong>Time:</strong> {{session_time}}</div>
           <div><strong>Venue / Hall:</strong> {{venue}}</div>
-          <div><strong>Batch / Div:</strong> {{batch_name}} {{division_name}}</div>
+          <div><strong>Batch:</strong> {{batch_name}} {{division_name}}</div>
         </div>
       </div>
+      
+      {{activities_section}}
       
       <p>Please ensure you arrive at the designated venue on time. Attendance will be recorded digitally.</p>
       <p style="margin-top: 24px;">Warm regards,<br /><strong>Academic Operations</strong><br />Lexicon MILE</p>
@@ -1247,6 +1265,14 @@ async def trigger_activity_email(
             context["app_name"] = "Orion Portal"
         if "support_email" not in context:
             context["support_email"] = "deepak.gupta@mile.education"
+        if "class_type" not in context:
+            context["class_type"] = "Class Session"
+        if "header_title" not in context:
+            context["header_title"] = "Class Session Scheduled 📅"
+        if "intro_text" not in context:
+            context["intro_text"] = "A new class session has been scheduled on your timetable:"
+        if "activities_section" not in context:
+            context["activities_section"] = ""
 
         sub, html, active = await render_email(
             db, event_key, context, fallback_subject, fallback_html

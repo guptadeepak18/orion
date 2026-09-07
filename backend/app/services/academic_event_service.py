@@ -2,9 +2,9 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Optional
-from sqlalchemy import select, and_, or_, desc, asc
+from sqlalchemy import select, and_, or_, desc, asc, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
@@ -73,6 +73,50 @@ def _enrich_event_response(ev: AcademicEvent) -> AcademicEventResponse:
     )
 
 
+async def auto_complete_expired_events(db: AsyncSession) -> int:
+    """
+    Automatically transitions academic events whose scheduled time has passed
+    from 'scheduled' or 'in_progress' to 'completed'.
+    Operates in Indian Standard Time (IST, UTC+05:30).
+    """
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    today = now_ist.date()
+    now_time = now_ist.time()
+
+    try:
+        stmt = (
+            update(AcademicEvent)
+            .where(
+                AcademicEvent.is_deleted == False,
+                AcademicEvent.status.in_(["scheduled", "in_progress"]),
+                or_(
+                    func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) < today,
+                    and_(
+                        func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) == today,
+                        AcademicEvent.is_all_day == False,
+                        AcademicEvent.end_time.isnot(None),
+                        AcademicEvent.end_time <= now_time,
+                    ),
+                ),
+            )
+            .values(
+                status="completed",
+                updated_at=func.now(),
+            )
+        )
+        res = await db.execute(stmt)
+        await db.commit()
+        updated_count = res.rowcount
+        if updated_count > 0:
+            logger.info(f"Auto-completed {updated_count} expired academic event(s) in IST ({now_ist.strftime('%Y-%m-%d %H:%M:%S')}).")
+        return updated_count
+    except Exception as ex:
+        logger.error(f"Error in auto_complete_expired_events: {ex}")
+        await db.rollback()
+        return 0
+
+
 async def list_academic_events(
     db: AsyncSession,
     start_date: Optional[date] = None,
@@ -82,6 +126,9 @@ async def list_academic_events(
     batch_id: Optional[uuid.UUID] = None,
     status: Optional[str] = None,
 ) -> List[AcademicEventResponse]:
+    # Auto-complete expired events before returning calendar/event listings
+    await auto_complete_expired_events(db)
+
     stmt = (
         select(AcademicEvent)
         .options(
@@ -117,6 +164,9 @@ async def get_academic_event(
     db: AsyncSession,
     event_id: uuid.UUID,
 ) -> Optional[AcademicEventResponse]:
+    # Auto-complete expired events before returning single event details
+    await auto_complete_expired_events(db)
+
     stmt = (
         select(AcademicEvent)
         .options(

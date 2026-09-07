@@ -33,11 +33,27 @@ async def _neon_keepalive_loop():
             pass
 
 
+async def _event_auto_complete_loop():
+    """Background task running every 60 seconds to auto-complete expired academic events."""
+    from app.services.academic_event_service import auto_complete_expired_events
+    while True:
+        try:
+            await asyncio.sleep(60)
+            async with AsyncSessionLocal() as session:
+                await auto_complete_expired_events(session)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[AUTO-COMPLETE ERROR] Error in event auto complete loop: {e}")
+
+
 async def _background_startup_tasks():
     try:
         await asyncio.sleep(1)
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
+            from app.services.email_template_service import seed_default_templates
+            await seed_default_templates(session)
             from app.services.student_service import sync_all_unlinked_students_to_users
             synced = await sync_all_unlinked_students_to_users(session)
             if synced > 0:
@@ -49,10 +65,13 @@ async def _background_startup_tasks():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     keepalive_task = None
+    event_loop_task = None
     startup_task = None
     try:
         # Start keepalive heartbeat task to keep connection warm
         keepalive_task = asyncio.create_task(_neon_keepalive_loop())
+        # Start background event auto-completion task
+        event_loop_task = asyncio.create_task(_event_auto_complete_loop())
         # Run DB seed & sync in background so HTTP server opens immediately
         startup_task = asyncio.create_task(_background_startup_tasks())
     except Exception as e:
@@ -62,6 +81,8 @@ async def lifespan(app: FastAPI):
 
     if keepalive_task:
         keepalive_task.cancel()
+    if event_loop_task:
+        event_loop_task.cancel()
 
 
 app = FastAPI(

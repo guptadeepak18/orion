@@ -57,6 +57,7 @@ class SessionCreate(BaseModel):
     notes: Optional[str] = None
     hyperbuild_activity_no: Optional[int] = None
     lecture_number: Optional[int] = None
+    activities: Optional[List[Dict[str, Any]]] = None
 
     @model_validator(mode="before")
     @classmethod

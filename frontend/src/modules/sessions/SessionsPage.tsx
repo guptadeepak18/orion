@@ -1022,26 +1022,33 @@ export const SessionsPage: React.FC = () => {
     setCreateSaving(true);
     try {
       let savedSessionId = editingSession?.id;
+      const validActivities = (form.session_type === 'hyperbuild' && hyperbuildActivities.length > 0)
+        ? hyperbuildActivities.map((a) => ({
+            activity_no: a.activity_no,
+            title: a.title,
+            description: null,
+            subject_id: toUUID(a.subject_id),
+            start_time: a.start_time.length === 5 ? a.start_time + ':00' : a.start_time,
+            end_time: a.end_time.length === 5 ? a.end_time + ':00' : a.end_time,
+            duration_minutes: a.duration_minutes || calcDuration(a.start_time, a.end_time),
+            submission_type: a.submission_type || 'link_or_text',
+            instructions: a.instructions || null,
+          }))
+        : [];
+
       if (editingSession) {
         await api.put(`/sessions/${editingSession.id}`, payload);
       } else {
-        const createRes = await api.post('/sessions', payload);
+        const createPayload: any = { ...payload };
+        if (validActivities.length > 0) {
+          createPayload.activities = validActivities;
+        }
+        const createRes = await api.post('/sessions', createPayload);
         savedSessionId = createRes.data?.data?.id;
       }
 
-      // If HyperBuild and activities defined, configure activities
-      if (form.session_type === 'hyperbuild' && savedSessionId && hyperbuildActivities.length > 0) {
-        const validActivities = hyperbuildActivities.map((a) => ({
-          activity_no: a.activity_no,
-          title: a.title,
-          description: null,
-          subject_id: toUUID(a.subject_id),
-          start_time: a.start_time.length === 5 ? a.start_time + ':00' : a.start_time,
-          end_time: a.end_time.length === 5 ? a.end_time + ':00' : a.end_time,
-          duration_minutes: a.duration_minutes || calcDuration(a.start_time, a.end_time),
-          submission_type: a.submission_type || 'link_or_text',
-          instructions: a.instructions || null,
-        }));
+      // If HyperBuild and activities defined, also ensure activities endpoint sync
+      if (form.session_type === 'hyperbuild' && savedSessionId && validActivities.length > 0) {
         await api.post(`/hyperbuild/sessions/${savedSessionId}/activities`, {
           activities: validActivities,
         });

@@ -1,9 +1,14 @@
+import asyncio
+import logging
+import time as time_module
 from datetime import datetime, date, time, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, or_
+from sqlalchemy import select, update, or_, func
 from sqlalchemy.orm import selectinload, joinedload
+
+logger = logging.getLogger(__name__)
 
 from app.models.session import (
     Session,
@@ -53,6 +58,317 @@ async def get_next_lecture_number(db: AsyncSession, batch_id: UUID, subject_id: 
     return max(max_num, session_count) + 1
 
 
+def normalize_specialization_domain(domain_str: Optional[str]) -> str:
+    """
+    Normalizes specialization and elective domain strings into standard keys:
+    - 'marketing'
+    - 'finance'
+    - 'human_resources'
+    - 'research_and_business_analytics'
+    """
+    if not domain_str:
+        return ""
+    d = domain_str.strip().lower()
+    d = d.replace("&", "and").replace("-", " ").replace("_", " ")
+
+    if "market" in d or d == "mkt":
+        return "marketing"
+    if "finan" in d or d == "fin":
+        return "finance"
+    if "human" in d or "hr" in d or "resource" in d:
+        return "human_resources"
+    if "analytic" in d or "rba" in d or "research" in d or "business analytic" in d or "data" in d:
+        return "research_and_business_analytics"
+
+    return d.replace(" ", "_")
+
+
+def is_student_eligible_for_subject(
+    subject: Optional[Subject],
+    student: Student,
+) -> bool:
+    """
+    Core subjects are applicable for all students in the batch/division.
+    Elective subjects are only applicable if subject's elective_domain matches
+    either the student's major_specialization OR minor_specialization.
+    """
+    if not subject:
+        return True
+
+    cat = (subject.course_category or "").strip().lower()
+    if cat != "elective":
+        # It's Core (or unassigned/mandatory) -> Applicable to ALL students
+        return True
+
+    # It's Elective
+    sub_domain_raw = subject.elective_domain or ""
+    if not sub_domain_raw.strip():
+        # If marked elective without specific domain, default to eligible
+        return True
+
+    sub_norm = normalize_specialization_domain(sub_domain_raw)
+    major_norm = normalize_specialization_domain(student.specialization_major)
+    minor_norm = normalize_specialization_domain(student.specialization_minor)
+
+    return sub_norm in (major_norm, minor_norm)
+
+
+def get_class_type_info(session_type: Optional[str]) -> Tuple[str, str, str]:
+    """
+    Returns (type_label, header_title, intro_text) based on session_type.
+    """
+    st = (session_type or "lecture").lower().strip()
+    if st == "hyperbuild":
+        return (
+            "HyperBuild",
+            "HyperBuild Session Scheduled ⚡",
+            "A new HyperBuild session has been scheduled on your timetable:",
+        )
+    elif st == "lecture":
+        return (
+            "Academic Lecture",
+            "Class Session Scheduled 📅",
+            "A new academic lecture has been scheduled on your timetable:",
+        )
+    elif st == "lab":
+        return (
+            "Practical Lab",
+            "Practical Lab Scheduled 🔬",
+            "A new practical lab session has been scheduled on your timetable:",
+        )
+    elif st == "tutorial":
+        return (
+            "Tutorial Session",
+            "Tutorial Session Scheduled 📚",
+            "A new tutorial session has been scheduled on your timetable:",
+        )
+    elif st == "case_discussion":
+        return (
+            "Case Discussion",
+            "Case Discussion Scheduled 💡",
+            "A new case discussion session has been scheduled on your timetable:",
+        )
+    elif st == "seminar":
+        return (
+            "Seminar",
+            "Academic Seminar Scheduled 🎓",
+            "A new academic seminar has been scheduled on your timetable:",
+        )
+    elif st == "workshop":
+        return (
+            "Workshop",
+            "Hands-on Workshop Scheduled 🛠️",
+            "A new workshop has been scheduled on your timetable:",
+        )
+    elif st == "assessment":
+        return (
+            "Assessment / Exam",
+            "Assessment Scheduled 📝",
+            "A new assessment session has been scheduled on your timetable:",
+        )
+    elif st == "guest_lecture":
+        return (
+            "Guest Lecture",
+            "Guest Lecture Scheduled 🌟",
+            "A new guest lecture has been scheduled on your timetable:",
+        )
+    elif st == "mentorship":
+        return (
+            "Mentorship Session",
+            "Mentorship Session Scheduled 🤝",
+            "A new mentorship session has been scheduled on your timetable:",
+        )
+    else:
+        label = st.replace("_", " ").title()
+        return (
+            f"{label} Session" if not label.endswith("Session") else label,
+            f"{label} Scheduled 📅",
+            f"A new {label.lower()} has been scheduled on your timetable:",
+        )
+
+
+def format_hyperbuild_activities_html(activities: List[Any]) -> str:
+    if not activities:
+        return ""
+    items_html = []
+    for a in activities:
+        if isinstance(a, dict):
+            act_no = a.get("activity_no", 1)
+            title = a.get("title") or f"Activity #{act_no}"
+            dur = a.get("duration_minutes") or 60
+            st = a.get("start_time")
+            et = a.get("end_time")
+            instructions = a.get("instructions") or ""
+            sub_name = a.get("subject_name") or ""
+        else:
+            act_no = getattr(a, "activity_no", 1)
+            title = getattr(a, "title", "") or f"Activity #{act_no}"
+            dur = getattr(a, "duration_minutes", 60)
+            st = getattr(a, "start_time", None)
+            et = getattr(a, "end_time", None)
+            instructions = getattr(a, "instructions", "") or ""
+            sub_name = a.subject.name if getattr(a, "subject", None) else ""
+
+        if hasattr(st, "strftime") and hasattr(et, "strftime"):
+            time_display = f"{st.strftime('%H:%M')} - {et.strftime('%H:%M')}"
+        elif isinstance(st, str) and isinstance(et, str):
+            time_display = f"{st[:5]} - {et[:5]}"
+        else:
+            time_display = f"{dur} mins"
+
+        inst_preview = f'<div style="font-size: 11.5px; color: #64748b; margin-top: 4px; font-style: italic;">{instructions[:120]}...</div>' if instructions else ""
+        sub_badge = f'&nbsp;|&nbsp; 📖 <strong>Subject:</strong> {sub_name}' if sub_name else ""
+
+        items_html.append(f"""
+        <div style="padding: 12px 14px; margin-bottom: 8px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 700; color: #1e1b4b; font-size: 13.5px;">
+            <span style="display: inline-block; background: #e0e7ff; color: #4338ca; border-radius: 6px; padding: 2px 8px; font-size: 11px; margin-right: 6px; font-weight: 800;">Act #{act_no}</span>
+            {title}
+          </div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 5px;">
+            ⏱ <strong>Time:</strong> {time_display} ({dur} mins) {sub_badge}
+          </div>
+          {inst_preview}
+        </div>
+        """)
+
+    return f"""
+    <div style="margin: 22px 0; border: 1px solid #c7d2fe; border-radius: 14px; background: #f8fafc; overflow: hidden; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.05);">
+      <div style="background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%); padding: 12px 18px; color: #ffffff; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
+        ⚡ Scheduled HyperBuild Activities ({len(activities)})
+      </div>
+      <div style="padding: 14px 16px 8px;">
+        {''.join(items_html)}
+      </div>
+    </div>
+    """
+
+
+_recent_session_notifications: Dict[UUID, float] = {}
+
+async def notify_session_students(session_id: UUID, activities_data: Optional[List[Dict[str, Any]]] = None) -> int:
+    """
+    Dispatches timetable class scheduling notification emails to all enrolled/eligible students.
+    Runs asynchronously with its own database session.
+    """
+    from app.core.database import AsyncSessionLocal
+
+    now_ts = time_module.time()
+    if session_id in _recent_session_notifications and (now_ts - _recent_session_notifications[session_id]) < 30:
+        logger.info(f"Student notification for session {session_id} recently dispatched. Skipping duplicate.")
+        return 0
+    _recent_session_notifications[session_id] = now_ts
+
+    logger.info(f"Initiating student notification email dispatch for session {session_id}...")
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(Session)
+            .options(
+                joinedload(Session.subject),
+                joinedload(Session.batch),
+                joinedload(Session.faculty_internal),
+                joinedload(Session.faculty_external),
+                joinedload(Session.hyperbuild_activities).joinedload(HyperbuildActivity.subject),
+            )
+            .where(Session.id == session_id, Session.is_deleted == False)
+        )
+        res = await db.execute(stmt)
+        session = res.unique().scalar_one_or_none()
+        if not session:
+            logger.warning(f"Session {session_id} not found for student notification.")
+            return 0
+
+        # Faculty name
+        fac_name = "Assigned Faculty"
+        if session.faculty_type == "internal" and session.faculty_internal:
+            fac_name = session.faculty_internal.full_name
+        elif session.faculty_type == "external" and session.faculty_external:
+            fac_name = session.faculty_external.name
+
+        subj_obj = session.subject
+        is_hyperbuild = (session.session_type or "").lower().strip() == "hyperbuild"
+        if is_hyperbuild:
+            subj_name = subj_obj.name if subj_obj else "HyperBuild Sprint"
+        else:
+            subj_name = subj_obj.name if subj_obj else "Academic Session"
+
+        batch_name = session.batch.name if session.batch else "All Batches"
+        class_type_label, header_title, intro_text = get_class_type_info(session.session_type)
+
+        # Get activities for HyperBuild
+        activities = session.hyperbuild_activities or []
+        if not activities and activities_data:
+            activities = activities_data
+        activities_section_html = format_hyperbuild_activities_html(activities) if is_hyperbuild else ""
+
+        time_str = f"{session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}" if (session.start_time and session.end_time) else "Scheduled Time"
+
+        fallback_subject = (
+            f"HyperBuild Scheduled: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus'})"
+            if is_hyperbuild
+            else f"Class Scheduled [{class_type_label}]: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus Classroom'})"
+        )
+
+        # Query all active students in the batch
+        st_stmt = (
+            select(Student)
+            .where(Student.batch_id == session.batch_id, Student.status == "active", Student.is_deleted == False)
+        )
+        st_res = await db.execute(st_stmt)
+        all_students = list(st_res.scalars().all())
+
+        # Filter by eligibility (Core vs Elective) unless HyperBuild
+        if is_hyperbuild:
+            eligible_students = all_students
+        else:
+            eligible_students = [st for st in all_students if is_student_eligible_for_subject(session.subject, st)]
+
+        logger.info(f"Session '{subj_name}' ({class_type_label}) targets {len(eligible_students)} student(s) in batch {batch_name}.")
+
+        sem = asyncio.Semaphore(8)
+
+        async def _send_to_student(st: Student) -> bool:
+            recipient = (st.email_official or st.email or st.email_personal or "").strip()
+            if not recipient:
+                return False
+
+            full_name = st.full_name or f"{st.first_name} {st.last_name or ''}".strip() or "Student"
+            context = {
+                "recipient_name": full_name,
+                "full_name": full_name,
+                "subject_name": subj_name,
+                "faculty_name": fac_name,
+                "session_date": str(session.session_date),
+                "session_time": time_str,
+                "venue": session.venue or "Campus Classroom",
+                "batch_name": batch_name,
+                "division_name": "",
+                "app_name": "Orion Portal",
+                "class_type": class_type_label,
+                "header_title": header_title,
+                "intro_text": intro_text,
+                "activities_section": activities_section_html,
+            }
+
+            async with sem:
+                try:
+                    return await trigger_activity_email(
+                        db=db,
+                        event_key="class_session_scheduled",
+                        recipient_email=recipient,
+                        context=context,
+                        fallback_subject=fallback_subject,
+                    )
+                except Exception as ex:
+                    logger.error(f"Error emailing student {recipient} for session {session.id}: {ex}")
+                    return False
+
+        results = await asyncio.gather(*[_send_to_student(st) for st in eligible_students])
+        dispatched_count = sum(1 for r in results if r)
+        logger.info(f"Successfully dispatched {dispatched_count} timetable notification email(s) for session '{subj_name}'.")
+        return dispatched_count
+
+
 async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
     # 1. Faculty Agreement Compliance Check
     if s_in.faculty_type == "external" and s_in.faculty_external_id:
@@ -73,6 +389,8 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
     )
 
     session_data = s_in.model_dump()
+    activities_in = session_data.pop("activities", None)
+
     if session_data.get("subject_id") and session_data.get("batch_id") and session_data.get("session_type") != "hyperbuild":
         if not session_data.get("lecture_number"):
             session_data["lecture_number"] = await get_next_lecture_number(db, session_data["batch_id"], session_data["subject_id"])
@@ -80,10 +398,75 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
     session = Session(**session_data)
     db.add(session)
     await db.commit()
+    await db.refresh(session)
+
+    # If HyperBuild and activities provided, persist them immediately
+    saved_activities = []
+    if session.session_type == "hyperbuild" and activities_in:
+        try:
+            for item in activities_in:
+                subj_id = item.get("subject_id")
+                if isinstance(subj_id, str):
+                    try:
+                        subj_id = UUID(subj_id)
+                    except Exception:
+                        subj_id = None
+                s_time = item.get("start_time")
+                if isinstance(s_time, str):
+                    try:
+                        s_time = datetime.strptime(s_time[:5], "%H:%M").time()
+                    except Exception:
+                        s_time = session.start_time
+                elif not isinstance(s_time, time):
+                    s_time = session.start_time
+
+                e_time = item.get("end_time")
+                if isinstance(e_time, str):
+                    try:
+                        e_time = datetime.strptime(e_time[:5], "%H:%M").time()
+                    except Exception:
+                        e_time = session.end_time
+                elif not isinstance(e_time, time):
+                    e_time = session.end_time
+
+                dur = item.get("duration_minutes")
+                if not dur:
+                    try:
+                        dur = int((datetime.combine(session.session_date, e_time) - datetime.combine(session.session_date, s_time)).total_seconds() / 60)
+                    except Exception:
+                        dur = 60
+
+                act_no = int(item.get("activity_no", 1))
+                hb_act = HyperbuildActivity(
+                    session_id=session.id,
+                    activity_no=act_no,
+                    title=item.get("title") or f"Activity #{act_no}",
+                    description=item.get("description"),
+                    subject_id=subj_id or session.subject_id,
+                    start_time=s_time,
+                    end_time=e_time,
+                    duration_minutes=dur,
+                    submission_type=item.get("submission_type") or "link_or_text",
+                    instructions=item.get("instructions"),
+                    status="pending",
+                    auto_lock_at_end_time=True,
+                    is_submission_locked=False,
+                )
+                db.add(hb_act)
+                saved_activities.append(hb_act)
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Error persisting hyperbuild activities during create_session: {e}")
+
     # Trigger class_session_scheduled email notification
     try:
         subj_obj = (await db.execute(select(Subject).where(Subject.id == session.subject_id))).scalar_one_or_none() if session.subject_id else None
-        subj_name = subj_obj.name if subj_obj else "Academic Session"
+        is_hyperbuild = (session.session_type or "").lower().strip() == "hyperbuild"
+        if is_hyperbuild:
+            subj_name = subj_obj.name if subj_obj else "HyperBuild Sprint"
+        else:
+            subj_name = subj_obj.name if subj_obj else "Academic Session"
+
         fac_name = "Assigned Faculty"
         fac_email = None
 
@@ -104,17 +487,35 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
             if b_obj:
                 batch_name = b_obj.name
 
+        class_type_label, header_title, intro_text = get_class_type_info(session.session_type)
+        time_str = f"{session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}" if (session.start_time and session.end_time) else "Scheduled Time"
+
+        activities_section_html = ""
+        if is_hyperbuild:
+            activities_section_html = format_hyperbuild_activities_html(saved_activities or activities_in)
+
         context = {
             "recipient_name": fac_name,
+            "full_name": fac_name,
             "subject_name": subj_name,
             "faculty_name": fac_name,
             "session_date": str(session.session_date),
-            "session_time": f"{session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}" if (session.start_time and session.end_time) else "Scheduled Time",
+            "session_time": time_str,
             "venue": session.venue or "Campus Classroom",
             "batch_name": batch_name,
             "division_name": "",
             "app_name": "Orion Portal",
+            "class_type": class_type_label,
+            "header_title": header_title,
+            "intro_text": intro_text,
+            "activities_section": activities_section_html,
         }
+
+        fallback_subject = (
+            f"HyperBuild Scheduled: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus'})"
+            if is_hyperbuild
+            else f"Class Scheduled [{class_type_label}]: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus Classroom'})"
+        )
 
         # Send to faculty if email exists
         if fac_email:
@@ -123,9 +524,13 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
                 event_key="class_session_scheduled",
                 recipient_email=fac_email,
                 context=context,
+                fallback_subject=fallback_subject,
             )
+
+        # Asynchronously dispatch timetable notification to all eligible students
+        asyncio.create_task(notify_session_students(session.id, activities_data=activities_in))
     except Exception as e:
-        logger.error(f"Error sending class_session_scheduled email: {e}")
+        logger.error(f"Error triggering timetable session notifications: {e}")
 
     return session
 
@@ -838,60 +1243,6 @@ async def get_session_by_id(db: AsyncSession, session_id: UUID) -> Optional[Sess
     res = await db.execute(stmt)
     return res.unique().scalar_one_or_none()
 
-
-def normalize_specialization_domain(domain_str: Optional[str]) -> str:
-    """
-    Normalizes specialization and elective domain strings into standard keys:
-    - 'marketing'
-    - 'finance'
-    - 'human_resources'
-    - 'research_and_business_analytics'
-    """
-    if not domain_str:
-        return ""
-    d = domain_str.strip().lower()
-    d = d.replace("&", "and").replace("-", " ").replace("_", " ")
-
-    if "market" in d or d == "mkt":
-        return "marketing"
-    if "finan" in d or d == "fin":
-        return "finance"
-    if "human" in d or "hr" in d or "resource" in d:
-        return "human_resources"
-    if "analytic" in d or "rba" in d or "research" in d or "business analytic" in d or "data" in d:
-        return "research_and_business_analytics"
-
-    return d.replace(" ", "_")
-
-
-def is_student_eligible_for_subject(
-    subject: Optional[Subject],
-    student: Student,
-) -> bool:
-    """
-    Core subjects are applicable for all students in the batch/division.
-    Elective subjects are only applicable if subject's elective_domain matches
-    either the student's major_specialization OR minor_specialization.
-    """
-    if not subject:
-        return True
-
-    cat = (subject.course_category or "").strip().lower()
-    if cat != "elective":
-        # It's Core (or unassigned/mandatory) -> Applicable to ALL students
-        return True
-
-    # It's Elective
-    sub_domain_raw = subject.elective_domain or ""
-    if not sub_domain_raw.strip():
-        # If marked elective without specific domain, default to eligible
-        return True
-
-    sub_norm = normalize_specialization_domain(sub_domain_raw)
-    major_norm = normalize_specialization_domain(student.specialization_major)
-    minor_norm = normalize_specialization_domain(student.specialization_minor)
-
-    return sub_norm in (major_norm, minor_norm)
 
 
 async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> SessionAttendanceSheetResponse:
