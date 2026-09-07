@@ -2077,7 +2077,22 @@ async def get_student_class_attendance_ledger(
     if program_id:
         query = query.where(Session.program_id == program_id)
     if subject_id:
-        query = query.where(Session.subject_id == subject_id)
+        hb_has_subject = (
+            select(1)
+            .select_from(HyperbuildActivity)
+            .where(
+                HyperbuildActivity.session_id == Session.id,
+                HyperbuildActivity.subject_id == subject_id,
+                HyperbuildActivity.is_deleted == False,
+            )
+            .exists()
+        )
+        query = query.where(
+            or_(
+                Session.subject_id == subject_id,
+                and_(Session.session_type == "hyperbuild", hb_has_subject),
+            )
+        )
     if session_id:
         query = query.where(Session.id == session_id)
     if faculty_id:
@@ -2085,31 +2100,6 @@ async def get_student_class_attendance_ledger(
             or_(
                 Session.faculty_internal_id == faculty_id,
                 Session.faculty_external_id == faculty_id,
-            )
-        )
-    if eff_status and eff_status.lower() != "all":
-        st_lower = eff_status.lower()
-        if st_lower == "present":
-            query = query.where(StudentAttendance.status.in_(PRESENT_STATUSES))
-        elif st_lower == "absent":
-            query = query.where(StudentAttendance.status == "absent")
-        elif st_lower in ("late", "excused", "od_duty", "leave_approved"):
-            query = query.where(StudentAttendance.status == st_lower)
-
-    if eff_search and eff_search.strip():
-        term = f"%{eff_search.strip()}%"
-        query = query.where(
-            or_(
-                Student.full_name.ilike(term),
-                Student.first_name.ilike(term),
-                Student.last_name.ilike(term),
-                Student.prn_number.ilike(term),
-                Student.roll_no.ilike(term),
-                Student.email_official.ilike(term),
-                Student.email.ilike(term),
-                Subject.name.ilike(term),
-                Subject.code.ilike(term),
-                Session.venue.ilike(term),
             )
         )
 
@@ -2124,7 +2114,35 @@ async def get_student_class_attendance_ledger(
     result = await db.execute(query)
     all_rows = result.all()
 
-    total_records = len(all_rows)
+    # Pre-fetch HyperBuild activities and verifications for all HyperBuild sessions in the result
+    hb_session_ids = list({sess.id for _, sess, _, _, _, _, _, _, _ in all_rows if sess.session_type == "hyperbuild"})
+
+    hb_acts_by_sess: Dict[UUID, List[HyperbuildActivity]] = {}
+    hb_verifs_map: Dict[tuple, HyperbuildActivityVerification] = {}
+
+    if hb_session_ids:
+        act_query = (
+            select(HyperbuildActivity, Subject)
+            .outerjoin(Subject, HyperbuildActivity.subject_id == Subject.id)
+            .where(
+                HyperbuildActivity.session_id.in_(hb_session_ids),
+                HyperbuildActivity.is_deleted == False,
+            )
+            .order_by(HyperbuildActivity.activity_no)
+        )
+        act_rows = (await db.execute(act_query)).all()
+        for act, act_subj in act_rows:
+            act.subject = act_subj
+            hb_acts_by_sess.setdefault(act.session_id, []).append(act)
+
+        v_query = select(HyperbuildActivityVerification).where(
+            HyperbuildActivityVerification.session_id.in_(hb_session_ids),
+            HyperbuildActivityVerification.is_deleted == False,
+        )
+        v_rows = (await db.execute(v_query)).scalars().all()
+        for v in v_rows:
+            hb_verifs_map[(v.activity_id, v.student_id)] = v
+
     present_count = 0
     absent_count = 0
     late_count = 0
@@ -2136,7 +2154,155 @@ async def get_student_class_attendance_ledger(
     formatted_items = []
 
     for att, sess, st, subj, batch, prog, fi, fe, topic in all_rows:
+        fac_name = "Unassigned"
+        if fi and fi.full_name:
+            fac_name = fi.full_name
+        elif fe and fe.name:
+            fac_name = fe.name
+
+        if sess.session_type == "hyperbuild":
+            acts = hb_acts_by_sess.get(sess.id, [])
+            if subject_id:
+                acts = [a for a in acts if a.subject_id == subject_id]
+
+            if acts:
+                for act in acts:
+                    act_subj = act.subject
+                    if act_subj and not is_student_eligible_for_subject(act_subj, st):
+                        continue
+
+                    s_code = act_subj.code or act_subj.course_code if act_subj else "HB"
+                    s_name = act_subj.name if act_subj else act.title
+                    t_title = f"Act #{act.activity_no}: {act.title}"
+
+                    s_time = act.start_time.strftime("%H:%M") if act.start_time else (sess.start_time.strftime("%H:%M") if sess.start_time else "")
+                    e_time = act.end_time.strftime("%H:%M") if act.end_time else (sess.end_time.strftime("%H:%M") if sess.end_time else "")
+                    slot_str = f"{s_time} - {e_time}" if s_time and e_time else ""
+
+                    v_rec = hb_verifs_map.get((act.id, st.id))
+                    v_is_present = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+                    act_required_key = bool(act.challenge_key) or (act.status in ["active", "closed"]) or (act.challenge_key_active_until is not None)
+
+                    roll_call = att.roll_call_status or att.status or "present"
+                    parent_is_present = roll_call in PRESENT_STATUSES
+
+                    if act_required_key:
+                        if parent_is_present and v_is_present:
+                            act_status = "present"
+                            item_remarks = f"HyperBuild: {act.title} (Verified)"
+                            marked_time = v_rec.verified_at or att.created_at
+                        elif parent_is_present and not v_is_present:
+                            act_status = "absent"
+                            item_remarks = f"HyperBuild: {act.title} (Absent: Secret key not entered)"
+                            marked_time = att.created_at
+                        elif not parent_is_present:
+                            act_status = att.status or "absent"
+                            item_remarks = f"HyperBuild: {act.title} (Roll Call: Absent)"
+                            marked_time = att.created_at
+                        else:
+                            act_status = "absent"
+                            item_remarks = f"HyperBuild: {act.title}"
+                            marked_time = att.created_at
+                    else:
+                        act_status = "present" if parent_is_present else (att.status or "absent")
+                        item_remarks = f"HyperBuild: {act.title}"
+                        marked_time = att.created_at
+
+                    if att.status in ("excused", "leave_approved"):
+                        act_status = "excused"
+                    elif att.status in ("od_duty", "on_duty", "on duty"):
+                        act_status = "od_duty"
+
+                    # Status filter
+                    if eff_status and eff_status.lower() != "all":
+                        st_low = eff_status.lower()
+                        if st_low == "present" and act_status not in PRESENT_STATUSES:
+                            continue
+                        elif st_low == "absent" and act_status != "absent":
+                            continue
+                        elif st_low in ("late", "excused", "od_duty") and act_status != st_low:
+                            continue
+
+                    # Search filter
+                    if eff_search and eff_search.strip():
+                        term = eff_search.strip().lower()
+                        searchable = f"{st.full_name} {st.first_name} {st.last_name or ''} {st.prn_number or ''} {st.roll_no or ''} {st.email_official or ''} {st.email or ''} {s_name} {s_code} {t_title} {sess.venue or ''}".lower()
+                        if term not in searchable:
+                            continue
+
+                    if act_status in PRESENT_STATUSES:
+                        present_count += 1
+                        if act_status == "late":
+                            late_count += 1
+                        elif act_status in ("excused", "leave_approved"):
+                            excused_count += 1
+                        elif act_status in ("od_duty", "on_duty", "on duty"):
+                            od_count += 1
+                    elif act_status == "absent":
+                        absent_count += 1
+
+                    unique_students_set.add(st.id)
+                    unique_sessions_set.add(sess.id)
+
+                    formatted_items.append({
+                        "id": uuid.uuid5(uuid.NAMESPACE_DNS, f"{att.id}-{act.id}"),
+                        "attendance_id": att.id,
+                        "activity_id": act.id,
+                        "student_id": st.id,
+                        "student_prn": st.prn_number or "",
+                        "student_name": st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
+                        "roll_no": st.roll_no or "",
+                        "official_email": st.email_official or st.email or "",
+                        "personal_email": st.email_personal or "",
+                        "phone": st.mobile_number or st.phone or "",
+                        "program_name": prog.name if prog else "",
+                        "batch_name": batch.name if batch else "",
+                        "division": getattr(st, "division", "") or "",
+                        "trimester": st.trimester,
+                        "session_id": sess.id,
+                        "session_date": sess.session_date,
+                        "day_of_week": sess.session_date.strftime("%A"),
+                        "start_time": s_time,
+                        "end_time": e_time,
+                        "time_slot": slot_str,
+                        "subject_id": act.subject_id,
+                        "subject_code": s_code,
+                        "subject_name": s_name,
+                        "session_type": sess.session_type,
+                        "topic_delivered": t_title,
+                        "venue": f"{sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
+                        "faculty_name": fac_name,
+                        "status": act_status,
+                        "remarks": item_remarks,
+                        "is_locked": att.is_locked,
+                        "marked_at": marked_time,
+                    })
+                continue
+
+        # Regular session (or fallback if no activities)
+        if subject_id and sess.subject_id != subject_id:
+            continue
+
         cur_status = att.status or "present"
+        if eff_status and eff_status.lower() != "all":
+            st_low = eff_status.lower()
+            if st_low == "present" and cur_status not in PRESENT_STATUSES:
+                continue
+            elif st_low == "absent" and cur_status != "absent":
+                continue
+            elif st_low in ("late", "excused", "od_duty") and cur_status != st_low:
+                continue
+
+        sub_code = subj.code if subj else ("HB" if sess.session_type == "hyperbuild" else "SUB")
+        sub_name = subj.name if subj else ("HyperBuild Session" if sess.session_type == "hyperbuild" else "Class Session")
+        topic_title = topic.name if topic else (sess.notes or (f"HyperBuild Act #{sess.hyperbuild_activity_no}" if sess.hyperbuild_activity_no else "Regular Lecture"))
+
+        if eff_search and eff_search.strip():
+            term = eff_search.strip().lower()
+            searchable = f"{st.full_name} {st.first_name} {st.last_name or ''} {st.prn_number or ''} {st.roll_no or ''} {st.email_official or ''} {st.email or ''} {sub_name} {sub_code} {topic_title} {sess.venue or ''}".lower()
+            if term not in searchable:
+                continue
+
         if cur_status in PRESENT_STATUSES:
             present_count += 1
             if cur_status == "late":
@@ -2151,22 +2317,14 @@ async def get_student_class_attendance_ledger(
         unique_students_set.add(st.id)
         unique_sessions_set.add(sess.id)
 
-        fac_name = "Unassigned"
-        if fi and fi.full_name:
-            fac_name = fi.full_name
-        elif fe and fe.name:
-            fac_name = fe.name
-
-        sub_code = subj.code if subj else ("HB" if sess.session_type == "hyperbuild" else "SUB")
-        sub_name = subj.name if subj else ("HyperBuild Session" if sess.session_type == "hyperbuild" else "Class Session")
-        topic_title = topic.name if topic else (sess.notes or (f"HyperBuild Act #{sess.hyperbuild_activity_no}" if sess.hyperbuild_activity_no else "Regular Lecture"))
-
         start_str = sess.start_time.strftime("%H:%M") if sess.start_time else ""
         end_str = sess.end_time.strftime("%H:%M") if sess.end_time else ""
         slot_str = f"{start_str} - {end_str}" if start_str and end_str else ""
 
         formatted_items.append({
             "id": att.id,
+            "attendance_id": att.id,
+            "activity_id": None,
             "student_id": st.id,
             "student_prn": st.prn_number or "",
             "student_name": st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
@@ -2197,6 +2355,7 @@ async def get_student_class_attendance_ledger(
             "marked_at": att.created_at,
         })
 
+    total_records = len(formatted_items)
     att_pct = round((present_count / total_records * 100), 1) if total_records > 0 else 0.0
 
     summary = {
@@ -2220,6 +2379,7 @@ async def get_student_class_attendance_ledger(
         "summary": summary,
         "total": total_records,
     }
+
 
 
 def export_student_class_attendance_ledger_excel(

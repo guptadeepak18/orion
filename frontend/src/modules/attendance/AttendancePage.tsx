@@ -2638,12 +2638,17 @@ export const AttendancePage: React.FC = () => {
                               <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                                 {item.subject_code || 'HB'}
                               </span>
-                              <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
+                              <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title={item.subject_name}>
                                 {item.subject_name}
                               </span>
+                              {item.session_type === 'hyperbuild' && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300">
+                                  HyperBuild
+                                </span>
+                              )}
                             </div>
                             {item.topic_delivered && (
-                              <div className="text-[10.5px] text-slate-500 truncate max-w-[220px] mt-0.5">
+                              <div className="text-[10.5px] text-slate-500 truncate max-w-[220px] mt-0.5" title={item.topic_delivered}>
                                 {item.topic_delivered}
                               </div>
                             )}
@@ -2711,7 +2716,10 @@ export const AttendancePage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => openCorrectionModal({
-                                attendance_id: item.id,
+                                attendance_id: item.attendance_id || item.id,
+                                sessionId: item.session_id,
+                                studentId: item.student_id,
+                                activityId: item.activity_id,
                                 studentName: item.student_name,
                                 studentPrn: item.student_prn,
                                 subjectName: item.subject_name,
@@ -2725,6 +2733,7 @@ export const AttendancePage: React.FC = () => {
                               Dispute / Correct
                             </button>
                           </td>
+
                         </tr>
                       );
                     })

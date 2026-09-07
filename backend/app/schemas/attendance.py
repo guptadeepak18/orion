@@ -188,6 +188,8 @@ class StudentLedgerItem(BaseModel):
     remarks: Optional[str] = None
     is_locked: bool = False
     marked_at: Optional[datetime] = None
+    activity_id: Optional[UUID] = None
+    attendance_id: Optional[UUID] = None
 
 
 class StudentLedgerSummary(BaseModel):
