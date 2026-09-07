@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     R2_PUBLIC_URL: str = ""
 
     # Email API settings (HTTP APIs take precedence over SMTP on platforms like Render where SMTP ports are blocked)
+    PRIMARY_EMAIL_PROVIDER: str = "auto"  # "auto", "brevo", "resend", "sendgrid", "hostinger", "smtp"
     HOSTINGER_MAIL_API_KEY: str = "47365baa0ca73c5e8c639bd961149cf4ad99f5e3b3fef47dd64dac28f69932b5"
     HOSTINGER_MAILBOX_ID: str = "AC450fbdeffe5c83d81e26fcf45213"
     RESEND_API_KEY: str = ""

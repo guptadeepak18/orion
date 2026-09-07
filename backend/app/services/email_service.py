@@ -11,6 +11,7 @@ import smtplib
 import socket
 import ssl
 import string
+import time as time_module
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -274,109 +275,241 @@ def resolve_email_recipient(intended_email: str, subject: str, html_content: str
     return recipient, subject, html_content
 
 
-def _send_raw_custom_html(target_email: str, subject: str, html_content: str) -> bool:
-    """Internal dispatcher across Hostinger API, Resend, and SMTP."""
-    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
-    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
+_circuit_breaker_cooldowns: dict[str, float] = {}
 
-    # 1. Try Hostinger Direct Mail API
-    hostinger_api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
-    if hostinger_api_key:
-        headers = {
-            "Authorization": f"Bearer {hostinger_api_key.strip()}",
-            "Content-Type": "application/json",
-        }
-        mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
-        url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
-        payload = {
-            "to": [target_email],
-            "subject": subject,
-            "html": html_content,
-        }
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.post(url, json=payload, headers=headers)
-                if resp.status_code in (200, 201, 204):
-                    logger.info(f"[Hostinger Mail API] Email successfully delivered to {target_email}")
-                    return True
-                else:
-                    logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
-        except Exception as e:
-            logger.error(f"[Hostinger Mail API] Request failed: {e}")
 
-    # 2. Try Resend HTTP API
-    resend_key = getattr(settings, "RESEND_API_KEY", "")
-    if resend_key:
-        url = "https://api.resend.com/emails"
-        headers = {
-            "Authorization": f"Bearer {resend_key.strip()}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "from": f"Orion Portal <{from_email}>",
-            "to": [target_email],
-            "subject": subject,
-            "html": html_content,
-            "reply_to": reply_to,
-        }
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.post(url, json=payload, headers=headers)
-                if resp.status_code in (200, 201):
-                    logger.info(f"[Resend] Email successfully delivered to {target_email}")
-                    return True
-        except Exception as e:
-            logger.error(f"[Resend] Request failed: {e}")
+def _is_provider_available(provider: str) -> bool:
+    cooldown = _circuit_breaker_cooldowns.get(provider, 0.0)
+    return time_module.time() > cooldown
 
-    # 3. Try Brevo HTTP API
-    brevo_key = getattr(settings, "BREVO_API_KEY", "")
-    if brevo_key:
-        url = "https://api.brevo.com/v3/smtp/email"
-        headers = {
-            "api-key": brevo_key.strip(),
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "sender": {"name": "Orion Portal", "email": from_email},
-            "to": [{"email": target_email}],
-            "subject": subject,
-            "htmlContent": html_content,
-            "replyTo": {"email": reply_to, "name": "Deepak Gupta"},
-        }
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.post(url, json=payload, headers=headers)
-                if resp.status_code in (200, 201):
-                    logger.info(f"[Brevo] Email successfully delivered to {target_email}")
-                    return True
-        except Exception as e:
-            logger.error(f"[Brevo] Request failed: {e}")
 
-    # 4. Try SMTP fallback
+def _trip_circuit_breaker(provider: str, duration_seconds: float = 1800.0, reason: str = ""):
+    _circuit_breaker_cooldowns[provider] = time_module.time() + duration_seconds
+    logger.warning(
+        f"[{provider.upper()}] Tripping circuit breaker for {int(duration_seconds)}s ({reason}). "
+        f"Subsequent emails will automatically route to backup providers."
+    )
+
+
+def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bool:
+    if not _is_provider_available("hostinger"):
+        return False
+
+    api_key = getattr(settings, "HOSTINGER_MAIL_API_KEY", "")
+    if not api_key:
+        return False
+
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
+    url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
+    payload = {
+        "to": [target_email],
+        "subject": subject,
+        "html": html_content,
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201, 204):
+                logger.info(f"[Hostinger Mail API] Email delivered to {target_email}")
+                return True
+            else:
+                resp_text = resp.text.lower()
+                logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
+                if resp.status_code == 429 or "limit" in resp_text or "quota" in resp_text:
+                    _trip_circuit_breaker("hostinger", duration_seconds=1800.0, reason=f"Quota/rate limit hit ({resp.status_code})")
+    except Exception as e:
+        logger.error(f"[Hostinger Mail API] Request failed: {e}")
+    return False
+
+
+def _try_resend_api(target_email: str, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("resend"):
+        return False
+
+    api_key = getattr(settings, "RESEND_API_KEY", "")
+    if not api_key:
+        return False
+
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "from": f"Orion Portal <{from_email}>",
+        "to": [target_email],
+        "subject": subject,
+        "html": html_content,
+        "reply_to": reply_to,
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                logger.info(f"[Resend] Email delivered to {target_email}")
+                return True
+            else:
+                logger.warning(f"[Resend] Returned status {resp.status_code}: {resp.text}")
+                if resp.status_code == 429:
+                    _trip_circuit_breaker("resend", duration_seconds=300.0, reason="Rate limit hit (429)")
+    except Exception as e:
+        logger.error(f"[Resend] Request failed: {e}")
+    return False
+
+
+def _try_brevo_api(target_email: str, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("brevo"):
+        return False
+
+    api_key = getattr(settings, "BREVO_API_KEY", "")
+    if not api_key:
+        return False
+
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "api-key": api_key.strip(),
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "sender": {"name": "Orion Portal", "email": from_email},
+        "to": [{"email": target_email}],
+        "subject": subject,
+        "htmlContent": html_content,
+        "replyTo": {"email": reply_to, "name": "Deepak Gupta"},
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                logger.info(f"[Brevo] Email delivered to {target_email}")
+                return True
+            else:
+                logger.warning(f"[Brevo] Returned status {resp.status_code}: {resp.text}")
+                if resp.status_code == 429:
+                    _trip_circuit_breaker("brevo", duration_seconds=300.0, reason="Rate limit hit (429)")
+    except Exception as e:
+        logger.error(f"[Brevo] Request failed: {e}")
+    return False
+
+
+def _try_sendgrid_api(target_email: str, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("sendgrid"):
+        return False
+
+    api_key = getattr(settings, "SENDGRID_API_KEY", "")
+    if not api_key:
+        return False
+
+    url = "https://api.sendgrid.com/v3/mail/send"
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "personalizations": [{"to": [{"email": target_email}]}],
+        "from": {"email": from_email, "name": "Orion Portal"},
+        "reply_to": {"email": reply_to, "name": "Deepak Gupta"},
+        "subject": subject,
+        "content": [{"type": "text/html", "value": html_content}],
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 202):
+                logger.info(f"[SendGrid] Email delivered to {target_email}")
+                return True
+            else:
+                logger.warning(f"[SendGrid] Returned status {resp.status_code}: {resp.text}")
+                if resp.status_code == 429:
+                    _trip_circuit_breaker("sendgrid", duration_seconds=300.0, reason="Rate limit hit (429)")
+    except Exception as e:
+        logger.error(f"[SendGrid] Request failed: {e}")
+    return False
+
+
+def _try_smtp_dispatch(target_email: str, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("smtp"):
+        return False
+
     smtp_host = getattr(settings, "SMTP_HOST", "")
     smtp_user = getattr(settings, "SMTP_USER", "")
     smtp_password = getattr(settings, "SMTP_PASSWORD", "")
     smtp_port = int(getattr(settings, "SMTP_PORT", 587))
 
-    if smtp_host and smtp_user and smtp_password:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"Orion Portal <{from_email}>"
-        msg["To"] = target_email
-        msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
-        msg.attach(MIMEText(html_content, "html"))
-        try:
-            _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, target_email, msg)
-            logger.info(f"Email successfully sent to {target_email} via SMTP")
-            return True
-        except Exception as e:
-            logger.warning(f"SMTP dispatch failed: {e}")
+    if not (smtp_host and smtp_user and smtp_password):
+        return False
 
-    # 5. Console output fallback
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"Orion Portal <{from_email}>"
+    msg["To"] = target_email
+    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+    msg.attach(MIMEText(html_content, "html"))
+    try:
+        _dispatch_smtp(smtp_host, smtp_port, smtp_user, smtp_password, from_email, target_email, msg)
+        logger.info(f"[SMTP] Email delivered to {target_email}")
+        return True
+    except Exception as e:
+        logger.warning(f"[SMTP] Dispatch failed: {e}")
+    return False
+
+
+def _send_raw_custom_html(target_email: str, subject: str, html_content: str) -> bool:
+    """Internal dispatcher across Brevo, Resend, Hostinger, SendGrid, and SMTP with automatic failover."""
+    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
+    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
+
+    # Determine provider priority order
+    pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "auto").lower().strip()
+    if pref == "brevo":
+        provider_order = ["brevo", "resend", "sendgrid", "smtp", "hostinger"]
+    elif pref == "resend":
+        provider_order = ["resend", "brevo", "sendgrid", "smtp", "hostinger"]
+    elif pref == "sendgrid":
+        provider_order = ["sendgrid", "brevo", "resend", "smtp", "hostinger"]
+    elif pref == "smtp":
+        provider_order = ["smtp", "brevo", "resend", "hostinger"]
+    elif pref == "hostinger":
+        provider_order = ["hostinger", "brevo", "resend", "sendgrid", "smtp"]
+    else:
+        # "auto" mode: prioritize dedicated transactional APIs if keys exist, otherwise Hostinger
+        provider_order = []
+        if getattr(settings, "BREVO_API_KEY", ""):
+            provider_order.append("brevo")
+        if getattr(settings, "RESEND_API_KEY", ""):
+            provider_order.append("resend")
+        if getattr(settings, "SENDGRID_API_KEY", ""):
+            provider_order.append("sendgrid")
+        provider_order.extend(["hostinger", "smtp"])
+
+    attempted = []
+    for provider in provider_order:
+        attempted.append(provider)
+        if provider == "brevo" and _try_brevo_api(target_email, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "resend" and _try_resend_api(target_email, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "sendgrid" and _try_sendgrid_api(target_email, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "hostinger" and _try_hostinger_api(target_email, subject, html_content):
+            return True
+        elif provider == "smtp" and _try_smtp_dispatch(target_email, subject, html_content, from_email, reply_to):
+            return True
+
+    # Console output fallback if all providers exhausted
+    logger.error(
+        f"[Email Dispatch Warning] Could not deliver email to {target_email} via any configured provider (tried: {attempted}). "
+        f"Falling back to server console log."
+    )
     print(f"\n{'='*70}")
-    print(f"  [ORION EMAIL DISPATCH LOG]")
+    print(f"  [ORION EMAIL DISPATCH LOG — FALLBACK]")
     print(f"  Target Recipient: {target_email}")
     print(f"  Subject:          {subject}")
+    print(f"  Attempted:        {', '.join(attempted)}")
     print(f"{'='*70}\n")
     return True
 
