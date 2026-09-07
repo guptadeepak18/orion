@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 
@@ -30,6 +30,21 @@ class ThoughtOfTheDayResponse(BaseModel):
     source: str = "gemini"
 
 
+class StudentRecentAttendanceItem(BaseModel):
+    attendance_id: Optional[str] = None
+    session_id: str
+    session_date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    subject_code: str
+    subject_name: str
+    faculty_name: Optional[str] = None
+    venue: Optional[str] = None
+    session_type: str = "lecture"
+    status: str
+    remarks: Optional[str] = None
+
+
 class StudentDashboardSummaryResponse(BaseModel):
     student_id: Optional[str] = None
     student_name: str = "Student"
@@ -46,3 +61,5 @@ class StudentDashboardSummaryResponse(BaseModel):
     today_sessions_count: int = 0
     case_studies_count: int = 0
     cgpa: Optional[float] = None
+    recent_attendance: List[StudentRecentAttendanceItem] = []
+

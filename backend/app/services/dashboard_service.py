@@ -182,6 +182,73 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         standing = "Attendance Advisory (< 75%)"
     div_name = enriched.division_names[0] if (enriched.division_names and len(enriched.division_names) > 0) else None
 
+    recent_att_items = []
+    if student and student.id:
+        from app.models.session import StudentAttendance, Session, HyperbuildActivity
+        from app.schemas.dashboard import StudentRecentAttendanceItem
+        from sqlalchemy.orm import selectinload
+
+        recent_att_stmt = (
+            select(StudentAttendance)
+            .join(Session, StudentAttendance.session_id == Session.id)
+            .options(
+                selectinload(StudentAttendance.session).selectinload(Session.subject),
+                selectinload(StudentAttendance.session).selectinload(Session.faculty_internal),
+                selectinload(StudentAttendance.session).selectinload(Session.faculty_external),
+                selectinload(StudentAttendance.session).selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
+            )
+            .where(
+                StudentAttendance.student_id == student.id,
+                Session.is_deleted == False,
+                Session.attendance_status == "marked",
+                StudentAttendance.status.isnot(None),
+            )
+            .order_by(Session.session_date.desc(), Session.start_time.desc())
+            .limit(10)
+        )
+        recent_res = await db.execute(recent_att_stmt)
+        for att in recent_res.scalars().all():
+            sess = att.session
+            if not sess:
+                continue
+
+            sub_name = sess.subject.name if sess.subject else ("HyperBuild Session" if sess.session_type == "hyperbuild" else "Class Session")
+            sub_code = sess.subject.code if sess.subject else ("HB" if sess.session_type == "hyperbuild" else "SUB")
+
+            if sess.session_type == "hyperbuild" and sess.hyperbuild_activities and len(sess.hyperbuild_activities) > 0:
+                first_act = sess.hyperbuild_activities[0]
+                if first_act.subject:
+                    sub_name = first_act.subject.name
+                    sub_code = first_act.subject.code or first_act.subject.course_code or "HB"
+                elif first_act.title:
+                    sub_name = first_act.title
+
+            fac_name = "Assigned Faculty"
+            if sess.faculty_internal:
+                fac_name = sess.faculty_internal.full_name or "Internal Faculty"
+            elif sess.faculty_external:
+                fac_name = sess.faculty_external.name or "External Faculty"
+
+            s_time = sess.start_time.strftime("%H:%M") if hasattr(sess.start_time, "strftime") else (str(sess.start_time)[:5] if sess.start_time else None)
+            e_time = sess.end_time.strftime("%H:%M") if hasattr(sess.end_time, "strftime") else (str(sess.end_time)[:5] if sess.end_time else None)
+
+            recent_att_items.append(
+                StudentRecentAttendanceItem(
+                    attendance_id=str(att.id),
+                    session_id=str(sess.id),
+                    session_date=str(sess.session_date),
+                    start_time=s_time,
+                    end_time=e_time,
+                    subject_code=sub_code,
+                    subject_name=sub_name,
+                    faculty_name=fac_name,
+                    venue=sess.venue or "Campus Classroom",
+                    session_type=sess.session_type or "lecture",
+                    status=att.status,
+                    remarks=att.remarks,
+                )
+            )
+
     return StudentDashboardSummaryResponse(
         student_id=str(student.id),
         student_name=student.full_name or "Student",
@@ -198,6 +265,7 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         today_sessions_count=today_sessions_count,
         case_studies_count=case_cnt,
         cgpa=student.cgpa,
+        recent_attendance=recent_att_items,
     )
 
 

@@ -373,7 +373,13 @@ async def get_subject_wise_attendance(
     conducted_hb_activities = [
         act for act in hb_res.scalars().all()
         if act.session and (not batch_id or act.session.batch_id == batch_id)
-        and ((act.status in ["active", "closed"]) or (act.challenge_key is not None) or len(act.verifications) > 0)
+        and (
+            (act.status in ["active", "closed"])
+            or (act.challenge_key is not None)
+            or len(act.verifications) > 0
+            or (act.session.attendance_status == "marked")
+            or (act.session.status == "completed")
+        )
     ]
     total_conducted += len(conducted_hb_activities)
     total_scheduled += len(conducted_hb_activities)
@@ -641,17 +647,30 @@ async def get_student_attendance_dossier(
 
         # ── Case A: HyperBuild Session with Activities (Multi-Subject) ──
         if sess.hyperbuild_activities and len(sess.hyperbuild_activities) > 0:
+            activities_added_count = 0
             for act in sorted(sess.hyperbuild_activities, key=lambda a: a.activity_no):
-                # Only count conducted activities (active, closed, or has challenge_key/verifications)
-                is_conducted = (act.status in ["active", "closed"]) or (act.challenge_key is not None) or (act.id in hb_verifs)
+                # Only count conducted activities (active, closed, or has challenge_key/verifications, or session is marked/completed)
+                is_conducted = (
+                    (act.status in ["active", "closed"])
+                    or (act.challenge_key is not None)
+                    or (act.id in hb_verifs)
+                    or (sess.attendance_status == "marked")
+                    or (sess.status == "completed")
+                )
                 if not is_conducted:
                     continue
 
                 sub = act.subject
-                if not sub:
-                    continue
-                if not is_student_eligible_for_subject(sub, student):
-                    continue
+                if sub:
+                    if not is_student_eligible_for_subject(sub, student):
+                        continue
+                    sub_id = sub.id
+                    sub_name = sub.name
+                    sub_code = sub.code or sub.course_code or "SUB"
+                else:
+                    sub_id = act.id
+                    sub_name = act.title or "HyperBuild Practical Lab"
+                    sub_code = "HYPERBUILD"
 
                 v_rec = hb_verifs.get(act.id)
                 if v_rec:
@@ -659,15 +678,12 @@ async def get_student_attendance_dossier(
                     act_status = "present" if is_att else "absent"
                 else:
                     is_att = r.status in PRESENT_STATUSES
-                    act_status = "present" if is_att else "absent"
+                    act_status = r.status or ("present" if is_att else "absent")
 
                 total_classes += 1
                 if is_att:
                     attended_classes += 1
-
-                sub_id = sub.id
-                sub_name = sub.name
-                sub_code = sub.code or sub.course_code or "SUB"
+                activities_added_count += 1
 
                 if sub_id not in subjects_map:
                     subjects_map[sub_id] = {
@@ -683,6 +699,8 @@ async def get_student_attendance_dossier(
                 subjects_map[sub_id]["total"] += 1
                 if is_att:
                     subjects_map[sub_id]["attended"] += 1
+                elif act_status in ["excused", "leave_approved", "od_duty", "on_duty", "on duty"]:
+                    subjects_map[sub_id]["excused"] += 1
                 else:
                     subjects_map[sub_id]["absent"] += 1
 
@@ -717,6 +735,73 @@ async def get_student_attendance_dossier(
                         correction_status=corr.status if corr else None,
                     )
                 )
+
+            # Fallback if no activities matched eligibility/conduct criteria
+            if activities_added_count == 0 and (sess.attendance_status == "marked" or sess.status == "completed"):
+                sub = sess.subject
+                if not (sub and not is_student_eligible_for_subject(sub, student)):
+                    total_classes += 1
+                    is_attended = r.status in PRESENT_STATUSES
+                    if is_attended:
+                        attended_classes += 1
+
+                    if sub:
+                        sub_id = sub.id
+                        sub_name = sub.name
+                        sub_code = sub.code or sub.course_code or "SUB"
+                    else:
+                        sub_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+                        sub_name = "HyperBuild Practical Lab"
+                        sub_code = "HYPERBUILD"
+
+                    if sub_id not in subjects_map:
+                        subjects_map[sub_id] = {
+                            "id": sub_id,
+                            "name": sub_name,
+                            "code": sub_code,
+                            "total": 0,
+                            "attended": 0,
+                            "absent": 0,
+                            "excused": 0,
+                        }
+                    subjects_map[sub_id]["total"] += 1
+                    if is_attended:
+                        subjects_map[sub_id]["attended"] += 1
+                    elif r.status in ["excused", "leave_approved", "od_duty", "on_duty", "on duty"]:
+                        subjects_map[sub_id]["excused"] += 1
+                    else:
+                        subjects_map[sub_id]["absent"] += 1
+
+                    fac_name = "Faculty"
+                    if sess.faculty_internal:
+                        fac_name = sess.faculty_internal.full_name or "Internal Faculty"
+                    elif sess.faculty_external:
+                        fac_name = sess.faculty_external.name or "External Faculty"
+
+                    corr = corr_map.get(r.id)
+                    s_time = sess.start_time.strftime("%H:%M") if sess.start_time else ""
+                    e_time = sess.end_time.strftime("%H:%M") if sess.end_time else ""
+
+                    session_items.append(
+                        StudentSessionAttendanceRecordItem(
+                            attendance_id=r.id,
+                            session_id=sess.id,
+                            subject_id=sub_id,
+                            subject_name=sub_name,
+                            subject_code=sub_code,
+                            faculty_name=fac_name,
+                            session_date=sess.session_date,
+                            start_time=s_time,
+                            end_time=e_time,
+                            venue=sess.venue or "HyperBuild Lab",
+                            status=r.status or "present",
+                            remarks="HyperBuild Workshop Session",
+                            is_locked=r.is_locked,
+                            has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
+                            correction_request_id=corr.id if corr else None,
+                            correction_status=corr.status if corr else None,
+                        )
+                    )
 
         # ── Case B: Standard Lecture / Class Session ──
         else:

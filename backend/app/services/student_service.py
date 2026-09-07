@@ -434,10 +434,12 @@ async def to_student_response_enriched(db: AsyncSession, student: Student) -> St
                 )
             )
             resp.total_sessions_attended = (await db.execute(att_stmt)).scalar() or 0
+        if student.attendance_percentage is not None:
+            resp.attendance_percentage = round(student.attendance_percentage, 2)
+        elif resp.total_sessions_conducted > 0:
             resp.attendance_percentage = round((resp.total_sessions_attended / resp.total_sessions_conducted) * 100.0, 2)
         else:
-            resp.total_sessions_attended = 0
-            resp.attendance_percentage = round(student.attendance_percentage, 2) if student.attendance_percentage else 0.0
+            resp.attendance_percentage = 0.0
 
     return resp
 

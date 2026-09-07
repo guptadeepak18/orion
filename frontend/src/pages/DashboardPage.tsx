@@ -33,6 +33,7 @@ import {
   Radio,
   ClipboardList,
   Plus,
+  X,
 } from 'lucide-react';
 import { AcademicEventDetailModal } from '../modules/sessions/AcademicEventDetailModal';
 import { AcademicEventModal, AcademicEventItem, EVENT_CATEGORIES } from '../modules/sessions/AcademicEventModal';
@@ -92,6 +93,21 @@ interface ThoughtOfTheDay {
   source: string;
 }
 
+interface StudentRecentAttendanceItem {
+  attendance_id?: string;
+  session_id: string;
+  session_date: string;
+  start_time?: string;
+  end_time?: string;
+  subject_code: string;
+  subject_name: string;
+  faculty_name?: string;
+  venue?: string;
+  session_type: string;
+  status: string;
+  remarks?: string;
+}
+
 interface StudentDashboardSummary {
   student_id?: string;
   student_name: string;
@@ -108,6 +124,7 @@ interface StudentDashboardSummary {
   today_sessions_count?: number;
   case_studies_count: number;
   cgpa?: number;
+  recent_attendance?: StudentRecentAttendanceItem[];
 }
 
 interface FacultyDashboardSummary {
@@ -183,7 +200,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   // ── Modal & Interactive State ─────────────────────────────────────────────
-  const [scheduleTab, setScheduleTab] = useState<'all' | 'classes' | 'events'>('all');
+  const [scheduleTab, setScheduleTab] = useState<'all' | 'classes' | 'events' | 'attendance'>('all');
   const [selectedEventForDetail, setSelectedEventForDetail] = useState<AcademicEventItem | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<AcademicEventItem | null>(null);
@@ -1174,6 +1191,19 @@ export const DashboardPage: React.FC = () => {
                 >
                   Events ({upcomingEventsList.length})
                 </button>
+                {isStudent && (
+                  <button
+                    type="button"
+                    onClick={() => setScheduleTab('attendance')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      scheduleTab === 'attendance'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                    }`}
+                  >
+                    Recent Attendance ({studentSummary?.recent_attendance?.length || 0})
+                  </button>
+                )}
               </div>
 
               <Link
@@ -1185,7 +1215,107 @@ export const DashboardPage: React.FC = () => {
               </Link>
             </div>
 
-            {displayedFeed.length === 0 ? (
+            {scheduleTab === 'attendance' ? (
+              (!studentSummary?.recent_attendance || studentSummary.recent_attendance.length === 0) ? (
+                <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm">
+                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50 text-emerald-500" />
+                  <p>No classroom attendance marked yet for your enrolled subjects.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {studentSummary.recent_attendance.map((att) => {
+                    const isPresent = att.status === 'present';
+                    const isAbsent = att.status === 'absent';
+                    const isHyper = att.session_type === 'hyperbuild';
+
+                    return (
+                      <div
+                        key={att.attendance_id || att.session_id}
+                        className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 px-3 rounded-2xl transition-colors border border-transparent hover:border-slate-200/80 dark:hover:border-slate-800/80"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={`h-11 w-11 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${
+                              isPresent
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                : isAbsent
+                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                                : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-600 dark:text-cyan-400'
+                            }`}
+                          >
+                            {isPresent ? <CheckCircle2 className="h-5 w-5" /> : isAbsent ? <X className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`text-[11px] px-2 py-0.5 rounded-full font-bold border ${
+                                  isHyper
+                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                                    : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-800/40'
+                                }`}
+                              >
+                                {isHyper ? 'HyperBuild Lab' : 'Lecture'}
+                              </span>
+                              <span className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                                {att.subject_code ? `${att.subject_code} · ` : ''}{att.subject_name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {att.session_date}
+                                </span>
+                              </div>
+                              {att.start_time && (
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                  <span className="font-mono">
+                                    {att.start_time}{att.end_time ? ` - ${att.end_time}` : ''}
+                                  </span>
+                                </div>
+                              )}
+                              {att.venue && (
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                  <span className="truncate">{att.venue}</span>
+                                </div>
+                              )}
+                              {att.faculty_name && (
+                                <span className="text-slate-600 dark:text-slate-400">
+                                  👨‍🏫 {att.faculty_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 sm:self-center shrink-0">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide border ${
+                              isPresent
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                                : isAbsent
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800'
+                            }`}
+                          >
+                            {att.status}
+                          </span>
+                          <Link
+                            to="/attendance"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 transition-colors"
+                            title="View Full Attendance Dossier"
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : displayedFeed.length === 0 ? (
               <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm">
                 <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>
@@ -1754,6 +1884,52 @@ export const DashboardPage: React.FC = () => {
                       : 'Your attendance is currently below the 75% requirement. Please review your attendance record.'}
                   </p>
                 </div>
+
+                {/* Recent Marked Sessions Mini-Feed */}
+                {studentSummary?.recent_attendance && studentSummary.recent_attendance.length > 0 && (
+                  <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      <span>Recent Class Attendance</span>
+                      <Link to="/attendance" className="text-cyan-600 dark:text-cyan-400 hover:underline">
+                        View Dossier
+                      </Link>
+                    </div>
+                    <div className="space-y-1.5">
+                      {studentSummary.recent_attendance.slice(0, 4).map((item) => (
+                        <div
+                          key={item.attendance_id || item.session_id}
+                          className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                                {item.session_date}
+                              </span>
+                              <span className="text-slate-300 dark:text-slate-600">•</span>
+                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                {item.subject_name}
+                              </span>
+                            </div>
+                            <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+                              📍 {item.venue}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${
+                              item.status === 'present'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                : item.status === 'absent'
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800'
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 space-y-1.5">
                   <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">

@@ -710,6 +710,20 @@ async def format_single_session_response(db: AsyncSession, session_id: UUID) -> 
         ]
     else:
         r.hyperbuild_activities = []
+
+    if not r.subject_name and s.session_type == "hyperbuild":
+        if getattr(s, "hyperbuild_activities", None) and len(s.hyperbuild_activities) > 0:
+            first_act = s.hyperbuild_activities[0]
+            if first_act.subject:
+                r.subject_name = first_act.subject.name
+                r.subject_code = first_act.subject.code
+            else:
+                r.subject_name = first_act.title or "HyperBuild Practical Lab"
+                r.subject_code = "HYPERBUILD"
+        else:
+            r.subject_name = "HyperBuild Practical Lab"
+            r.subject_code = "HYPERBUILD"
+
     return r
 
 
@@ -796,6 +810,18 @@ async def list_sessions(
                 for act in s.hyperbuild_activities
                 if not getattr(act, "is_deleted", False)
             ]
+        if not r.subject_name and s.session_type == "hyperbuild":
+            if s.hyperbuild_activities and len(s.hyperbuild_activities) > 0:
+                first_act = s.hyperbuild_activities[0]
+                if first_act.subject:
+                    r.subject_name = first_act.subject.name
+                    r.subject_code = first_act.subject.code
+                else:
+                    r.subject_name = first_act.title or "HyperBuild Practical Lab"
+                    r.subject_code = "HYPERBUILD"
+            else:
+                r.subject_name = "HyperBuild Practical Lab"
+                r.subject_code = "HYPERBUILD"
         results.append(r)
     return results
 
@@ -1387,19 +1413,35 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
 
         for s in all_marked_sessions:
             if s.hyperbuild_activities and len(s.hyperbuild_activities) > 0:
+                act_added = 0
                 for act in s.hyperbuild_activities:
                     # Only conducted activities
-                    is_conducted = (act.status in ["active", "closed"]) or (act.challenge_key is not None) or ((student.id, act.id) in verifs_by_student_act)
+                    is_conducted = (
+                        (act.status in ["active", "closed"])
+                        or (act.challenge_key is not None)
+                        or ((student.id, act.id) in verifs_by_student_act)
+                        or (s.attendance_status == "marked")
+                        or (s.status == "completed")
+                    )
                     if not is_conducted:
                         continue
-                    if not act.subject or not is_student_eligible_for_subject(act.subject, student):
+                    if act.subject and not is_student_eligible_for_subject(act.subject, student):
                         continue
 
                     total_eligible += 1
+                    act_added += 1
                     v_st = verifs_by_student_act.get((student.id, act.id))
                     if v_st and v_st in ["verified_present", "late_submission", "present"]:
                         attended_count += 1
                     elif not v_st:
+                        parent_st = student_records.get(s.id)
+                        if parent_st and parent_st in PRESENT_STATUSES:
+                            attended_count += 1
+
+                # Fallback to parent session if no activities were matched
+                if act_added == 0 and (s.attendance_status == "marked" or s.status == "completed"):
+                    if not (s.subject and not is_student_eligible_for_subject(s.subject, student)):
+                        total_eligible += 1
                         parent_st = student_records.get(s.id)
                         if parent_st and parent_st in PRESENT_STATUSES:
                             attended_count += 1
