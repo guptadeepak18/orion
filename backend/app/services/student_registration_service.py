@@ -328,6 +328,7 @@ async def approve_registration(
         specialization_major=(profile_data.specialization_major if (profile_data and profile_data.specialization_major) else (reg.specialization_major or "")),
         specialization_minor=(profile_data.specialization_minor if (profile_data and profile_data.specialization_minor) else (reg.specialization_minor or "")),
         email=reg.email,
+        attendance_percentage=0.0,
     )
     db.add(student)
     await db.flush()

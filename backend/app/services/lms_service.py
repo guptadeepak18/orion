@@ -736,7 +736,7 @@ class LMSService:
             return SubjectAttendanceResponse(
                 total_sessions_conducted=0,
                 sessions_attended=0,
-                attendance_percentage=100.0,
+                attendance_percentage=0.0,
                 sessions_log=[]
             )
 

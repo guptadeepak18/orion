@@ -457,7 +457,7 @@ async def get_subject_wise_attendance(
         absent = counts["absent"]
         excused = counts["excused"]
 
-        pct = round((attended / total_conducted * 100.0), 1) if total_conducted > 0 else 100.0
+        pct = round((attended / total_conducted * 100.0), 1) if total_conducted > 0 else 0.0
         sum_percentages += pct
 
         students_summary.append(
@@ -475,7 +475,7 @@ async def get_subject_wise_attendance(
             )
         )
 
-    class_avg_pct = round(sum_percentages / len(students), 1) if students else 100.0
+    class_avg_pct = round(sum_percentages / len(students), 1) if (students and total_conducted > 0) else 0.0
 
     # Recent session items with present/absent counts
     recent_session_items: List[SubjectSessionAttendanceItem] = []
@@ -818,7 +818,7 @@ async def get_student_attendance_dossier(
             )
         )
 
-    overall_pct = round((attended_classes / total_classes * 100.0), 1) if total_classes > 0 else (student.attendance_percentage or 100.0)
+    overall_pct = round((attended_classes / total_classes * 100.0), 1) if total_classes > 0 else (round(student.attendance_percentage, 1) if student.attendance_percentage else 0.0)
 
     return StudentAttendanceDossierResponse(
         student_id=student.id,
@@ -1155,7 +1155,7 @@ async def get_debarment_risk_students(
         elif st.attendance_percentage is not None and st.attendance_percentage > 0:
             calc_pct = round(st.attendance_percentage, 1)
         else:
-            calc_pct = 100.0
+            calc_pct = 0.0
 
         # Synchronize stored attendance_percentage if sessions exist
         if total_conducted > 0 and st.attendance_percentage != calc_pct:
@@ -1629,9 +1629,11 @@ async def get_subject_attendance_matrix(
                     else:
                         records[str(act.id)] = "absent"
 
-        pct = round((attended / total_conducted * 100), 1) if total_conducted > 0 else 100.0
+        pct = round((attended / total_conducted * 100), 1) if total_conducted > 0 else 0.0
 
-        if pct >= 75.0:
+        if total_conducted == 0:
+            tier = "not_started"
+        elif pct >= 75.0:
             tier = "safe"
             safe_count += 1
         elif pct >= 60.0:

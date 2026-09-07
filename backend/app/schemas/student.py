@@ -148,7 +148,7 @@ class StudentResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     cgpa: float
-    attendance_percentage: float = 100.0
+    attendance_percentage: float = 0.0
     total_sessions_conducted: int = 0
     total_sessions_attended: int = 0
     status: str

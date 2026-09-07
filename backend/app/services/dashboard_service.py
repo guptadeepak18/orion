@@ -174,7 +174,12 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         )
     ).scalar() or 0
 
-    standing = "Good Standing" if enriched.attendance_percentage >= 75.0 else "Attendance Advisory (< 75%)"
+    if enriched.total_sessions_conducted == 0:
+        standing = "Classes Pending"
+    elif enriched.attendance_percentage >= 75.0:
+        standing = "Good Standing"
+    else:
+        standing = "Attendance Advisory (< 75%)"
     div_name = enriched.division_names[0] if (enriched.division_names and len(enriched.division_names) > 0) else None
 
     return StudentDashboardSummaryResponse(

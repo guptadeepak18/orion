@@ -475,9 +475,10 @@ export const StudentsPage: React.FC = () => {
     totalStudents > 0
       ? (studentsData!.reduce((acc, s) => acc + (s.cgpa || 0), 0) / totalStudents).toFixed(2)
       : '0.00';
+  const studentsWithClasses = (studentsData || []).filter((s) => (s.total_sessions_conducted || 0) > 0);
   const avgAttendance =
-    totalStudents > 0
-      ? (studentsData!.reduce((acc, s) => acc + (s.attendance_percentage || 0), 0) / totalStudents).toFixed(1)
+    studentsWithClasses.length > 0
+      ? (studentsWithClasses.reduce((acc, s) => acc + (s.attendance_percentage || 0), 0) / studentsWithClasses.length).toFixed(1)
       : '0.0';
 
   // Columns Definition
@@ -567,25 +568,27 @@ export const StudentsPage: React.FC = () => {
     {
       header: 'Attendance',
       accessor: (r) => {
-        const pct = r.attendance_percentage ?? 100;
         const conducted = r.total_sessions_conducted ?? 0;
         const attended = r.total_sessions_attended ?? 0;
         const hasData = conducted > 0;
+        const pct = hasData ? (r.attendance_percentage ?? 0) : 0;
         return (
           <div className="flex flex-col gap-0.5">
             <span
               className={`font-semibold px-2 py-0.5 rounded-md border text-xs ${
-                pct >= 85
+                !hasData
+                  ? 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                  : pct >= 85
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
                   : pct >= 75
                   ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'
                   : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
               }`}
             >
-              {pct.toFixed(1)}%
+              {hasData ? `${pct.toFixed(1)}%` : '—'}
             </span>
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
-              {hasData ? `${attended}/${conducted} sessions` : 'Auto-tracked'}
+              {hasData ? `${attended}/${conducted} sessions` : 'No classes held'}
             </span>
           </div>
         );
@@ -1492,26 +1495,56 @@ export const StudentsPage: React.FC = () => {
                   {(selectedStudentForReport.cgpa || 0).toFixed(2)}
                 </p>
               </div>
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-center">
-                <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Attendance</p>
-                <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-200 mt-0.5">
-                  {(selectedStudentForReport.attendance_percentage ?? 100).toFixed(1)}%
-                </p>
-                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5">
-                  {(selectedStudentForReport.total_sessions_conducted ?? 0) > 0
-                    ? `${selectedStudentForReport.total_sessions_attended ?? 0}/${selectedStudentForReport.total_sessions_conducted} classes`
-                    : '⚡ Auto-calculated'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigate(`/attendance?tab=students&studentId=${selectedStudentForReport.id}`);
-                  }}
-                  className="mt-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline inline-flex items-center gap-0.5"
-                >
-                  View Attendance Ledger →
-                </button>
-              </div>
+              {(() => {
+                const conducted = selectedStudentForReport.total_sessions_conducted ?? 0;
+                const attended = selectedStudentForReport.total_sessions_attended ?? 0;
+                const hasData = conducted > 0;
+                const pct = hasData ? (selectedStudentForReport.attendance_percentage ?? 0) : 0;
+                return (
+                  <div className={`p-3.5 rounded-2xl border text-center ${
+                    !hasData
+                      ? 'bg-slate-50/60 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800'
+                      : pct >= 75
+                      ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50'
+                      : 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50'
+                  }`}>
+                    <p className={`text-xs font-medium ${
+                      !hasData
+                        ? 'text-slate-600 dark:text-slate-400'
+                        : pct >= 75
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : 'text-rose-700 dark:text-rose-300'
+                    }`}>Attendance</p>
+                    <p className={`text-2xl font-bold mt-0.5 ${
+                      !hasData
+                        ? 'text-slate-700 dark:text-slate-300'
+                        : pct >= 75
+                        ? 'text-emerald-800 dark:text-emerald-200'
+                        : 'text-rose-800 dark:text-rose-200'
+                    }`}>
+                      {hasData ? `${pct.toFixed(1)}%` : '—'}
+                    </p>
+                    <p className={`text-[10px] mt-0.5 ${
+                      !hasData
+                        ? 'text-slate-500 dark:text-slate-400'
+                        : pct >= 75
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}>
+                      {hasData ? `${attended}/${conducted} classes` : 'No classes held'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate(`/attendance?tab=students&studentId=${selectedStudentForReport.id}`);
+                      }}
+                      className="mt-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
+                    >
+                      View Attendance Ledger →
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="p-3.5 rounded-2xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/50 text-center">
                 <p className="text-xs text-cyan-700 dark:text-cyan-300 font-medium">Compliance Status</p>
                 <p className="text-2xl font-bold text-cyan-800 dark:text-cyan-200 mt-0.5 capitalize">

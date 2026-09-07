@@ -69,7 +69,7 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     cgpa: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    attendance_percentage: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
+    attendance_percentage: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -1276,10 +1276,10 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
 
     for st in eligible_students:
         existing = existing_records.get(st.id)
-        current_status = existing.status if existing else "present"
-        if current_status in ("present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"):
+        current_status = existing.status if existing else None
+        if current_status and current_status in ("present", "late", "excused", "leave_approved", "od_duty", "on_duty", "on duty"):
             present_count += 1
-        elif current_status == "absent":
+        elif current_status and current_status == "absent":
             absent_count += 1
 
         # Format specialization badge text
@@ -1412,7 +1412,7 @@ async def recalculate_batch_student_attendance(db: AsyncSession, batch_id: UUID)
                     attended_count += 1
 
         if total_eligible == 0:
-            student.attendance_percentage = 100.0
+            student.attendance_percentage = 0.0
             continue
 
         pct = round((attended_count / total_eligible) * 100.0, 2)

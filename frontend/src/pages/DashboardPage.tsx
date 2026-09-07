@@ -525,8 +525,10 @@ export const DashboardPage: React.FC = () => {
   const topVenues = useMemo(() => (venueList || []).slice(0, 3), [venueList]);
 
   // Student metrics
-  const attendanceRate = studentSummary?.attendance_percentage ?? 100.0;
-  const isHealthyAttendance = attendanceRate >= 75.0;
+  const totalSessionsConducted = studentSummary?.total_sessions_conducted ?? 0;
+  const hasConductedSessions = totalSessionsConducted > 0;
+  const attendanceRate = studentSummary?.attendance_percentage ?? 0.0;
+  const isHealthyAttendance = hasConductedSessions ? attendanceRate >= 75.0 : true;
 
   return (
     <div className="space-y-6">
@@ -773,26 +775,45 @@ export const DashboardPage: React.FC = () => {
           <Link to="/attendance" className="group block">
             <Card
               title="Attendance Rate"
-              subtitle={studentSummary?.attendance_standing || (isHealthyAttendance ? 'Good Standing' : 'Attendance Advisory')}
+              subtitle={
+                studentSummary?.attendance_standing ||
+                (hasConductedSessions
+                  ? isHealthyAttendance
+                    ? 'Good Standing'
+                    : 'Attendance Advisory'
+                  : 'Classes Pending')
+              }
               action={
                 <div
                   className={`p-2 rounded-xl border ${
-                    isHealthyAttendance
+                    !hasConductedSessions
+                      ? 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400'
+                      : isHealthyAttendance
                       ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
                       : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
                   } group-hover:scale-110 transition-transform`}
                 >
-                  {isHealthyAttendance ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                  {!hasConductedSessions ? (
+                    <Clock className="h-5 w-5" />
+                  ) : isHealthyAttendance ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5" />
+                  )}
                 </div>
               }
             >
               <div className="mt-2 flex items-baseline justify-between">
                 <span
                   className={`text-3xl font-extrabold ${
-                    isHealthyAttendance ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                    !hasConductedSessions
+                      ? 'text-slate-600 dark:text-slate-400'
+                      : isHealthyAttendance
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
                   }`}
                 >
-                  {studentSummaryLoading ? '—' : `${attendanceRate}%`}
+                  {studentSummaryLoading ? '—' : hasConductedSessions ? `${attendanceRate}%` : '—'}
                 </span>
                 <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center space-x-1 group-hover:translate-x-0.5 transition-transform">
                   <span>Dossier</span>
@@ -800,7 +821,9 @@ export const DashboardPage: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
-                {studentSummary?.total_sessions_attended ?? 0} of {studentSummary?.total_sessions_conducted ?? 0} sessions marked
+                {hasConductedSessions
+                  ? `${studentSummary?.total_sessions_attended ?? 0} of ${totalSessionsConducted} sessions marked`
+                  : 'No classes conducted yet'}
               </p>
             </Card>
           </Link>
@@ -1702,7 +1725,9 @@ export const DashboardPage: React.FC = () => {
               <div className="space-y-3.5">
                 <div
                   className={`p-3.5 rounded-2xl border ${
-                    isHealthyAttendance
+                    !hasConductedSessions
+                      ? 'bg-slate-500/10 border-slate-500/20 text-slate-800 dark:text-slate-300'
+                      : isHealthyAttendance
                       ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
                       : 'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300'
                   } space-y-2`}
@@ -1711,16 +1736,20 @@ export const DashboardPage: React.FC = () => {
                     <span className="text-xs font-bold flex items-center gap-1.5">
                       <ShieldCheck className="h-4 w-4" /> Policy Requirement: 75%
                     </span>
-                    <span className="text-xs font-black">{attendanceRate}%</span>
+                    <span className="text-xs font-black">{hasConductedSessions ? `${attendanceRate}%` : '—'}</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-200/60 dark:bg-slate-800 overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${isHealthyAttendance ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                      style={{ width: `${Math.min(100, attendanceRate)}%` }}
+                      className={`h-full rounded-full ${
+                        !hasConductedSessions ? 'bg-slate-400' : isHealthyAttendance ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                      style={{ width: `${hasConductedSessions ? Math.min(100, attendanceRate) : 0}%` }}
                     />
                   </div>
                   <p className="text-[11px] font-medium leading-relaxed">
-                    {isHealthyAttendance
+                    {!hasConductedSessions
+                      ? 'No academic sessions have been marked yet for your registered subjects.'
+                      : isHealthyAttendance
                       ? 'You are in Good Standing with the institutional attendance criteria.'
                       : 'Your attendance is currently below the 75% requirement. Please review your attendance record.'}
                   </p>

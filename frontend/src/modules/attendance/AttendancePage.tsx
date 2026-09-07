@@ -169,7 +169,7 @@ export const AttendancePage: React.FC = () => {
       const map: Record<string, string> = {};
       const rem: Record<string, string> = {};
       activeSheetData.students.forEach((st: any) => {
-        map[st.student_id] = st.status || 'present';
+        if (st.status) map[st.student_id] = st.status;
         if (st.remarks) rem[st.student_id] = st.remarks;
       });
       setAttendanceMap(map);
@@ -198,9 +198,16 @@ export const AttendancePage: React.FC = () => {
 
   const handleSaveAttendance = () => {
     if (!selectedSessionId || !activeSheetData) return;
+    const unassigned = activeSheetData.students.filter(
+      (st: any) => !attendanceMap[st.student_id] && !st.status
+    );
+    if (unassigned.length > 0) {
+      alert(`Please take attendance for all students before finalizing (${unassigned.length} student(s) remain unmarked), or click 'Mark All P' / 'Mark All A'.`);
+      return;
+    }
     const records = activeSheetData.students.map((st: any) => ({
       student_id: st.student_id,
-      status: attendanceMap[st.student_id] || 'present',
+      status: attendanceMap[st.student_id] || st.status,
       remarks: remarksMap[st.student_id] || undefined,
     }));
     markAttendanceMutation.mutate({ sessionId: selectedSessionId, attendances: records });
@@ -263,9 +270,10 @@ export const AttendancePage: React.FC = () => {
   const filteredRosterStudents = useMemo(() => {
     if (!activeSheetData?.students) return [];
     return activeSheetData.students.filter((st: any) => {
-      const currentSt = attendanceMap[st.student_id] || st.status || 'present';
+      const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
       
       // Status filter
+      if (rosterStatusFilter === 'unmarked' && currentSt !== '') return false;
       if (rosterStatusFilter === 'present' && currentSt !== 'present') return false;
       if (rosterStatusFilter === 'absent' && currentSt !== 'absent') return false;
       if (rosterStatusFilter === 'od_excused' && !['late', 'excused', 'od_duty'].includes(currentSt)) return false;
@@ -285,21 +293,23 @@ export const AttendancePage: React.FC = () => {
 
   // Stats calculation for current session sheet
   const currentSheetStats = useMemo(() => {
-    if (!activeSheetData?.students) return { present: 0, absent: 0, late: 0, excused: 0, od: 0, total: 0, pct: 0 };
+    if (!activeSheetData?.students) return { present: 0, absent: 0, late: 0, excused: 0, od: 0, unmarked: 0, total: 0, pct: 0 };
     const total = activeSheetData.students.length;
-    let present = 0, absent = 0, late = 0, excused = 0, od = 0;
+    let present = 0, absent = 0, late = 0, excused = 0, od = 0, unmarked = 0;
 
     activeSheetData.students.forEach((st: any) => {
-      const s = attendanceMap[st.student_id] || st.status || 'present';
+      const s = attendanceMap[st.student_id] ?? st.status ?? '';
       if (s === 'present') present++;
       else if (s === 'absent') absent++;
       else if (s === 'late') { late++; present++; }
       else if (s === 'excused') { excused++; present++; }
       else if (s === 'od_duty') { od++; present++; }
+      else unmarked++;
     });
 
-    const pct = total > 0 ? Math.round((present / total) * 100) : 0;
-    return { present, absent, late, excused, od, total, pct };
+    const markedTotal = total - unmarked;
+    const pct = markedTotal > 0 ? Math.round((present / markedTotal) * 100) : 0;
+    return { present, absent, late, excused, od, unmarked, total, pct };
   }, [activeSheetData, attendanceMap]);
 
   // Export current session sheet to CSV
@@ -312,7 +322,7 @@ export const AttendancePage: React.FC = () => {
         st.student_prn || '',
         st.roll_no || '',
         st.student_name || '',
-        (attendanceMap[st.student_id] || st.status || 'present').toUpperCase(),
+        (attendanceMap[st.student_id] || st.status || 'UNMARKED').toUpperCase(),
         remarksMap[st.student_id] || '',
       ]),
     ];
@@ -1065,6 +1075,15 @@ export const AttendancePage: React.FC = () => {
                     >
                       Mark All A
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceMap({})}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Clear all selections"
+                    >
+                      Clear All
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1096,6 +1115,7 @@ export const AttendancePage: React.FC = () => {
                     <span className="text-slate-400 mr-1">Filter:</span>
                     {[
                       { id: 'all', label: `All (${activeSheetData.students.length})` },
+                      { id: 'unmarked', label: `Unmarked (${currentSheetStats.unmarked})` },
                       { id: 'present', label: `Present (${currentSheetStats.present})` },
                       { id: 'absent', label: `Absent (${currentSheetStats.absent})` },
                       { id: 'od_excused', label: `OD / Excused (${currentSheetStats.od + currentSheetStats.excused + currentSheetStats.late})` },
@@ -1130,7 +1150,7 @@ export const AttendancePage: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {filteredRosterStudents.map((st: any, idx: number) => {
-                        const currentSt = attendanceMap[st.student_id] || st.status || 'present';
+                        const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
                         return (
                           <tr key={st.student_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                             <td className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
@@ -1147,6 +1167,11 @@ export const AttendancePage: React.FC = () => {
                             </td>
                             <td className="p-3">
                               <div className="flex items-center justify-center gap-1.5">
+                                {!currentSt && (
+                                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mr-1">
+                                    Unmarked
+                                  </span>
+                                )}
                                 {[
                                   { id: 'present', label: 'P', full: 'Present', color: 'emerald' },
                                   { id: 'absent', label: 'A', full: 'Absent', color: 'rose' },
@@ -1688,7 +1713,9 @@ export const AttendancePage: React.FC = () => {
                   <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-center">
                     <div className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">Cumulative Attendance</div>
                     <div className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">
-                      {studentDossierData.overall_attendance_percentage ?? 100}%
+                      {(studentDossierData.total_classes_conducted || 0) > 0
+                        ? `${studentDossierData.overall_attendance_percentage ?? 0}%`
+                        : '—'}
                     </div>
                   </div>
                 </div>
@@ -1906,11 +1933,17 @@ export const AttendancePage: React.FC = () => {
                       Institutional Attendance Compliance & Standing
                     </h3>
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
-                      (studentDossierData?.overall_attendance_percentage ?? 100) >= 75
+                      (studentDossierData?.total_classes_conducted || 0) === 0
+                        ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
+                        : (studentDossierData?.overall_attendance_percentage ?? 0) >= 75
                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                         : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
                     }`}>
-                      {(studentDossierData?.overall_attendance_percentage ?? 100) >= 75 ? 'Good Standing' : 'Attendance Advisory (<75%)'}
+                      {(studentDossierData?.total_classes_conducted || 0) === 0
+                        ? 'Classes Pending'
+                        : (studentDossierData?.overall_attendance_percentage ?? 0) >= 75
+                        ? 'Good Standing'
+                        : 'Attendance Advisory (<75%)'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -1922,7 +1955,9 @@ export const AttendancePage: React.FC = () => {
                   <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-center">
                     <div className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">Current Attendance</div>
                     <div className="text-2xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">
-                      {studentDossierData?.overall_attendance_percentage ?? 100}%
+                      {(studentDossierData?.total_classes_conducted || 0) > 0
+                        ? `${studentDossierData?.overall_attendance_percentage ?? 0}%`
+                        : '—'}
                     </div>
                   </div>
                 </div>
@@ -1932,8 +1967,9 @@ export const AttendancePage: React.FC = () => {
               {(() => {
                 const totalCond = studentDossierData?.total_classes_conducted || 0;
                 const totalAtt = studentDossierData?.total_classes_attended || 0;
-                const currentPct = studentDossierData?.overall_attendance_percentage ?? 100;
-                const isCompliant = currentPct >= 75;
+                const hasClasses = totalCond > 0;
+                const currentPct = studentDossierData?.overall_attendance_percentage ?? 0;
+                const isCompliant = hasClasses ? currentPct >= 75 : true;
                 const neededClasses = !isCompliant && totalCond > 0 ? Math.max(0, Math.ceil(3 * totalCond - 4 * totalAtt)) : 0;
                 const safeBuffer = isCompliant && totalCond > 0 ? Math.max(0, Math.floor((totalAtt / 0.75) - totalCond)) : 0;
 
@@ -1941,25 +1977,47 @@ export const AttendancePage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {/* Recovery Action Card */}
                     <div className={`p-6 rounded-3xl border shadow-sm space-y-3 ${
-                      isCompliant
+                      !hasClasses
+                        ? 'bg-slate-50/50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800'
+                        : isCompliant
                         ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40'
                         : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40'
                     }`}>
                       <div className="flex items-center gap-2.5">
-                        <div className={`p-2.5 rounded-2xl ${isCompliant ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
-                          {isCompliant ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                        <div className={`p-2.5 rounded-2xl ${
+                          !hasClasses
+                            ? 'bg-slate-600 text-white'
+                            : isCompliant
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-rose-600 text-white'
+                        }`}>
+                          {!hasClasses ? <Clock className="h-5 w-5" /> : isCompliant ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                         </div>
                         <div>
                           <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                            {isCompliant ? 'Compliant Standing' : 'Attendance Shortfall Target'}
+                            {!hasClasses
+                              ? 'Academic Sessions Pending'
+                              : isCompliant
+                              ? 'Compliant Standing'
+                              : 'Attendance Shortfall Target'}
                           </h4>
                           <p className="text-xs text-slate-500">
-                            {isCompliant ? 'You meet institutional compliance standards' : 'Action required to restore eligibility'}
+                            {!hasClasses
+                              ? 'No classes have been conducted yet'
+                              : isCompliant
+                              ? 'You meet institutional compliance standards'
+                              : 'Action required to restore eligibility'}
                           </p>
                         </div>
                       </div>
 
-                      {isCompliant ? (
+                      {!hasClasses ? (
+                        <div className="space-y-2 pt-1 text-xs text-slate-700 dark:text-slate-300">
+                          <p className="leading-relaxed">
+                            No sessions have been conducted or marked yet. Attendance tracking and compliance metrics will update dynamically once faculty begin taking roll call.
+                          </p>
+                        </div>
+                      ) : isCompliant ? (
                         <div className="space-y-2 pt-1 text-xs text-slate-700 dark:text-slate-300">
                           <p className="leading-relaxed">
                             Your cumulative attendance is <strong className="text-emerald-600 font-black">{currentPct}%</strong>, which is above the mandatory 75% threshold.
@@ -2728,7 +2786,7 @@ export const AttendancePage: React.FC = () => {
             {/* Kiosk Student Card */}
             {(() => {
               const st = activeSheetData.students[kioskIndex];
-              const currentSt = attendanceMap[st.student_id] || st.status || 'present';
+              const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
               return (
                 <div className="p-8 text-center space-y-6">
                   {/* Large Avatar */}
@@ -2760,10 +2818,14 @@ export const AttendancePage: React.FC = () => {
                           ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                           : currentSt === 'late'
                           ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                          : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300'
+                          : currentSt === 'excused'
+                          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                          : currentSt === 'od_duty'
+                          ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                       }`}
                     >
-                      Status: {currentSt}
+                      Status: {currentSt ? currentSt.toUpperCase() : 'UNMARKED'}
                     </span>
                   </div>
 

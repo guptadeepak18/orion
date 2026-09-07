@@ -274,7 +274,7 @@ class StudentAttendanceRecordResponse(BaseModel):
     student_id: UUID
     student_name: str
     student_prn: str
-    status: str
+    status: Optional[str] = None
     remarks: Optional[str] = None
     session_date: Optional[date] = None
     subject_name: Optional[str] = None

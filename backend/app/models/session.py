@@ -197,7 +197,7 @@ class StudentAttendance(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(
-        String(30), default="present", nullable=False
+        String(30), nullable=False
     )  # present|absent|late|excused|leave_approved|od_duty
     marked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

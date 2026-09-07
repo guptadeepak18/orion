@@ -403,7 +403,7 @@ async def list_students_enriched_batch(
         if conducted > 0:
             resp.attendance_percentage = round((attended / conducted) * 100.0, 2)
         else:
-            resp.attendance_percentage = s.attendance_percentage or 100.0
+            resp.attendance_percentage = round(s.attendance_percentage, 2) if s.attendance_percentage else 0.0
         results.append(resp)
 
     return results
@@ -437,7 +437,7 @@ async def to_student_response_enriched(db: AsyncSession, student: Student) -> St
             resp.attendance_percentage = round((resp.total_sessions_attended / resp.total_sessions_conducted) * 100.0, 2)
         else:
             resp.total_sessions_attended = 0
-            resp.attendance_percentage = student.attendance_percentage or 100.0
+            resp.attendance_percentage = round(student.attendance_percentage, 2) if student.attendance_percentage else 0.0
 
     return resp
 

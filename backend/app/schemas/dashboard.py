@@ -37,10 +37,10 @@ class StudentDashboardSummaryResponse(BaseModel):
     batch_name: Optional[str] = None
     division_name: Optional[str] = None
     trimester: int = 1
-    attendance_percentage: float = 100.0
+    attendance_percentage: float = 0.0
     total_sessions_conducted: int = 0
     total_sessions_attended: int = 0
-    attendance_standing: str = "Good Standing"
+    attendance_standing: str = "Classes Pending"
     enrolled_subjects_count: int = 0
     upcoming_sessions_count: int = 0
     today_sessions_count: int = 0

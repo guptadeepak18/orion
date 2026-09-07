@@ -545,20 +545,54 @@ export const StudentProfilePage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 space-y-1">
-                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Overall Attendance</span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                    {student.attendance_percentage ?? 100.0}%
-                  </span>
-                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                    {(student.attendance_percentage ?? 100.0) >= 75 ? '✓ Compliant' : '⚠️ Risk'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {student.total_sessions_attended ?? 0} attended of {student.total_sessions_conducted ?? 0} conducted
-                </p>
-              </div>
+              {(() => {
+                const conducted = student.total_sessions_conducted ?? 0;
+                const hasConducted = conducted > 0;
+                const pct = student.attendance_percentage ?? 0.0;
+                const isCompliant = pct >= 75;
+                return (
+                  <div className={`p-4 rounded-2xl border space-y-1 ${
+                    !hasConducted
+                      ? 'bg-slate-50/50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800'
+                      : isCompliant
+                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/40'
+                      : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-100 dark:border-rose-900/40'
+                  }`}>
+                    <span className={`text-xs font-bold uppercase tracking-wider ${
+                      !hasConducted
+                        ? 'text-slate-600 dark:text-slate-400'
+                        : isCompliant
+                        ? 'text-emerald-800 dark:text-emerald-300'
+                        : 'text-rose-800 dark:text-rose-300'
+                    }`}>
+                      Overall Attendance
+                    </span>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-2xl font-black ${
+                        !hasConducted
+                          ? 'text-slate-600 dark:text-slate-400'
+                          : isCompliant
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}>
+                        {hasConducted ? `${pct}%` : '—'}
+                      </span>
+                      <span className={`text-xs font-bold ${
+                        !hasConducted
+                          ? 'text-slate-500 dark:text-slate-400'
+                          : isCompliant
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : 'text-rose-700 dark:text-rose-300'
+                      }`}>
+                        {!hasConducted ? 'Classes Pending' : isCompliant ? '✓ Compliant' : '⚠️ Risk'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {hasConducted ? `${student.total_sessions_attended ?? 0} attended of ${conducted} conducted` : 'No classes conducted yet'}
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div className="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 space-y-1">
                 <span className="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider">Cumulative CGPA</span>
