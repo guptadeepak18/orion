@@ -20,6 +20,8 @@ import {
   Briefcase,
   FileText,
   Search,
+  GraduationCap,
+  Send,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -93,7 +95,7 @@ interface Props {
 }
 
 // Clean Section Text Formatter for Bullets, Numbered Lists & Paragraphs
-const FormattedSectionText: React.FC<{ text?: string }> = ({ text }) => {
+const FormattedSectionText: React.FC<{ text?: string; isOrdered?: boolean }> = ({ text, isOrdered }) => {
   if (!text) return null;
 
   const rawLines = text
@@ -119,6 +121,17 @@ const FormattedSectionText: React.FC<{ text?: string }> = ({ text }) => {
         }
 
         const cleanLine = line.replace(/^[\-•\*\>]\s*/, '');
+        if (isOrdered) {
+          return (
+            <div key={idx} className="flex items-start gap-2.5 leading-relaxed text-slate-800 dark:text-slate-200">
+              <span className="h-5 w-5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5 shadow-sm border border-indigo-200 dark:border-indigo-800">
+                {idx + 1}
+              </span>
+              <span className="flex-1 font-sans leading-relaxed">{cleanLine}</span>
+            </div>
+          );
+        }
+
         return (
           <div key={idx} className="flex items-start gap-2.5 leading-relaxed text-slate-800 dark:text-slate-200">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-2 shadow-sm"></span>
@@ -707,7 +720,7 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
                           <h5 className="font-bold text-indigo-800 dark:text-indigo-400 uppercase tracking-wider text-[10px] flex items-center gap-1">
                             <BookOpen className="h-3 w-3 text-indigo-600" /> Step-by-Step Instructions
                           </h5>
-                          <FormattedSectionText text={act.instructions} />
+                          <FormattedSectionText text={act.instructions} isOrdered={true} />
                         </div>
                       )}
 
@@ -754,6 +767,116 @@ export const HyperbuildActivitiesModal: React.FC<Props> = ({ subject, onClose })
                                       </td>
                                       <td className="py-3 px-4 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
                                         {t.access || t.how_to_access || 'Web Platform'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* TWO-COLUMN CARDS: LEARNING OUTCOMES & SUBMISSION REQUIREMENTS */}
+                      {(act.learning_outcomes || act.submission_requirements) && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                          {act.learning_outcomes && (
+                            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                              <h5 className="font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                                <GraduationCap className="h-3.5 w-3.5 text-emerald-600" /> Learning Outcomes
+                              </h5>
+                              <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                {act.learning_outcomes
+                                  .split(/\n|•/)
+                                  .map((l: string) => l.trim())
+                                  .filter((l: string) => l.length > 0)
+                                  .map((line: string, idx: number) => (
+                                    <div key={idx} className="flex items-start gap-2">
+                                      <span className="text-emerald-500 font-bold mt-0.5">•</span>
+                                      <span>{line.replace(/^[\-•\*]\s*/, '')}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {act.submission_requirements && (
+                            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                              <h5 className="font-bold text-sky-800 dark:text-sky-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                                <Send className="h-3.5 w-3.5 text-sky-600" /> Assessment Task &amp; Submission Requirements
+                              </h5>
+                              <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                {act.submission_requirements
+                                  .split(/\n|•/)
+                                  .map((l: string) => l.trim())
+                                  .filter((l: string) => l.length > 0)
+                                  .map((line: string, idx: number) => (
+                                    <div key={idx} className="flex items-start gap-2">
+                                      <span className="text-sky-500 font-bold mt-0.5">•</span>
+                                      <span>{line.replace(/^[\-•\*]\s*/, '')}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* GRADING RUBRIC TABLE */}
+                      {(() => {
+                        let rubricList: ActivityRubric[] = [];
+                        if (Array.isArray(act.rubric)) {
+                          rubricList = act.rubric;
+                        } else if (typeof act.rubric === 'string') {
+                          try {
+                            rubricList = JSON.parse(act.rubric);
+                          } catch {}
+                        }
+
+                        if (!rubricList || rubricList.length === 0) return null;
+
+                        return (
+                          <div className="space-y-2.5">
+                            <h5 className="font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs flex items-center gap-2">
+                              <Award className="h-4 w-4 text-amber-500" /> Grading Rubric &amp; Criteria
+                            </h5>
+
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-[11px] font-black uppercase tracking-wider">
+                                    <th className="py-3 px-4 text-slate-700 dark:text-slate-300 min-w-[140px]">CRITERION</th>
+                                    <th className="py-3 px-4 text-emerald-700 dark:text-emerald-400 min-w-[180px]">DISTINCTION (85–100%)</th>
+                                    <th className="py-3 px-4 text-sky-700 dark:text-sky-400 min-w-[170px]">MERIT (70–84%)</th>
+                                    <th className="py-3 px-4 text-amber-700 dark:text-amber-400 min-w-[160px]">PASS (50–69%)</th>
+                                    <th className="py-3 px-4 text-rose-700 dark:text-rose-400 min-w-[150px]">NEEDS WORK (&lt;50%)</th>
+                                    <th className="py-3 px-4 text-slate-700 dark:text-slate-300 text-center min-w-[80px]">WEIGHTAGE</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                  {rubricList.map((crit, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors align-top">
+                                      <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                                        {crit.criterion}
+                                      </td>
+                                      <td className="py-3 px-4 font-normal text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                        {crit.distinction}
+                                      </td>
+                                      <td className="py-3 px-4 font-normal text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                        {crit.merit}
+                                      </td>
+                                      <td className="py-3 px-4 font-normal text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                        {crit.pass_grade}
+                                      </td>
+                                      <td className="py-3 px-4 font-normal text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                        {crit.needs_work}
+                                      </td>
+                                      <td className="py-3 px-4 font-bold text-xs text-slate-800 dark:text-slate-200 text-center align-top">
+                                        {crit.weightage !== undefined && crit.weightage !== null ? (
+                                          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[11px]">
+                                            {crit.weightage}%
+                                          </span>
+                                        ) : '—'}
                                       </td>
                                     </tr>
                                   ))}
