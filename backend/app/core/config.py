@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     HOSTINGER_MAILBOX_ID: str = "AC450fbdeffe5c83d81e26fcf45213"
     RESEND_API_KEY: str = ""
     BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = ""
+    BREVO_SENDER_NAME: str = "Orion Portal"
     SENDGRID_API_KEY: str = ""
 
     # SMTP / Email settings (optional — falls back to console log in dev if unset)

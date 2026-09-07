@@ -156,14 +156,18 @@ def _send_via_resend(api_key: str, from_email: str, to_email: str, full_name: st
 
 def _send_via_brevo(api_key: str, from_email: str, to_email: str, full_name: str, otp: str) -> bool:
     """Send transactional email via Brevo / Sendinblue HTTPS REST API (Port 443)."""
+    key = api_key.strip() if api_key else _get_brevo_api_key()
+    if not key:
+        return False
+    sender_email, sender_name = _get_brevo_sender(from_email)
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
-        "api-key": api_key.strip(),
+        "api-key": key,
         "Content-Type": "application/json",
     }
     payload = {
-        "sender": {"name": "Orion Portal", "email": from_email},
-        "to": [{"email": to_email, "name": full_name}],
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_email.strip(), "name": full_name.strip()}],
         "subject": "Orion — Verify Your Email Address",
         "htmlContent": _build_otp_email_html(full_name, otp),
         "replyTo": {"email": settings.SMTP_REPLY_TO or "deepak.gupta@mile.education", "name": "Deepak Gupta"},
@@ -278,6 +282,29 @@ def resolve_email_recipient(intended_email: str, subject: str, html_content: str
 _circuit_breaker_cooldowns: dict[str, float] = {}
 
 
+def _get_brevo_api_key() -> str:
+    key = getattr(settings, "BREVO_API_KEY", "").strip()
+    if key:
+        return key
+    smtp_host = getattr(settings, "SMTP_HOST", "").lower()
+    if "brevo" in smtp_host or "sendinblue" in smtp_host:
+        return getattr(settings, "SMTP_PASSWORD", "").strip()
+    return ""
+
+
+def _get_brevo_sender(default_from_email: str = "") -> tuple[str, str]:
+    sender_email = getattr(settings, "BREVO_SENDER_EMAIL", "").strip()
+    if not sender_email:
+        smtp_host = getattr(settings, "SMTP_HOST", "").lower()
+        if ("brevo" in smtp_host or "sendinblue" in smtp_host) and "@" in getattr(settings, "SMTP_USER", ""):
+            sender_email = getattr(settings, "SMTP_USER", "").strip()
+    if not sender_email:
+        sender_email = default_from_email or getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club").strip()
+
+    sender_name = getattr(settings, "BREVO_SENDER_NAME", "").strip() or "Orion Portal"
+    return sender_email, sender_name
+
+
 def _is_provider_available(provider: str) -> bool:
     cooldown = _circuit_breaker_cooldowns.get(provider, 0.0)
     return time_module.time() > cooldown
@@ -365,18 +392,20 @@ def _try_brevo_api(target_email: str, subject: str, html_content: str, from_emai
     if not _is_provider_available("brevo"):
         return False
 
-    api_key = getattr(settings, "BREVO_API_KEY", "")
+    api_key = _get_brevo_api_key()
     if not api_key:
         return False
 
+    sender_email, sender_name = _get_brevo_sender(from_email)
+
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
-        "api-key": api_key.strip(),
+        "api-key": api_key,
         "Content-Type": "application/json",
     }
     payload = {
-        "sender": {"name": "Orion Portal", "email": from_email},
-        "to": [{"email": target_email}],
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": target_email.strip()}],
         "subject": subject,
         "htmlContent": html_content,
         "replyTo": {"email": reply_to, "name": "Deepak Gupta"},
@@ -385,11 +414,12 @@ def _try_brevo_api(target_email: str, subject: str, html_content: str, from_emai
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(url, json=payload, headers=headers)
             if resp.status_code in (200, 201):
-                logger.info(f"[Brevo] Email delivered to {target_email}")
+                logger.info(f"[Brevo] Email delivered to {target_email} (from {sender_email})")
                 return True
             else:
+                resp_text = resp.text.lower()
                 logger.warning(f"[Brevo] Returned status {resp.status_code}: {resp.text}")
-                if resp.status_code == 429:
+                if resp.status_code == 429 or "rate" in resp_text or "quota" in resp_text:
                     _trip_circuit_breaker("brevo", duration_seconds=300.0, reason="Rate limit hit (429)")
     except Exception as e:
         logger.error(f"[Brevo] Request failed: {e}")
@@ -478,7 +508,7 @@ def _send_raw_custom_html(target_email: str, subject: str, html_content: str) ->
     else:
         # "auto" mode: prioritize dedicated transactional APIs if keys exist, otherwise Hostinger
         provider_order = []
-        if getattr(settings, "BREVO_API_KEY", ""):
+        if _get_brevo_api_key():
             provider_order.append("brevo")
         if getattr(settings, "RESEND_API_KEY", ""):
             provider_order.append("resend")
@@ -549,3 +579,62 @@ def generate_and_send_otp(to_email: str, full_name: str) -> str:
     otp = _generate_otp(6)
     send_verification_email(to_email, full_name, otp)
     return otp
+
+
+def get_email_provider_status() -> dict:
+    """Diagnostic status snapshot of all configured email providers, cooldowns, and active cascade."""
+    brevo_key = _get_brevo_api_key()
+    brevo_sender, brevo_name = _get_brevo_sender()
+    pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "auto").lower().strip()
+
+    if pref == "brevo":
+        active_order = ["brevo", "resend", "sendgrid", "smtp", "hostinger"]
+    elif pref == "resend":
+        active_order = ["resend", "brevo", "sendgrid", "smtp", "hostinger"]
+    elif pref == "sendgrid":
+        active_order = ["sendgrid", "brevo", "resend", "smtp", "hostinger"]
+    elif pref == "smtp":
+        active_order = ["smtp", "brevo", "resend", "hostinger"]
+    elif pref == "hostinger":
+        active_order = ["hostinger", "brevo", "resend", "sendgrid", "smtp"]
+    else:
+        active_order = []
+        if brevo_key:
+            active_order.append("brevo")
+        if getattr(settings, "RESEND_API_KEY", ""):
+            active_order.append("resend")
+        if getattr(settings, "SENDGRID_API_KEY", ""):
+            active_order.append("sendgrid")
+        active_order.extend(["hostinger", "smtp"])
+
+    return {
+        "mode": pref,
+        "active_order": active_order,
+        "primary_active": active_order[0] if active_order else "none",
+        "brevo": {
+            "configured": bool(brevo_key),
+            "key_preview": f"{brevo_key[:8]}...{brevo_key[-4:]}" if len(brevo_key) > 12 else ("Set" if brevo_key else "Not Set"),
+            "sender_email": brevo_sender,
+            "sender_name": brevo_name,
+            "available": _is_provider_available("brevo"),
+        },
+        "hostinger": {
+            "configured": bool(getattr(settings, "HOSTINGER_MAIL_API_KEY", "")),
+            "mailbox_id": getattr(settings, "HOSTINGER_MAILBOX_ID", ""),
+            "available": _is_provider_available("hostinger"),
+        },
+        "resend": {
+            "configured": bool(getattr(settings, "RESEND_API_KEY", "")),
+            "available": _is_provider_available("resend"),
+        },
+        "sendgrid": {
+            "configured": bool(getattr(settings, "SENDGRID_API_KEY", "")),
+            "available": _is_provider_available("sendgrid"),
+        },
+        "smtp": {
+            "configured": bool(getattr(settings, "SMTP_HOST", "") and getattr(settings, "SMTP_USER", "")),
+            "host": getattr(settings, "SMTP_HOST", ""),
+            "port": getattr(settings, "SMTP_PORT", 587),
+            "available": _is_provider_available("smtp"),
+        },
+    }

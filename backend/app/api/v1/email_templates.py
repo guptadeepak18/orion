@@ -18,7 +18,7 @@ from app.schemas.email_template import (
 )
 from app.services import email_template_service
 from app.services.email_template_ai_service import generate_email_template_with_ai
-from app.services.email_service import _send_via_hostinger_mail_api, send_custom_html_email
+from app.services.email_service import get_email_provider_status, send_custom_html_email
 from app.core.config import settings
 
 router = APIRouter(prefix="/email-templates", tags=["Email Notification Templates"])
@@ -153,6 +153,80 @@ async def preview_template(req: EmailTemplatePreviewRequest):
     )
 
 
+@router.get(
+    "/provider-status",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("system_settings", "view"))],
+)
+async def get_email_provider_info():
+    """Returns diagnostics and current availability status across all configured email providers."""
+    return ResponseEnvelope(data=get_email_provider_status())
+
+
+@router.post(
+    "/test-send",
+    response_model=ResponseEnvelope[dict],
+    dependencies=[Depends(require_permission("system_settings", "edit"))],
+)
+async def test_send_email_adhoc(req: EmailTemplateTestSendRequest):
+    """Sends a live test email directly using the active email provider cascade (Brevo, Resend, Hostinger, SMTP)."""
+    recipient = (req.recipient_email or "deepak.gupta@mile.education").strip()
+    subject_raw = req.subject or "Orion — Live Notification System Test"
+    html_raw = req.html_content or "<p>This is a live notification test from the Orion Academic Portal.</p>"
+
+    context = req.context_data or {
+        "full_name": "Deepak Gupta",
+        "student_name": "Deepak Gupta",
+        "faculty_name": "Prof. Deepak Gupta",
+        "recipient_name": "Deepak Gupta",
+        "prn_number": "26PGDM001",
+        "otp": "749201",
+        "expiry_minutes": "10",
+        "program_name": "PGDM - Post Graduate Diploma in Management",
+        "batch_name": "PGDM Batch 2026-2028",
+        "division_name": "Division A",
+        "subject_name": "Marketing Strategy & Operations",
+        "session_date": "15 Sep 2026",
+        "session_time": "10:00 AM - 12:00 PM",
+        "room_no": "Auditorium Hall 2",
+        "attendance_percentage": "68",
+        "threshold_percentage": "75",
+        "sessions_attended": "17",
+        "total_sessions": "25",
+        "title": "Live Notification Test",
+        "message": "This test verifies direct deliverability via active email provider.",
+        "action_url": "https://orion.mile.education/dashboard",
+        "action_button_text": "View Portal",
+        "rejection_reason": "N/A",
+        "login_url": "https://orion.mile.education/login",
+        "app_name": "Orion Portal",
+        "support_email": "deepak.gupta@mile.education",
+    }
+
+    rendered_sub = email_template_service.render_placeholders(subject_raw, context)
+    rendered_html = email_template_service.render_placeholders(html_raw, context)
+
+    success = send_custom_html_email(
+        to_email=recipient,
+        subject=f"[TEST PREVIEW] {rendered_sub}" if not rendered_sub.startswith("[TEST") else rendered_sub,
+        html_content=rendered_html,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to dispatch test email. Check server logs or Brevo / email provider API configuration.",
+        )
+
+    return ResponseEnvelope(
+        data={
+            "message": f"Test email successfully dispatched to {recipient}",
+            "recipient": recipient,
+            "subject": rendered_sub,
+        }
+    )
+
+
 @router.post(
     "/{template_id}/send-test",
     response_model=ResponseEnvelope[dict],
@@ -212,7 +286,7 @@ async def send_test_email(
     if not success:
         raise HTTPException(
             status_code=500,
-            detail="Failed to dispatch test email. Check server logs or Hostinger API configuration.",
+            detail="Failed to dispatch test email. Check server logs or Brevo / email provider configuration.",
         )
 
     return ResponseEnvelope(

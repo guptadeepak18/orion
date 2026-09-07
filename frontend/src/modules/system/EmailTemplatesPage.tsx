@@ -409,8 +409,8 @@ export const EmailTemplatesPage: React.FC = () => {
       });
       return res.data.data;
     },
-    onSuccess: () => {
-      setTestFeedback({ success: `Live test email dispatched to ${testRecipient} via Hostinger Mail API!` });
+    onSuccess: (data: any) => {
+      setTestFeedback({ success: data?.message || `Live test email dispatched successfully to ${testRecipient}!` });
     },
     onError: (err: any) => {
       setTestFeedback({ error: err.response?.data?.detail || 'Failed to send test email.' });
