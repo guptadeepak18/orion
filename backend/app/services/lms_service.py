@@ -41,7 +41,10 @@ class LMSService:
     async def get_enrolled_subjects(
         self, db: AsyncSession, user: User, program_id: Optional[uuid.UUID] = None, batch_id: Optional[uuid.UUID] = None
     ) -> List[EnrolledSubjectCard]:
-        is_student = any(r.name == "student" for r in user.roles) and not any(r.name in ["crc_admin", "crc_coordinator"] for r in user.roles)
+        user_roles = [r.name for r in user.roles]
+        is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in user_roles)
+        is_student = "student" in user_roles and not is_admin
+        is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in user_roles) and not is_admin
         student = await self.get_student_by_user(db, user) if is_student else None
 
         # Build query for subjects (exclude deleted and archived)
@@ -57,7 +60,25 @@ class LMSService:
             )
         )
 
-        if student:
+        if is_faculty:
+            from app.services.attendance_service import get_faculty_profile_id_by_user_id
+            fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, user.id)
+            if fac_id:
+                if fac_type == "external":
+                    query = query.where(
+                        Subject.batch_allocations.any(
+                            and_(SubjectBatch.faculty_external_id == fac_id, SubjectBatch.status == "active")
+                        )
+                    )
+                else:
+                    query = query.where(
+                        Subject.batch_allocations.any(
+                            and_(SubjectBatch.faculty_internal_id == fac_id, SubjectBatch.status == "active")
+                        )
+                    )
+            else:
+                return []
+        elif student:
             prog_id = student.program_id
             b_id = student.batch_id
 

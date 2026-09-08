@@ -304,35 +304,29 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
 
 async def get_faculty_dashboard_summary(db: AsyncSession, user_id: Optional[UUID] = None) -> FacultyDashboardSummaryResponse:
     from datetime import date
+    from app.services.attendance_service import get_faculty_profile_id_by_user_id
+    from app.models.academic import SubjectBatch
     today = date.today()
     faculty_internal = None
     faculty_external = None
+    fac_id = None
+    fac_type = "internal"
 
     if user_id:
-        res_int = await db.execute(
-            select(FacultyInternal).where(FacultyInternal.user_id == user_id, FacultyInternal.is_deleted == False)
-        )
-        faculty_internal = res_int.scalar_one_or_none()
-        if not faculty_internal:
-            res_ext = await db.execute(
-                select(FacultyExternal).where(FacultyExternal.user_id == user_id, FacultyExternal.is_deleted == False)
-            )
-            faculty_external = res_ext.scalar_one_or_none()
+        fac_id, resolved_type = await get_faculty_profile_id_by_user_id(db, user_id)
+        if fac_id:
+            fac_type = resolved_type or "internal"
+            if fac_type == "internal":
+                faculty_internal = (await db.execute(select(FacultyInternal).where(FacultyInternal.id == fac_id))).scalar_one_or_none()
+            else:
+                faculty_external = (await db.execute(select(FacultyExternal).where(FacultyExternal.id == fac_id))).scalar_one_or_none()
 
-    # Fallback to first active faculty if admin testing / previewing
-    if not faculty_internal and not faculty_external:
-        res_int = await db.execute(
-            select(FacultyInternal).where(FacultyInternal.is_deleted == False, FacultyInternal.is_active == True).limit(1)
-        )
-        faculty_internal = res_int.scalar_one_or_none()
-
-    fac_id = faculty_internal.id if faculty_internal else (faculty_external.id if faculty_external else None)
     fac_name = (faculty_internal.full_name or "Faculty") if faculty_internal else (faculty_external.name if faculty_external else "Faculty")
-    fac_type = "internal" if faculty_internal else "external"
 
     today_count = 0
     upcoming_count = 0
     hyper_count = 0
+    subjects_cnt = 0
 
     if fac_id:
         if fac_type == "internal":
@@ -366,6 +360,19 @@ async def get_faculty_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         )
         hyper_count = (await db.execute(stmt_hyp)).scalar() or 0
 
+        # Active allocated subjects count from SubjectBatch
+        if fac_type == "internal":
+            sub_stmt = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
+                SubjectBatch.faculty_internal_id == fac_id,
+                SubjectBatch.status == "active"
+            )
+        else:
+            sub_stmt = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
+                SubjectBatch.faculty_external_id == fac_id,
+                SubjectBatch.status == "active"
+            )
+        subjects_cnt = (await db.scalar(sub_stmt)) or 0
+
     # Upcoming events
     stmt_ev = select(func.count()).select_from(AcademicEvent).where(
         AcademicEvent.is_deleted == False,
@@ -373,8 +380,6 @@ async def get_faculty_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         AcademicEvent.status != "cancelled",
     )
     events_count = (await db.execute(stmt_ev)).scalar() or 0
-
-    subjects_cnt = len(getattr(faculty_internal, 'subjects_handled', []) or []) if faculty_internal else 0
 
     return FacultyDashboardSummaryResponse(
         faculty_id=str(fac_id) if fac_id else None,

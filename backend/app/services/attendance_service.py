@@ -58,6 +58,9 @@ async def get_faculty_profile_id_by_user_id(db: AsyncSession, user_id: UUID) -> 
     fi_res = await db.execute(fi_stmt)
     fi = fi_res.scalar_one_or_none()
     if fi:
+        if fi.user_id != user_id:
+            fi.user_id = user_id
+            await db.commit()
         return fi.id, "internal"
 
     # Check FacultyExternal
@@ -67,6 +70,9 @@ async def get_faculty_profile_id_by_user_id(db: AsyncSession, user_id: UUID) -> 
     fe_res = await db.execute(fe_stmt)
     fe = fe_res.scalar_one_or_none()
     if fe:
+        if fe.user_id != user_id:
+            fe.user_id = user_id
+            await db.commit()
         return fe.id, "external"
 
     return None, None

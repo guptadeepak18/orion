@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 
 from app.core.database import get_db
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.schemas.academic import (
     ProgramCreate, ProgramUpdate, ProgramResponse,
@@ -201,9 +201,30 @@ async def list_subjects(
     trimester: Optional[int] = Query(None),
     is_archived: Optional[bool] = Query(False),
     db: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_current_token_payload),
 ):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in roles)
+    is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in roles)
+
+    fac_id = None
+    fac_type = "internal"
+    if is_faculty and not is_admin and user_id:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        fac_id, resolved_type = await get_faculty_profile_id_by_user_id(db, user_id)
+        if not fac_id:
+            return ResponseEnvelope(data=[])
+        fac_type = resolved_type or "internal"
+
     subjects = await academic_service.list_subjects(
-        db, batch_id=batch_id, program_id=program_id, trimester=trimester, is_archived=is_archived
+        db,
+        batch_id=batch_id,
+        program_id=program_id,
+        trimester=trimester,
+        is_archived=is_archived,
+        faculty_id=fac_id,
+        faculty_type=fac_type,
     )
     return ResponseEnvelope(data=[SubjectResponse.model_validate(s) for s in subjects])
 

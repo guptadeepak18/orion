@@ -948,30 +948,32 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
   return (
     <div className="space-y-6">
       {/* Primary Navigation Tabs: Subjects Catalog vs Faculty Allocation */}
-      <div className="flex items-center space-x-2 border-b-2 border-slate-200 dark:border-slate-800 pb-3">
-        <button
-          onClick={() => handleSectionTabChange('subjects')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
-            activeSection === 'subjects'
-              ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <BookOpen className="h-4 w-4" /> Course Subjects Directory
-        </button>
-        <button
-          onClick={() => handleSectionTabChange('allocations')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
-            activeSection === 'allocations'
-              ? 'bg-indigo-600 dark:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Users className="h-4 w-4" /> Faculty-Subject Allocation
-        </button>
-      </div>
+      {canManageCurriculum && (
+        <div className="flex items-center space-x-2 border-b-2 border-slate-200 dark:border-slate-800 pb-3">
+          <button
+            onClick={() => handleSectionTabChange('subjects')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeSection === 'subjects'
+                ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <BookOpen className="h-4 w-4" /> Course Subjects Directory
+          </button>
+          <button
+            onClick={() => handleSectionTabChange('allocations')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeSection === 'allocations'
+                ? 'bg-indigo-600 dark:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Users className="h-4 w-4" /> Faculty-Subject Allocation
+          </button>
+        </div>
+      )}
 
-      {activeSection === 'allocations' ? (
+      {canManageCurriculum && activeSection === 'allocations' ? (
         <FacultySubjectAllocationTab />
       ) : (
         <>

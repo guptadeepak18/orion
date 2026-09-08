@@ -65,6 +65,19 @@ async def get_cohort_gradebook(
     current_user: User = Depends(get_current_user),
 ):
     """Returns the cohort gradebook matrix across all subjects and students (Faculty / Admin)."""
+    user_roles = [r.name for r in current_user.roles]
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in user_roles)
+    is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in user_roles)
+
+    fac_id = None
+    fac_type = "internal"
+    if is_faculty and not is_admin:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        fac_id, resolved_type = await get_faculty_profile_id_by_user_id(db, current_user.id)
+        if not fac_id:
+            return {"students": [], "subjects": [], "matrix": {}}
+        fac_type = resolved_type or "internal"
+
     return await gradebook_service.get_cohort_gradebook(
         db,
         program_id=program_id,
@@ -72,6 +85,8 @@ async def get_cohort_gradebook(
         division_id=division_id,
         subject_id=subject_id,
         search=search,
+        faculty_id=fac_id,
+        faculty_type=fac_type,
     )
 
 

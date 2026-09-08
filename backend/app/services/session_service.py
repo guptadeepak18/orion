@@ -5,7 +5,7 @@ from datetime import datetime, date, time, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, or_, func
+from sqlalchemy import select, update, or_, and_, func
 from sqlalchemy.orm import selectinload, joinedload
 
 logger = logging.getLogger(__name__)
@@ -421,6 +421,46 @@ async def notify_session_students(
 
         results = await asyncio.gather(*[_send_to_student(st) for st in eligible_students])
         dispatched_count = sum(1 for r in results if r)
+
+        # Also dispatch notification to the assigned faculty member
+        fac_email = None
+        if session.faculty_type == "internal" and session.faculty_internal and session.faculty_internal.email:
+            fac_email = session.faculty_internal.email.strip()
+        elif session.faculty_type == "external" and session.faculty_external and session.faculty_external.email:
+            fac_email = session.faculty_external.email.strip()
+
+        if fac_email:
+            fac_context = {
+                "recipient_name": fac_name,
+                "full_name": fac_name,
+                "subject_name": subj_name,
+                "subject_code": subj_code,
+                "faculty_name": fac_name,
+                "session_date": session_date_str,
+                "session_time": time_str,
+                "start_time": start_time_str,
+                "end_time": end_time_str,
+                "venue": session.venue or "Campus Classroom",
+                "batch_name": batch_name,
+                "division_name": "",
+                "app_name": "Orion Portal",
+                "support_email": "deepak.gupta@mile.education",
+                "class_type": class_type_label,
+                "header_title": header_title,
+                "intro_text": f"Dear Professor {fac_name}, this is an official notification regarding your class schedule:",
+                "activities_section": activities_section_html,
+                "reason": cancellation_reason or "Administrative timetable adjustment",
+            }
+            fac_sub = render_placeholders(raw_subject, fac_context)
+            fac_html = render_placeholders(raw_html, fac_context)
+            try:
+                sent = await asyncio.to_thread(send_custom_html_email, fac_email, fac_sub, fac_html)
+                if sent:
+                    logger.info(f"Dispatched faculty timetable alert [{event_key}] to {fac_email} for session {session.id}.")
+                    dispatched_count += 1
+            except Exception as ex:
+                logger.error(f"Error emailing faculty {fac_email} for session {session.id} [{event_key}]: {ex}")
+
         logger.info(f"Successfully dispatched {dispatched_count} timetable [{event_key}] notification email(s) for session '{subj_name}'.")
         return dispatched_count
 
@@ -911,7 +951,10 @@ async def list_sessions(
     db: AsyncSession,
     batch_id: Optional[UUID] = None,
     session_date: Optional[date] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    faculty_id: Optional[UUID] = None,
+    faculty_type: Optional[str] = None,
+    allocated_pairs: Optional[List[Tuple[UUID, UUID]]] = None,
 ) -> List[SessionResponse]:
     stmt = (
         select(Session)
@@ -935,6 +978,19 @@ async def list_sessions(
         stmt = stmt.where(Session.session_date == session_date)
     if status:
         stmt = stmt.where(Session.status == status)
+
+    if faculty_id:
+        faculty_conditions = []
+        if faculty_type == "external":
+            faculty_conditions.append(Session.faculty_external_id == faculty_id)
+        else:
+            faculty_conditions.append(Session.faculty_internal_id == faculty_id)
+
+        if allocated_pairs:
+            for s_id, b_id in allocated_pairs:
+                faculty_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+
+        stmt = stmt.where(or_(*faculty_conditions))
 
     stmt = stmt.order_by(Session.session_date, Session.start_time)
     res = await db.execute(stmt)

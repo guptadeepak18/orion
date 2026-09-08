@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.permissions import require_permission
+from uuid import UUID
+from app.core.permissions import require_permission, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.services import report_service
 
@@ -33,10 +34,27 @@ async def get_venue_utilization(db: AsyncSession = Depends(get_db)):
 @router.get(
     "/syllabus-completion",
     response_model=ResponseEnvelope[List[dict]],
-    dependencies=[Depends(require_permission("reports", "view"))],
+    dependencies=[Depends(require_permission("reports", "view_own"))],
 )
-async def get_syllabus_completion(db: AsyncSession = Depends(get_db)):
-    data = await report_service.get_syllabus_completion_index(db)
+async def get_syllabus_completion(
+    db: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_current_token_payload),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in roles)
+    is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in roles)
+
+    fac_id = None
+    fac_type = "internal"
+    if is_faculty and not is_admin and user_id:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        fac_id, resolved_type = await get_faculty_profile_id_by_user_id(db, user_id)
+        if not fac_id:
+            return ResponseEnvelope(data=[])
+        fac_type = resolved_type or "internal"
+
+    data = await report_service.get_syllabus_completion_index(db, faculty_id=fac_id, faculty_type=fac_type)
     return ResponseEnvelope(data=data)
 
 

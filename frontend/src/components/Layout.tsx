@@ -87,8 +87,6 @@ const navCategories: NavCategory[] = [
         roles: [
           'crc_admin',
           'crc_coordinator',
-          'faculty_internal',
-          'faculty_external',
           'finance',
           'approver',
           'reporting_readonly',
@@ -147,8 +145,6 @@ const navCategories: NavCategory[] = [
         roles: [
           'crc_admin',
           'crc_coordinator',
-          'faculty_internal',
-          'faculty_external',
           'finance',
           'approver',
           'reporting_readonly',
@@ -161,8 +157,6 @@ const navCategories: NavCategory[] = [
         roles: [
           'crc_admin',
           'crc_coordinator',
-          'faculty_internal',
-          'faculty_external',
           'approver',
           'reporting_readonly',
         ],
@@ -240,7 +234,6 @@ const navCategories: NavCategory[] = [
         roles: [
           'crc_admin',
           'crc_coordinator',
-          'faculty_internal',
           'finance',
           'approver',
           'reporting_readonly',
@@ -964,7 +957,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1">{children}</div>
 
         {/* Operational Copilot Drawer */}
-        <CopilotDrawer />
+        {(userRoles.includes('crc_admin') || userRoles.includes('crc_coordinator')) && (
+          <CopilotDrawer />
+        )}
       </main>
     </div>
   );

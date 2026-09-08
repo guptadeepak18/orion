@@ -60,8 +60,32 @@ async def get_venue_utilization_matrix(db: AsyncSession) -> List[Dict[str, Any]]
     return report
 
 
-async def get_syllabus_completion_index(db: AsyncSession) -> List[Dict[str, Any]]:
+async def get_syllabus_completion_index(
+    db: AsyncSession,
+    faculty_id: Optional[UUID] = None,
+    faculty_type: Optional[str] = "internal",
+) -> List[Dict[str, Any]]:
+    from app.models.academic import SubjectBatch
     stmt = select(Subject).where(Subject.is_deleted == False)
+    if faculty_id:
+        if faculty_type == "external":
+            stmt = stmt.where(
+                Subject.id.in_(
+                    select(SubjectBatch.subject_id).where(
+                        SubjectBatch.faculty_external_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                )
+            )
+        else:
+            stmt = stmt.where(
+                Subject.id.in_(
+                    select(SubjectBatch.subject_id).where(
+                        SubjectBatch.faculty_internal_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                )
+            )
     res = await db.execute(stmt)
     subjects = res.scalars().all()
 

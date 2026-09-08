@@ -633,6 +633,8 @@ class GradebookService:
         division_id: Optional[uuid.UUID] = None,
         subject_id: Optional[uuid.UUID] = None,
         search: Optional[str] = None,
+        faculty_id: Optional[uuid.UUID] = None,
+        faculty_type: Optional[str] = "internal",
     ) -> Dict[str, Any]:
         """Gathers master cohort matrix for Faculty/Admin view."""
         # Query students
@@ -660,11 +662,31 @@ class GradebookService:
 
         # Selected subject or all subjects (with batch allocation awareness)
         if subject_id:
-            subj_res = await db.execute(
+            subj_query = (
                 select(Subject)
                 .where(Subject.id == subject_id)
                 .options(selectinload(Subject.batch_allocations))
             )
+            if faculty_id:
+                if faculty_type == "external":
+                    subj_query = subj_query.where(
+                        Subject.id.in_(
+                            select(SubjectBatch.subject_id).where(
+                                SubjectBatch.faculty_external_id == faculty_id,
+                                SubjectBatch.status == "active"
+                            )
+                        )
+                    )
+                else:
+                    subj_query = subj_query.where(
+                        Subject.id.in_(
+                            select(SubjectBatch.subject_id).where(
+                                SubjectBatch.faculty_internal_id == faculty_id,
+                                SubjectBatch.status == "active"
+                            )
+                        )
+                    )
+            subj_res = await db.execute(subj_query)
             target_subjects = list(subj_res.scalars().all())
             # If batch_id was not explicitly specified, constrain students strictly to the subject's allocated batch(es)
             if not batch_id and target_subjects:
@@ -677,12 +699,48 @@ class GradebookService:
                     res = await db.execute(stmt)
                     students = list(res.scalars().all())
         else:
-            subj_res = await db.execute(
+            subj_query = (
                 select(Subject)
                 .where(Subject.is_archived == False, Subject.is_deleted == False)
                 .options(selectinload(Subject.batch_allocations))
                 .order_by(Subject.name.asc())
             )
+            if faculty_id:
+                if faculty_type == "external":
+                    subj_query = subj_query.where(
+                        Subject.id.in_(
+                            select(SubjectBatch.subject_id).where(
+                                SubjectBatch.faculty_external_id == faculty_id,
+                                SubjectBatch.status == "active"
+                            )
+                        )
+                    )
+                    alloc_b_stmt = select(SubjectBatch.batch_id).where(
+                        SubjectBatch.faculty_external_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                else:
+                    subj_query = subj_query.where(
+                        Subject.id.in_(
+                            select(SubjectBatch.subject_id).where(
+                                SubjectBatch.faculty_internal_id == faculty_id,
+                                SubjectBatch.status == "active"
+                            )
+                        )
+                    )
+                    alloc_b_stmt = select(SubjectBatch.batch_id).where(
+                        SubjectBatch.faculty_internal_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                if not batch_id:
+                    fac_batch_ids = list((await db.execute(alloc_b_stmt)).scalars().all())
+                    if fac_batch_ids:
+                        stmt = stmt.where(Student.batch_id.in_(fac_batch_ids))
+                        res = await db.execute(stmt)
+                        students = list(res.scalars().all())
+                    else:
+                        students = []
+            subj_res = await db.execute(subj_query)
             target_subjects = list(subj_res.scalars().all())
 
         # Pre-fetch activities and submissions

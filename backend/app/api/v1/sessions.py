@@ -71,20 +71,50 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     payload=Depends(get_current_token_payload),
 ):
-    # Smart Guard: Resolve batch_id if student is accessing
     user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in roles)
+    is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in roles)
     
     # Check if user is a student and try to force their batch_id
     from app.models.student import Student
     from sqlalchemy import select
     
-    if not batch_id and user_id:
+    if not is_admin and not is_faculty and not batch_id and user_id:
         student_res = await db.execute(select(Student).where(Student.user_id == user_id))
         student = student_res.scalar_one_or_none()
         if student:
             batch_id = student.batch_id
 
-    sessions = await session_service.list_sessions(db, batch_id, session_date, status)
+    fac_id = None
+    fac_type = None
+    allocated_pairs = None
+
+    if is_faculty and not is_admin and user_id:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        from app.models.academic import SubjectBatch
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, user_id)
+        if fac_id:
+            if fac_type == "internal":
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_internal_id == fac_id, SubjectBatch.status == "active"
+                )
+            else:
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_external_id == fac_id, SubjectBatch.status == "active"
+                )
+            alloc_res = await db.execute(alloc_stmt)
+            allocated_pairs = alloc_res.all()
+
+    sessions = await session_service.list_sessions(
+        db,
+        batch_id=batch_id,
+        session_date=session_date,
+        status=status,
+        faculty_id=fac_id,
+        faculty_type=fac_type,
+        allocated_pairs=allocated_pairs,
+    )
     return ResponseEnvelope(data=sessions)
 
 

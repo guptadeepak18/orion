@@ -162,7 +162,8 @@ def require_permission(module: str, required_level: str) -> Callable:
                 has_permission = True
                 break
             
-            user_level_str = ROLE_PERMISSIONS.get(role, {}).get(module, "none")
+            role_dict = ROLE_PERMISSIONS.get(role, {})
+            user_level_str = role_dict.get(module) or (role_dict.get("reporting") if module == "reports" else None) or "none"
             user_numeric = PERMISSION_LEVELS.get(user_level_str, 0)
             
             if user_numeric >= req_numeric:

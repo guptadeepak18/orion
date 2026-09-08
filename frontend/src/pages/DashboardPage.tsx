@@ -455,7 +455,11 @@ export const DashboardPage: React.FC = () => {
   const facultyTodayClasses = useMemo(() => {
     return sessions.filter((s) => {
       if (s.session_date !== todayIso || s.status === 'cancelled') return false;
-      if (!facultySummary?.faculty_id) return true;
+      if (!facultySummary?.faculty_id) {
+        return (
+          s.faculty_name?.toLowerCase() === getDisplayName().toLowerCase()
+        );
+      }
       return (
         s.faculty_internal_id === facultySummary.faculty_id ||
         s.faculty_external_id === facultySummary.faculty_id ||
@@ -474,7 +478,11 @@ export const DashboardPage: React.FC = () => {
 
   const facultyUpcomingClasses = useMemo(() => {
     return upcomingClassesList.filter((s) => {
-      if (!facultySummary?.faculty_id) return true;
+      if (!facultySummary?.faculty_id) {
+        return (
+          s.faculty_name?.toLowerCase() === getDisplayName().toLowerCase()
+        );
+      }
       return (
         s.faculty_internal_id === facultySummary.faculty_id ||
         s.faculty_external_id === facultySummary.faculty_id ||
@@ -1675,14 +1683,14 @@ export const DashboardPage: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/students"
-                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-sky-500/50 hover:bg-sky-50/30 dark:hover:bg-sky-950/20 text-center transition-all group"
+                  to="/gradebook"
+                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 text-center transition-all group"
                 >
-                  <div className="h-10 w-10 mx-auto rounded-xl bg-sky-100 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                    <GraduationCap className="h-5 w-5" />
+                  <div className="h-10 w-10 mx-auto rounded-xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                    <Award className="h-5 w-5" />
                   </div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Student Roster</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Cohorts & Profiles</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Cohort Gradebook</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Evaluations & Marks</p>
                 </Link>
 
                 <Link
@@ -1697,14 +1705,14 @@ export const DashboardPage: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/reports"
-                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 hover:bg-amber-50/30 dark:hover:bg-amber-950/20 text-center transition-all group"
+                  to="/attendance"
+                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 text-center transition-all group"
                 >
-                  <div className="h-10 w-10 mx-auto rounded-xl bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                    <FileText className="h-5 w-5" />
+                  <div className="h-10 w-10 mx-auto rounded-xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                    <CheckCircle2 className="h-5 w-5" />
                   </div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Academic Reports</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Attendance Dossiers</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Attendance Register</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Sessions & Debarment</p>
                 </Link>
               </div>
             </Card>

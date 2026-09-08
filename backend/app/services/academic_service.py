@@ -1,9 +1,12 @@
+import logging
 from datetime import date
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.core.cache import memory_cache
 from app.models.academic import Program, AcademicYear, Semester, Batch, Subject, Topic, Division, SubjectProgram, SubjectBatch
@@ -284,8 +287,10 @@ async def list_subjects(
     program_id: Optional[UUID] = None,
     trimester: Optional[int] = None,
     is_archived: Optional[bool] = False,
+    faculty_id: Optional[UUID] = None,
+    faculty_type: Optional[str] = "internal",
 ) -> List[Subject]:
-    cache_key = f"academic:subjects:{batch_id}:{program_id}:{trimester}:{is_archived}"
+    cache_key = f"academic:subjects:{batch_id}:{program_id}:{trimester}:{is_archived}:{faculty_id}:{faculty_type}"
     cached = memory_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -301,6 +306,26 @@ async def list_subjects(
 
     if is_archived is not None:
         stmt = stmt.where(Subject.is_archived == is_archived)
+
+    if faculty_id:
+        if faculty_type == "external":
+            stmt = stmt.where(
+                Subject.id.in_(
+                    select(SubjectBatch.subject_id).where(
+                        SubjectBatch.faculty_external_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                )
+            )
+        else:
+            stmt = stmt.where(
+                Subject.id.in_(
+                    select(SubjectBatch.subject_id).where(
+                        SubjectBatch.faculty_internal_id == faculty_id,
+                        SubjectBatch.status == "active"
+                    )
+                )
+            )
 
     if batch_id:
         stmt = stmt.where(
@@ -783,7 +808,37 @@ async def create_faculty_subject_allocation(
 
     # Return formatted single record
     all_list = await list_faculty_subject_allocations(db, subject_id=alloc_in.subject_id, batch_id=alloc_in.batch_id)
-    return all_list[0] if all_list else {"id": target.id, "subject_id": target.subject_id, "batch_id": target.batch_id}
+    result = all_list[0] if all_list else {"id": target.id, "subject_id": target.subject_id, "batch_id": target.batch_id}
+
+    # Dispatch faculty allocation email notification
+    if all_list:
+        alloc_item = all_list[0]
+        f_email = alloc_item.get("faculty_email")
+        if f_email:
+            try:
+                from app.services.email_template_service import trigger_activity_email
+                context = {
+                    "faculty_name": alloc_item.get("faculty_name") or "Professor",
+                    "subject_name": alloc_item.get("subject_name") or "Course",
+                    "subject_code": alloc_item.get("subject_code") or "",
+                    "batch_name": alloc_item.get("batch_name") or "Cohort",
+                    "program_name": alloc_item.get("program_name") or "Academic Program",
+                    "total_sessions": alloc_item.get("total_hours") or 30,
+                    "credits": alloc_item.get("credits") or 3,
+                    "app_name": "Orion Portal",
+                    "support_email": "deepak.gupta@mile.education",
+                }
+                await trigger_activity_email(
+                    db=db,
+                    event_key="faculty_engagement_allocated",
+                    recipient_email=f_email,
+                    context=context,
+                )
+                logger.info(f"Dispatched faculty allocation notification email to {f_email} for subject {alloc_item.get('subject_name')}.")
+            except Exception as ex:
+                logger.error(f"Failed to dispatch allocation notification email to {f_email}: {ex}")
+
+    return result
 
 
 async def update_faculty_subject_allocation(
@@ -804,7 +859,37 @@ async def update_faculty_subject_allocation(
     await db.refresh(target)
 
     all_list = await list_faculty_subject_allocations(db, subject_id=target.subject_id, batch_id=target.batch_id)
-    return all_list[0] if all_list else {"id": target.id}
+    result = all_list[0] if all_list else {"id": target.id}
+
+    # Dispatch faculty allocation email notification if active
+    if all_list and getattr(target, "status", "active") == "active":
+        alloc_item = all_list[0]
+        f_email = alloc_item.get("faculty_email")
+        if f_email:
+            try:
+                from app.services.email_template_service import trigger_activity_email
+                context = {
+                    "faculty_name": alloc_item.get("faculty_name") or "Professor",
+                    "subject_name": alloc_item.get("subject_name") or "Course",
+                    "subject_code": alloc_item.get("subject_code") or "",
+                    "batch_name": alloc_item.get("batch_name") or "Cohort",
+                    "program_name": alloc_item.get("program_name") or "Academic Program",
+                    "total_sessions": alloc_item.get("total_hours") or 30,
+                    "credits": alloc_item.get("credits") or 3,
+                    "app_name": "Orion Portal",
+                    "support_email": "deepak.gupta@mile.education",
+                }
+                await trigger_activity_email(
+                    db=db,
+                    event_key="faculty_engagement_allocated",
+                    recipient_email=f_email,
+                    context=context,
+                )
+                logger.info(f"Dispatched faculty allocation update email to {f_email} for subject {alloc_item.get('subject_name')}.")
+            except Exception as ex:
+                logger.error(f"Failed to dispatch allocation update email to {f_email}: {ex}")
+
+    return result
 
 
 async def delete_faculty_subject_allocation(db: AsyncSession, alloc_id: UUID) -> bool:
