@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from datetime import datetime, timezone, date, time
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -1421,9 +1422,39 @@ async def _apply_attendance_correction(db: AsyncSession, corr: AttendanceCorrect
                 if not v_rec.challenge_key_entered:
                     v_rec.challenge_key_entered = "DISPUTE_APPROVED"
 
-    # Recalculate automatic batch attendance %
+    # Recalculate automatic batch attendance % asynchronously in the background
     if corr.session and corr.session.batch_id:
-        await recalculate_batch_student_attendance(db, corr.session.batch_id)
+        batch_id = corr.session.batch_id
+        asyncio.create_task(_async_recalculate_batch_job(batch_id))
+
+
+async def _async_recalculate_batch_job(batch_id: UUID):
+    from app.core.database import AsyncSessionLocal
+    from app.services.session_service import recalculate_batch_student_attendance
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await recalculate_batch_student_attendance(bg_db, batch_id)
+            await bg_db.commit()
+    except Exception as e:
+        logger.error(f"Async batch attendance recalculation failed for batch {batch_id}: {e}")
+
+
+async def _async_dispatch_dispute_email_job(
+    event_key: str,
+    recipient_email: str,
+    context: Dict[str, Any],
+):
+    from app.core.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await trigger_activity_email(
+                db=bg_db,
+                event_key=event_key,
+                recipient_email=recipient_email,
+                context=context,
+            )
+    except Exception as e:
+        logger.error(f"Async dispute email dispatch failed for '{event_key}' to {recipient_email}: {e}")
 
 
 async def _dispatch_dispute_email(
@@ -1433,7 +1464,8 @@ async def _dispatch_dispute_email(
     context_extra: Optional[Dict[str, Any]] = None,
 ):
     """
-    Safely dispatches dispute lifecycle emails to the student and faculty.
+    Safely dispatches dispute lifecycle emails asynchronously in the background
+    without blocking the API response.
     """
     try:
         student = corr.student
@@ -1472,16 +1504,13 @@ async def _dispatch_dispute_email(
         if context_extra:
             context.update(context_extra)
 
-        # 1. Dispatch to Student
+        # 1. Non-blocking background dispatch to Student
         if student_email:
-            await trigger_activity_email(
-                db=db,
-                event_key=event_key,
-                recipient_email=student_email,
-                context=context,
+            asyncio.create_task(
+                _async_dispatch_dispute_email_job(event_key, student_email, dict(context))
             )
 
-        # 2. Dispatch to Faculty on initial submission or when admin reviewed first (Non-HyperBuild disputes only)
+        # 2. Non-blocking background dispatch to Faculty on initial submission or when admin reviewed first (Non-HyperBuild disputes only)
         is_hb_corr = (
             corr.faculty_action == "not_applicable"
             or (session and (session.session_type == "hyperbuild" or (session.venue and "hyperbuild" in session.venue.lower())))
@@ -1490,23 +1519,17 @@ async def _dispatch_dispute_email(
         if not is_hb_corr:
             if event_key == "attendance_dispute_submitted" and faculty_email:
                 fac_ctx = dict(context)
-                await trigger_activity_email(
-                    db=db,
-                    event_key=event_key,
-                    recipient_email=faculty_email,
-                    context=fac_ctx,
+                asyncio.create_task(
+                    _async_dispatch_dispute_email_job(event_key, faculty_email, fac_ctx)
                 )
             elif event_key == "attendance_dispute_admin_reviewed" and faculty_email:
                 fac_ctx = dict(context)
                 fac_ctx["next_step_message"] = "Administrative review has been completed. Your faculty review is required to finalize the dispute."
-                await trigger_activity_email(
-                    db=db,
-                    event_key=event_key,
-                    recipient_email=faculty_email,
-                    context=fac_ctx,
+                asyncio.create_task(
+                    _async_dispatch_dispute_email_job(event_key, faculty_email, fac_ctx)
                 )
     except Exception as e:
-        logger.error(f"Failed to dispatch dispute email '{event_key}': {e}")
+        logger.error(f"Failed to schedule dispute email '{event_key}': {e}")
 
 
 async def review_attendance_correction_faculty(

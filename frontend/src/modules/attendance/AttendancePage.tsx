@@ -877,25 +877,53 @@ export const AttendancePage: React.FC = () => {
     },
   });
 
-  // Dual review mutations
+  // Dual review mutations with instant optimistic updates
   const facultyReviewMutation = useMutation({
     mutationFn: async ({ id, action, remarks }: { id: string; action: string; remarks?: string }) => {
       const res = await api.post(`/attendance/corrections/${id}/faculty-review`, { action, remarks });
       return res.data.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['attendance_corrections_list'] });
-      queryClient.invalidateQueries({ queryKey: ['attendance_allocated_sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['session_attendance_sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['subject_attendance_matrix'] });
-      queryClient.invalidateQueries({ queryKey: ['student_attendance_dossier'] });
-      queryClient.invalidateQueries({ queryKey: ['debarment_risk'] });
-      queryClient.invalidateQueries({ queryKey: ['class_attendance_register'] });
-      queryClient.invalidateQueries({ queryKey: ['daily_student_class_ledger'] });
+    onMutate: async ({ id, action }) => {
+      await queryClient.cancelQueries({ queryKey: ['attendance_corrections_list'] });
+      const previousCorrections = queryClient.getQueriesData({ queryKey: ['attendance_corrections_list'] });
+
+      queryClient.setQueriesData({ queryKey: ['attendance_corrections_list'] }, (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((item: any) => {
+          if (item.id === id) {
+            const isDualApproved = action === 'approved' && item.admin_action === 'approved';
+            return {
+              ...item,
+              faculty_action: action,
+              status: isDualApproved ? 'approved' : action === 'rejected' ? 'rejected' : 'pending_admin_approval',
+            };
+          }
+          return item;
+        });
+      });
+
       setReviewingCorrection(null);
+      return { previousCorrections };
     },
-    onError: (err: any) => {
+    onSuccess: (updatedItem) => {
+      queryClient.setQueriesData({ queryKey: ['attendance_corrections_list'] }, (old: any) => {
+        if (!Array.isArray(old) || !updatedItem) return old;
+        return old.map((item: any) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item));
+      });
+      if (selectedSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['session_attendance_sheet', selectedSessionId] });
+      }
+    },
+    onError: (err: any, _vars, context: any) => {
+      if (context?.previousCorrections) {
+        context.previousCorrections.forEach(([queryKey, data]: any) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
       setReviewError(err?.response?.data?.detail || 'Failed to review request.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['attendance_corrections_list'] });
     },
   });
 
@@ -904,19 +932,48 @@ export const AttendancePage: React.FC = () => {
       const res = await api.post(`/attendance/corrections/${id}/admin-review`, { action, remarks });
       return res.data.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['attendance_corrections_list'] });
-      queryClient.invalidateQueries({ queryKey: ['attendance_allocated_sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['session_attendance_sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['subject_attendance_matrix'] });
-      queryClient.invalidateQueries({ queryKey: ['student_attendance_dossier'] });
-      queryClient.invalidateQueries({ queryKey: ['debarment_risk'] });
-      queryClient.invalidateQueries({ queryKey: ['class_attendance_register'] });
-      queryClient.invalidateQueries({ queryKey: ['daily_student_class_ledger'] });
+    onMutate: async ({ id, action }) => {
+      await queryClient.cancelQueries({ queryKey: ['attendance_corrections_list'] });
+      const previousCorrections = queryClient.getQueriesData({ queryKey: ['attendance_corrections_list'] });
+
+      queryClient.setQueriesData({ queryKey: ['attendance_corrections_list'] }, (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((item: any) => {
+          if (item.id === id) {
+            const isSingleTier = item.faculty_action === 'not_applicable' || item.subject_name === 'HyperBuild Session';
+            const isDualApproved = action === 'approved' && (isSingleTier || item.faculty_action === 'approved');
+            return {
+              ...item,
+              admin_action: action,
+              status: isDualApproved ? 'approved' : action === 'rejected' ? 'rejected' : 'pending_faculty_approval',
+            };
+          }
+          return item;
+        });
+      });
+
       setReviewingCorrection(null);
+      return { previousCorrections };
     },
-    onError: (err: any) => {
+    onSuccess: (updatedItem) => {
+      queryClient.setQueriesData({ queryKey: ['attendance_corrections_list'] }, (old: any) => {
+        if (!Array.isArray(old) || !updatedItem) return old;
+        return old.map((item: any) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item));
+      });
+      if (selectedSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['session_attendance_sheet', selectedSessionId] });
+      }
+    },
+    onError: (err: any, _vars, context: any) => {
+      if (context?.previousCorrections) {
+        context.previousCorrections.forEach(([queryKey, data]: any) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
       setReviewError(err?.response?.data?.detail || 'Failed to review request.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['attendance_corrections_list'] });
     },
   });
 
