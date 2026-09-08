@@ -1,3 +1,4 @@
+import asyncio
 import math
 import random
 import string
@@ -5,7 +6,7 @@ import uuid
 from datetime import datetime, date, time, timedelta, timezone
 from typing import List, Optional, Tuple, Dict, Any
 
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import select, and_, or_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
@@ -254,6 +255,39 @@ async def get_hyperbuild_session_details(
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist).replace(tzinfo=None)
 
+    act_ids = [act.id for act in activities]
+
+    # Pre-fetch student verifications in a single batch query if student is present
+    student_verifs_map: Dict[uuid.UUID, HyperbuildActivityVerification] = {}
+    if student and act_ids:
+        v_stmt = select(HyperbuildActivityVerification).where(
+            HyperbuildActivityVerification.activity_id.in_(act_ids),
+            HyperbuildActivityVerification.student_id == student.id,
+            HyperbuildActivityVerification.is_deleted == False,
+        )
+        v_res = await db.execute(v_stmt)
+        for v_rec in v_res.scalars().all():
+            student_verifs_map[v_rec.activity_id] = v_rec
+
+    # Pre-aggregate verified count for all activities in a single query
+    verified_counts_map: Dict[uuid.UUID, int] = {}
+    if act_ids:
+        cnt_stmt = (
+            select(
+                HyperbuildActivityVerification.activity_id,
+                func.count(HyperbuildActivityVerification.id)
+            )
+            .where(
+                HyperbuildActivityVerification.activity_id.in_(act_ids),
+                HyperbuildActivityVerification.is_key_valid == True,
+                HyperbuildActivityVerification.is_deleted == False,
+            )
+            .group_by(HyperbuildActivityVerification.activity_id)
+        )
+        cnt_res = await db.execute(cnt_stmt)
+        for act_id, count_val in cnt_res.all():
+            verified_counts_map[act_id] = count_val
+
     for act in activities:
         is_elig = True
         elig_reason = None
@@ -262,24 +296,12 @@ async def get_hyperbuild_session_details(
 
         if student:
             is_elig, elig_reason = is_student_eligible_for_subject(student, act.subject)
-            v_stmt = select(HyperbuildActivityVerification).where(
-                HyperbuildActivityVerification.activity_id == act.id,
-                HyperbuildActivityVerification.student_id == student.id,
-                HyperbuildActivityVerification.is_deleted == False,
-            )
-            v_res = await db.execute(v_stmt)
-            v_rec = v_res.scalar_one_or_none()
+            v_rec = student_verifs_map.get(act.id)
             if v_rec:
                 is_verif = v_rec.is_key_valid
                 verif_status = v_rec.verification_status
 
-        cnt_stmt = select(HyperbuildActivityVerification).where(
-            HyperbuildActivityVerification.activity_id == act.id,
-            HyperbuildActivityVerification.is_key_valid == True,
-            HyperbuildActivityVerification.is_deleted == False,
-        )
-        cnt_res = await db.execute(cnt_stmt)
-        verified_cnt = len(cnt_res.scalars().all())
+        verified_cnt = verified_counts_map.get(act.id, 0)
 
         is_open, open_until, _ = is_activity_submission_open(act, sess)
 
@@ -354,10 +376,10 @@ async def trigger_activity_challenge_key(
     activity_id: uuid.UUID,
     validity_seconds: int = 180,
     faculty_user: Optional[User] = None,
+    custom_key: Optional[str] = None,
 ) -> HyperbuildChallengeKeyTriggerResponse:
     stmt = (
         select(HyperbuildActivity)
-        .options(joinedload(HyperbuildActivity.session))
         .where(HyperbuildActivity.id == activity_id)
     )
     res = await db.execute(stmt)
@@ -365,7 +387,11 @@ async def trigger_activity_challenge_key(
     if not act:
         raise ValueError("Activity not found")
 
-    key = generate_challenge_key(3)
+    if custom_key and len(custom_key.strip()) >= 3:
+        key = custom_key.strip().upper()[:6]
+    else:
+        key = generate_challenge_key(3)
+
     now_utc = datetime.now(timezone.utc)
     active_until = now_utc + timedelta(seconds=validity_seconds)
 
@@ -386,19 +412,21 @@ async def trigger_activity_challenge_key(
     db.add(audit_log)
 
     await db.commit()
-    await db.refresh(act)
 
-    await broadcast_session_event(
-        act.session_id,
-        "challenge_key_triggered",
-        {
-            "activity_id": str(act.id),
-            "activity_no": act.activity_no,
-            "title": act.title,
-            "challenge_key": key,
-            "active_until": active_until.isoformat(),
-            "active_seconds": validity_seconds,
-        },
+    # Dispatch WebSocket broadcast in background task without delaying HTTP response
+    asyncio.create_task(
+        broadcast_session_event(
+            act.session_id,
+            "challenge_key_triggered",
+            {
+                "activity_id": str(act.id),
+                "activity_no": act.activity_no,
+                "title": act.title,
+                "challenge_key": key,
+                "active_until": active_until.isoformat(),
+                "active_seconds": validity_seconds,
+            },
+        )
     )
 
     return HyperbuildChallengeKeyTriggerResponse(

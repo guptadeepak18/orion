@@ -82,11 +82,18 @@ async def get_session_activities_endpoint(
 async def trigger_challenge_key_endpoint(
     activity_id: uuid.UUID,
     validity_seconds: int = Query(180, ge=15, le=600),
+    custom_key: Optional[str] = Query(None, description="Optional client-generated key for 0ms latency display"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return await trigger_activity_challenge_key(db, activity_id, validity_seconds=validity_seconds, faculty_user=current_user)
+        return await trigger_activity_challenge_key(
+            db,
+            activity_id,
+            validity_seconds=validity_seconds,
+            faculty_user=current_user,
+            custom_key=custom_key,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

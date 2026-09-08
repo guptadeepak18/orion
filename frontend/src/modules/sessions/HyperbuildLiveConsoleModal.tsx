@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, KeyRound, Users, RefreshCw, CheckCircle2,
@@ -8,6 +8,15 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
+
+const generateFastKey = () => {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < 3; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
 
 interface HyperbuildLiveConsoleModalProps {
   session: any;
@@ -19,6 +28,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'roster' | 'submissions'>('roster');
   const [keyRemainingSeconds, setKeyRemainingSeconds] = useState<number>(0);
+  const [localChallengeKey, setLocalChallengeKey] = useState<string | null>(null);
   const [showAuditLogs, setShowAuditLogs] = useState(false);
   const [showLockModal, setShowLockModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
@@ -38,8 +48,22 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   const [manualScoreInput, setManualScoreInput] = useState<string>('');
   const [manualFeedbackInput, setManualFeedbackInput] = useState<string>('');
 
+  // Clear local challenge key when activity changes
+  useEffect(() => {
+    setLocalChallengeKey(null);
+  }, [selectedActivityId]);
+
   // Real-time WebSocket connection for instant classroom pushes
-  const { isConnected: isWsLive } = useSessionWebSocket(session?.id);
+  const handleWsEvent = useCallback((event: any) => {
+    if (event.type === 'challenge_key_triggered' && event.data) {
+      if (event.data.activity_id === selectedActivityId || !selectedActivityId) {
+        setLocalChallengeKey(event.data.challenge_key);
+        setKeyRemainingSeconds(event.data.active_seconds || 180);
+      }
+    }
+  }, [selectedActivityId]);
+
+  const { isConnected: isWsLive } = useSessionWebSocket(session?.id, handleWsEvent);
 
   // 1. Fetch Session Hyperbuild Details
   const { data: sessionDetails, isLoading, refetch: refetchDetails } = useQuery({
@@ -62,6 +86,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   }, [sessionDetails, selectedActivityId]);
 
   const currentActivity = sessionDetails?.activities?.find((a: any) => a.id === selectedActivityId);
+  const effectiveChallengeKey = localChallengeKey || currentActivity?.challenge_key;
 
   // 2. Fetch Live Roster for Selected Activity
   const { data: rosterData, refetch: refetchRoster } = useQuery({
@@ -161,17 +186,68 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
   // 9. Trigger 180s Challenge Key Mutation
   const triggerKeyMutation = useMutation({
-    mutationFn: async (activityId: string) => {
-      const res = await api.post(`/hyperbuild/activities/${activityId}/trigger-key?validity_seconds=180`);
+    mutationFn: async ({ activityId, customKey }: { activityId: string; customKey?: string }) => {
+      const url = `/hyperbuild/activities/${activityId}/trigger-key?validity_seconds=180${customKey ? `&custom_key=${encodeURIComponent(customKey)}` : ''}`;
+      const res = await api.post(url);
       return res.data;
     },
-    onSuccess: () => {
-      setKeyRemainingSeconds(180);
-      refetchDetails();
+    onSuccess: (data) => {
+      if (data?.challenge_key) {
+        setLocalChallengeKey(data.challenge_key);
+        setKeyRemainingSeconds(data.active_seconds || 180);
+        queryClient.setQueryData(['hyperbuild-details', session.id], (old: any) => {
+          if (!old?.activities) return old;
+          return {
+            ...old,
+            activities: old.activities.map((a: any) =>
+              a.id === data.activity_id
+                ? {
+                    ...a,
+                    challenge_key: data.challenge_key,
+                    challenge_key_active_until: data.active_until,
+                    status: 'active',
+                  }
+                : a
+            ),
+          };
+        });
+      }
       refetchRoster();
-      refetchAudit();
+      if (showAuditLogs) refetchAudit();
+    },
+    onError: () => {
+      setLocalChallengeKey(null);
+      refetchDetails();
     },
   });
+
+  const handleTriggerKey = (activityId: string) => {
+    const fastKey = generateFastKey();
+    // 1. Instant 0ms local display on screen
+    setLocalChallengeKey(fastKey);
+    setKeyRemainingSeconds(180);
+
+    // 2. Optimistically update TanStack Query cache so any listener gets it immediately
+    queryClient.setQueryData(['hyperbuild-details', session.id], (old: any) => {
+      if (!old?.activities) return old;
+      return {
+        ...old,
+        activities: old.activities.map((a: any) =>
+          a.id === activityId
+            ? {
+                ...a,
+                challenge_key: fastKey,
+                challenge_key_active_until: new Date(Date.now() + 180000).toISOString(),
+                status: 'active',
+              }
+            : a
+        ),
+      };
+    });
+
+    // 3. Fire mutation to sync with backend
+    triggerKeyMutation.mutate({ activityId, customKey: fastKey });
+  };
 
   // 10. Extend Window Mutation
   const extendWindowMutation = useMutation({
@@ -260,24 +336,39 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
   // Synchronize key countdown timer with active_until
   useEffect(() => {
+    if (localChallengeKey && keyRemainingSeconds > 0) {
+      return;
+    }
     if (currentActivity?.challenge_key_active_until) {
       const activeUntil = new Date(currentActivity.challenge_key_active_until).getTime();
       const now = Date.now();
       const diffSecs = Math.max(0, Math.floor((activeUntil - now) / 1000));
       setKeyRemainingSeconds(diffSecs);
-    } else if (!currentActivity?.challenge_key) {
+      if (diffSecs === 0 && localChallengeKey) {
+        setLocalChallengeKey(null);
+      }
+    } else if (!currentActivity?.challenge_key && !localChallengeKey) {
       setKeyRemainingSeconds(0);
     }
-  }, [currentActivity?.challenge_key, currentActivity?.challenge_key_active_until]);
+  }, [currentActivity?.challenge_key, currentActivity?.challenge_key_active_until, localChallengeKey]);
 
   // Countdown timer for Challenge Key
   useEffect(() => {
-    if (keyRemainingSeconds <= 0) return;
+    if (keyRemainingSeconds <= 0) {
+      if (localChallengeKey) setLocalChallengeKey(null);
+      return;
+    }
     const interval = setInterval(() => {
-      setKeyRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      setKeyRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          if (localChallengeKey) setLocalChallengeKey(null);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [keyRemainingSeconds]);
+  }, [keyRemainingSeconds, localChallengeKey]);
 
   const filteredRoster = (rosterData?.roster || []).filter((st: any) => {
     if (rosterSearch.trim()) {
@@ -519,10 +610,10 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                       </div>
 
                       <div className="flex items-center space-x-3">
-                        {currentActivity.challenge_key ? (
+                        {effectiveChallengeKey ? (
                           <div className="flex items-center space-x-2">
                             <span className="px-4 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 font-mono font-bold text-xl text-amber-800 dark:text-amber-300 tracking-wider">
-                              {currentActivity.challenge_key}
+                              {effectiveChallengeKey}
                             </span>
                             {keyRemainingSeconds > 0 && (
                               <span className="text-xs font-mono font-semibold text-amber-600">
@@ -536,12 +627,12 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
                         <button
                           type="button"
-                          onClick={() => triggerKeyMutation.mutate(currentActivity.id)}
+                          onClick={() => handleTriggerKey(currentActivity.id)}
                           disabled={triggerKeyMutation.isPending}
                           className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold text-xs hover:bg-slate-800 transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                         >
                           <RefreshCw className={`h-3 w-3 ${triggerKeyMutation.isPending ? 'animate-spin' : ''}`} />
-                          <span>{currentActivity.challenge_key ? 'New Key' : 'Reveal Key'}</span>
+                          <span>{effectiveChallengeKey ? 'New Key' : 'Reveal Key'}</span>
                         </button>
                       </div>
                     </div>
