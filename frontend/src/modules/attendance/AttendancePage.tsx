@@ -1162,96 +1162,56 @@ export const AttendancePage: React.FC = () => {
   return (
     <div className="space-y-6 animate-fadeIn pb-24 max-w-7xl mx-auto">
       {/* ── TOP HEADER ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="p-3 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/25">
-            <UserCheck className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              {isStudent ? 'My Attendance Record' : 'Academic Attendance Hub'}
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                {isStudent ? 'Personal Record' : 'Live Register'}
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isStudent
-                ? 'Track your course attendance %, review session-by-session logs, file dispute requests, and verify 75% policy standing.'
-                : 'Classroom roll-call, session audit registers, subject attendance matrices, and compliance tracking.'}
-            </p>
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-2">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+            {isStudent ? 'My Attendance Record' : 'Academic Attendance'}
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {isStudent
+              ? 'Track your course attendance, session logs, dispute requests, and compliance standing.'
+              : 'Classroom roll-call, session audit registers, subject attendance matrices, and dispute approvals.'}
+          </p>
         </div>
-
-        {/* Global Quick Action */}
-        {!isStudent && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTab('daily_ledger')}
-              className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <ClipboardList className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Daily Student Ledger
-            </button>
-            <button
-              onClick={() => setTab('register')}
-              className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-indigo-600" /> Class Registers
-            </button>
-            <button
-              onClick={() => setTab('matrix')}
-              className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-xs border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <Layers className="h-4 w-4" /> Subject Matrix
-            </button>
-          </div>
-        )}
       </div>
 
       {/* ── WORKSPACE TABS NAVIGATION ──────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60">
-        {(isStudent
-          ? [
-              { id: 'students', label: 'My Attendance', icon: UserCheck },
-              { id: 'approvals', label: 'My Disputes', icon: FileCheck2 },
-              { id: 'compliance', label: 'Compliance Status', icon: ShieldCheck },
-            ]
-          : [
-              { id: 'sessions', label: 'Take Attendance', icon: CheckCircle2 },
-              { id: 'daily_ledger', label: 'Daily Student Ledger', icon: ClipboardList, badge: 'Granular' },
-              { id: 'register', label: 'Class Register', icon: FileSpreadsheet },
-              { id: 'matrix', label: 'Subject Matrix', icon: Layers },
-              { id: 'students', label: 'Student Records', icon: Users },
-              { id: 'approvals', label: 'Dispute Approvals', icon: FileCheck2 },
-              { id: 'compliance', label: 'Debarment Watchlist', icon: AlertTriangle, badge: '< 75%' },
-            ]
-        ).map((t) => {
-          const Icon = t.icon;
-          const isActive = activeTab === t.id;
-          const badge = 'badge' in t ? (t as any).badge : undefined;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                isActive
-                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-900/50'
-              }`}
-            >
-              <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
-              <span>{t.label}</span>
-              {badge && (
-                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+      <div className="border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+        <nav className="-mb-px flex space-x-6 min-w-max">
+          {(isStudent
+            ? [
+                { id: 'students', label: 'My Attendance', icon: UserCheck },
+                { id: 'approvals', label: 'My Disputes', icon: FileCheck2 },
+                { id: 'compliance', label: 'Compliance Status', icon: ShieldCheck },
+              ]
+            : [
+                { id: 'sessions', label: 'Take Attendance', icon: CheckCircle2 },
+                { id: 'daily_ledger', label: 'Daily Student Ledger', icon: ClipboardList },
+                { id: 'register', label: 'Class Register', icon: FileSpreadsheet },
+                { id: 'matrix', label: 'Subject Matrix', icon: Layers },
+                { id: 'students', label: 'Student Records', icon: Users },
+                { id: 'approvals', label: 'Dispute Approvals', icon: FileCheck2 },
+                { id: 'compliance', label: 'Debarment Watchlist', icon: AlertTriangle },
+              ]
+          ).map((t) => {
+            const Icon = t.icon;
+            const isActive = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2 pb-3 pt-1 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300'
-                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                }`}>
-                  {badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -1261,7 +1221,7 @@ export const AttendancePage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Allocated Sessions Selector */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <Calendar className="h-4 w-4 text-indigo-600" />
@@ -1451,7 +1411,7 @@ export const AttendancePage: React.FC = () => {
           {/* Right Column: Attendance Marking Roster Sheet */}
           <div className="lg:col-span-8 space-y-4">
             {selectedSessionId && activeSheetData ? (
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 {/* Session Header Card & Live Metrics */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                   <div className="space-y-1">
@@ -1726,7 +1686,7 @@ export const AttendancePage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="p-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-slate-400 space-y-2">
+              <div className="p-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-slate-400 space-y-2">
                 <CheckCircle2 className="h-10 w-10 mx-auto text-indigo-400 opacity-40" />
                 <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
                   Select a Class Session from the Left Column
@@ -1743,7 +1703,7 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'register' && (
         <div className="space-y-6">
           {/* Filter Bar */}
-          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1855,7 +1815,7 @@ export const AttendancePage: React.FC = () => {
           </div>
 
           {/* Register Table */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-50/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10.5px]">
@@ -2000,7 +1960,7 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'matrix' && (
         <div className="space-y-6">
           {/* Subject & Category Selector Bar */}
-          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+          <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-wrap">
                 {/* Subject Selector */}
@@ -2201,7 +2161,7 @@ export const AttendancePage: React.FC = () => {
           )}
 
           {/* Matrix Cross-Tab Table */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto max-h-[600px]">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
@@ -2470,7 +2430,7 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'students' && (
         <div className="space-y-6">
           {!isStudent && (
-            <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                   <Filter className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -2629,7 +2589,7 @@ export const AttendancePage: React.FC = () => {
           ) : studentDossierData ? (
             <div className="space-y-6">
               {/* Dossier Header Card */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-black text-slate-900 dark:text-white">
                     {studentDossierData.student_name}
@@ -2816,7 +2776,7 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Chronological Session Attendance Log with Category, Subject, and Status Filters */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <Clock className="h-4 w-4 text-indigo-600" />
@@ -3007,18 +2967,18 @@ export const AttendancePage: React.FC = () => {
           TAB 5: DUAL-APPROVAL QUEUE
       ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'approvals' && (
-        <div className="space-y-6">
-          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-xs font-bold">
-              <span>Filter:</span>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-1 overflow-x-auto">
+              <span className="text-slate-400 text-xs mr-1 font-medium">Filter:</span>
               {['all', 'pending_faculty', 'pending_admin', 'approved', 'rejected'].map((st) => (
                 <button
                   key={st}
                   onClick={() => setCorrectionStatusFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl transition-all capitalize cursor-pointer ${
+                  className={`px-3 py-1 rounded text-xs font-medium capitalize transition-colors cursor-pointer ${
                     correctionStatusFilter === st
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   {st.replace('_', ' ')}
@@ -3027,24 +2987,25 @@ export const AttendancePage: React.FC = () => {
             </div>
             <button
               onClick={() => refetchCorrections()}
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              title="Refresh list"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider">
                 <tr>
-                  <th className="p-3.5">Student</th>
-                  <th className="p-3.5">Session</th>
-                  <th className="p-3.5 text-center">Current &rarr; Requested</th>
-                  <th className="p-3.5">Reason</th>
-                  <th className="p-3.5 text-center">Faculty Review</th>
-                  <th className="p-3.5 text-center">Admin Review</th>
-                  <th className="p-3.5 text-center">Resolution</th>
-                  <th className="p-3.5 text-right">Actions</th>
+                  <th className="px-3.5 py-3">Student</th>
+                  <th className="px-3.5 py-3">Session</th>
+                  <th className="px-3.5 py-3 text-center">Status Change</th>
+                  <th className="px-3.5 py-3">Reason</th>
+                  <th className="px-3.5 py-3 text-center">Faculty Review</th>
+                  <th className="px-3.5 py-3 text-center">Admin Review</th>
+                  <th className="px-3.5 py-3 text-center">Resolution</th>
+                  <th className="px-3.5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -3059,19 +3020,19 @@ export const AttendancePage: React.FC = () => {
                 ) : (
                   (correctionsData || []).map((corr: any) => (
                     <tr key={corr.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                      <td className="p-3.5 font-bold text-slate-900 dark:text-white">
+                      <td className="px-3.5 py-3 font-medium text-slate-900 dark:text-white">
                         <div>{corr.student_name}</div>
                         <div className="text-[11px] font-mono text-slate-400">{corr.student_prn}</div>
                       </td>
-                      <td className="p-3.5">
-                        <div className="font-bold text-slate-800 dark:text-slate-200">{corr.subject_name}</div>
+                      <td className="px-3.5 py-3">
+                        <div className="font-medium text-slate-800 dark:text-slate-200">{corr.subject_name}</div>
                         <div className="text-[11px] text-slate-500">{corr.session_date}</div>
                         {corr.activities_details && corr.activities_details.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {corr.activities_details.map((act: any) => (
                               <span
                                 key={act.id}
-                                className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80"
+                                className="text-[10px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono"
                                 title={`Act #${act.activity_no}: ${act.title}`}
                               >
                                 Act #{act.activity_no} ({act.subject_code || 'HB'})
@@ -3080,89 +3041,84 @@ export const AttendancePage: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="p-3.5 text-center font-bold">
-                        <span className="text-rose-600 uppercase">{corr.current_status}</span> &rarr;{' '}
-                        <span className="text-emerald-600 uppercase">{corr.requested_status}</span>
+                      <td className="px-3.5 py-3 text-center text-xs">
+                        <span className="text-slate-500 font-medium">{corr.current_status}</span>
+                        <span className="text-slate-300 dark:text-slate-600 mx-1.5">&rarr;</span>
+                        <span className="text-slate-900 dark:text-white font-semibold">{corr.requested_status}</span>
                       </td>
-                      <td className="p-3.5 max-w-xs truncate text-slate-600 dark:text-slate-400">{corr.reason}</td>
-                      <td className="p-3.5 text-center">
+                      <td className="px-3.5 py-3 max-w-xs text-slate-600 dark:text-slate-400 text-xs">
+                        <div className="truncate" title={corr.reason}>{corr.reason}</div>
+                      </td>
+                      <td className="px-3.5 py-3 text-center text-xs">
                         {corr.faculty_action === 'approved' ? (
                           <div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              ✓ Approved
-                            </span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">Approved</span>
                             {corr.faculty_approver_name && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.faculty_approver_name}>
+                              <div className="text-[10px] text-slate-400 truncate max-w-[100px] mx-auto" title={corr.faculty_approver_name}>
                                 {corr.faculty_approver_name}
                               </div>
                             )}
                           </div>
                         ) : corr.faculty_action === 'rejected' ? (
                           <div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                              ✗ Rejected
-                            </span>
+                            <span className="text-rose-600 dark:text-rose-400 font-medium">Rejected</span>
                             {corr.faculty_approver_name && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.faculty_approver_name}>
+                              <div className="text-[10px] text-slate-400 truncate max-w-[100px] mx-auto" title={corr.faculty_approver_name}>
                                 {corr.faculty_approver_name}
                               </div>
                             )}
                           </div>
                         ) : corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' || (corr.activities_details && corr.activities_details.length > 0) ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700" title="HyperBuild disputes require 1-level Admin approval only">
-                            N/A (Admin Only)
+                          <span className="text-slate-400 text-xs" title="HyperBuild disputes require Admin approval only">
+                            N/A
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                            ⏳ Pending
+                          <span className="text-amber-600 dark:text-amber-400 text-xs font-medium">
+                            Pending
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5 text-center">
+                      <td className="px-3.5 py-3 text-center text-xs">
                         {corr.admin_action === 'approved' ? (
                           <div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              ✓ Approved
-                            </span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">Approved</span>
                             {corr.admin_approver_name && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.admin_approver_name}>
+                              <div className="text-[10px] text-slate-400 truncate max-w-[100px] mx-auto" title={corr.admin_approver_name}>
                                 {corr.admin_approver_name}
                               </div>
                             )}
                           </div>
                         ) : corr.admin_action === 'rejected' ? (
                           <div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                              ✗ Rejected
-                            </span>
+                            <span className="text-rose-600 dark:text-rose-400 font-medium">Rejected</span>
                             {corr.admin_approver_name && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate mx-auto" title={corr.admin_approver_name}>
+                              <div className="text-[10px] text-slate-400 truncate max-w-[100px] mx-auto" title={corr.admin_approver_name}>
                                 {corr.admin_approver_name}
                               </div>
                             )}
                           </div>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                            ⏳ Pending
+                          <span className="text-amber-600 dark:text-amber-400 text-xs font-medium">
+                            Pending
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5 text-center">
+                      <td className="px-3.5 py-3 text-center text-xs">
                         {corr.status === 'approved' ? (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-500 text-white shadow-xs">
-                            {corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' ? 'ADMIN APPROVED ✓' : 'DUAL APPROVED ✓'}
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            Approved
                           </span>
                         ) : corr.status === 'rejected' ? (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs">
-                            REJECTED ✗
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            Rejected
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                            PENDING REVIEW
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            Pending
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5 text-right">
+                      <td className="px-3.5 py-3 text-right">
                         {!isStudent && corr.status !== 'approved' && corr.status !== 'rejected' && (() => {
                           const isHb = corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' || (corr.activities_details && corr.activities_details.length > 0);
                           // Faculty cannot review HyperBuild disputes (Admin-only) or disputes where faculty already acted
@@ -3190,7 +3146,7 @@ export const AttendancePage: React.FC = () => {
                                 }
                                 setReviewingCorrection(corr);
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-[11px] shadow-sm hover:bg-indigo-700 cursor-pointer"
+                              className="px-2.5 py-1 rounded text-xs font-medium border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                             >
                               Review
                             </button>
@@ -3215,7 +3171,7 @@ export const AttendancePage: React.FC = () => {
             /* STUDENT PERSONAL COMPLIANCE & DUAL-TRACK EXAM ELIGIBILITY */
             <div className="space-y-6">
               {/* Compliance Status Header Card */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
@@ -3265,7 +3221,7 @@ export const AttendancePage: React.FC = () => {
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {/* Recovery Action Card */}
-                    <div className={`p-6 rounded-3xl border shadow-sm space-y-3 ${
+                    <div className={`p-6 rounded-xl border shadow-sm space-y-3 ${
                       !hasClasses
                         ? 'bg-slate-50/50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800'
                         : !hasDebarred
@@ -3337,7 +3293,7 @@ export const AttendancePage: React.FC = () => {
                     </div>
 
                     {/* Policy Guidelines Card */}
-                    <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+                    <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <BookOpen className="h-4 w-4 text-indigo-600" />
                         Dual-Track Attendance Policy Rules
@@ -3367,7 +3323,7 @@ export const AttendancePage: React.FC = () => {
               })()}
 
               {/* Subject Breakdown Health List */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Layers className="h-4 w-4 text-indigo-600" />
                   Course-by-Course Exam Eligibility Grid
@@ -3460,7 +3416,7 @@ export const AttendancePage: React.FC = () => {
             /* STAFF SUBJECT-LEVEL EXAM DEBARMENT REGISTRY */
             <>
               {/* Header & Filter Toolbar */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
@@ -3586,7 +3542,7 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Subject Debarment Registry Table */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                     <tr>
@@ -3683,7 +3639,7 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'daily_ledger' && (
         <div className="space-y-5 animate-fadeIn">
           {/* Top Header Card */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <div className="p-3 rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-500/20">
                 <ClipboardList className="h-6 w-6" />
@@ -3805,7 +3761,7 @@ export const AttendancePage: React.FC = () => {
           )}
 
           {/* Filtering & Search Toolbar */}
-          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             {/* Quick Date Presets */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -3991,7 +3947,7 @@ export const AttendancePage: React.FC = () => {
           </div>
 
           {/* Granular Attendance Ledger Table */}
-          <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -4285,7 +4241,7 @@ export const AttendancePage: React.FC = () => {
       {/* ─── FULL-SCREEN FOCUS ROLL-CALL (KIOSK MODE) MODAL ────────────────── */}
       {isKioskOpen && activeSheetData?.students && activeSheetData.students.length > 0 && (
         <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden">
             {/* Kiosk Top Bar */}
             <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
               <div className="flex items-center gap-2.5">
@@ -4327,7 +4283,7 @@ export const AttendancePage: React.FC = () => {
               return (
                 <div className="p-8 text-center space-y-6">
                   {/* Large Avatar */}
-                  <div className="h-20 w-20 rounded-3xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black text-2xl flex items-center justify-center mx-auto border-2 border-indigo-200 dark:border-indigo-800 shadow-md">
+                  <div className="h-20 w-20 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black text-2xl flex items-center justify-center mx-auto border-2 border-indigo-200 dark:border-indigo-800 shadow-md">
                     {st.student_name.slice(0, 2).toUpperCase()}
                   </div>
 
@@ -4451,7 +4407,7 @@ export const AttendancePage: React.FC = () => {
       {/* ─── ABSENTEES LIST MODAL ───────────────────────────────────────────── */}
       {selectedAbsenteesModal && (
         <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
               <div>
                 <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
@@ -4495,110 +4451,115 @@ export const AttendancePage: React.FC = () => {
 
       {/* ─── REVIEW CORRECTION MODAL ───────────────────────────────────────── */}
       {reviewingCorrection && (
-        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h4 className="font-bold text-sm text-slate-900 dark:text-white">Review Dispute Request</h4>
-                <p className="text-[11px] text-slate-500">Tiered Verification: Course Faculty &amp; Academic Administration</p>
+                <h4 className="font-semibold text-sm text-slate-900 dark:text-white">Review Dispute Request</h4>
+                <p className="text-[11px] text-slate-500">Course Faculty &amp; Academic Administration Verification</p>
               </div>
-              <button onClick={() => setReviewingCorrection(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setReviewingCorrection(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
               {/* Student & Session Summary */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-1">
-                <div><span className="font-semibold text-slate-500">Student:</span> <span className="font-bold text-slate-900 dark:text-white">{reviewingCorrection.student_name}</span> <span className="font-mono text-[10px] text-slate-400">({reviewingCorrection.student_prn})</span></div>
-                <div><span className="font-semibold text-slate-500">Subject:</span> {reviewingCorrection.subject_name} {reviewingCorrection.subject_code && `(${reviewingCorrection.subject_code})`}</div>
-                <div><span className="font-semibold text-slate-500">Session:</span> {reviewingCorrection.session_date} {reviewingCorrection.session_time && `• ${reviewingCorrection.session_time}`}</div>
-                <div><span className="font-semibold text-slate-500">Dispute:</span> <span className="text-rose-600 uppercase font-bold">{reviewingCorrection.current_status}</span> &rarr; <span className="text-emerald-600 uppercase font-bold">{reviewingCorrection.requested_status}</span></div>
-                <div className="pt-1 text-slate-600 dark:text-slate-300"><span className="font-semibold text-slate-500">Student Reason:</span> <em>"{reviewingCorrection.reason}"</em></div>
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg space-y-1.5 border border-slate-200/60 dark:border-slate-700/60">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Student:</span>
+                  <span className="text-slate-900 dark:text-white font-medium">{reviewingCorrection.student_name} <span className="font-mono text-slate-400 font-normal">({reviewingCorrection.student_prn})</span></span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Subject:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{reviewingCorrection.subject_name} {reviewingCorrection.subject_code && `(${reviewingCorrection.subject_code})`}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Session:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{reviewingCorrection.session_date} {reviewingCorrection.session_time && `• ${reviewingCorrection.session_time}`}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Dispute:</span>
+                  <span>
+                    <span className="text-slate-600 dark:text-slate-400 font-medium">{reviewingCorrection.current_status}</span>
+                    <span className="text-slate-400 mx-1">&rarr;</span>
+                    <span className="text-slate-900 dark:text-white font-semibold">{reviewingCorrection.requested_status}</span>
+                  </span>
+                </div>
+                <div className="pt-1 text-slate-600 dark:text-slate-300 border-t border-slate-200/50 dark:border-slate-700/50">
+                  <span className="text-slate-500 mr-1">Reason:</span>
+                  <em>"{reviewingCorrection.reason}"</em>
+                </div>
 
                 {reviewingCorrection.activities_details && reviewingCorrection.activities_details.length > 0 && (
-                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
-                    <span className="font-semibold text-slate-500 block mb-1">Disputed Activities ({reviewingCorrection.activities_details.length}):</span>
-                    <div className="flex flex-wrap gap-1.5">
+                  <div className="pt-2 mt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+                    <span className="text-slate-500 block mb-1">Disputed Activities ({reviewingCorrection.activities_details.length}):</span>
+                    <div className="flex flex-wrap gap-1">
                       {reviewingCorrection.activities_details.map((act: any) => (
-                        <div key={act.id} className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[10.5px]">
-                          <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">Act #{act.activity_no}</span>: {act.title}
-                          <span className="ml-1 px-1 py-0.2 rounded bg-white dark:bg-slate-900 text-[9px] font-semibold text-slate-600 dark:text-slate-400">
-                            {act.subject_code || act.subject_name}
-                          </span>
-                        </div>
+                        <span key={act.id} className="text-[10px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono">
+                          Act #{act.activity_no} ({act.subject_code || act.subject_name})
+                        </span>
                       ))}
                     </div>
-                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">
-                      ✓ Approval verifies presence specifically for these {reviewingCorrection.activities_details.length} activity subject(s).
-                    </p>
                   </div>
                 )}
               </div>
 
-              {/* Dual Approval Progress Status Card */}
-              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl space-y-2">
-                <div className="font-bold text-[11px] text-indigo-900 dark:text-indigo-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
-                  {reviewingCorrection.faculty_action === 'not_applicable' || reviewingCorrection.subject_name === 'HyperBuild Session'
-                    ? 'Single-Tier Approval Pipeline (Admin Only)'
-                    : 'Dual-Approval Verification Pipeline'}
+              {/* Dual Approval Progress Status */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                  <div className="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Course Faculty</div>
+                  <div className="mt-1 font-medium">
+                    {reviewingCorrection.faculty_action === 'approved' ? (
+                      <span className="text-emerald-600 dark:text-emerald-400">Approved</span>
+                    ) : reviewingCorrection.faculty_action === 'rejected' ? (
+                      <span className="text-rose-600 dark:text-rose-400">Rejected</span>
+                    ) : reviewingCorrection.faculty_action === 'not_applicable' || reviewingCorrection.subject_name === 'HyperBuild Session' ? (
+                      <span className="text-slate-400">N/A (Admin-Only)</span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400">Pending</span>
+                    )}
+                  </div>
+                  {reviewingCorrection.faculty_approver_name && (
+                    <div className="text-[10px] text-slate-400 truncate mt-0.5">{reviewingCorrection.faculty_approver_name}</div>
+                  )}
+                  {reviewingCorrection.faculty_remarks && (
+                    <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.faculty_remarks}"</div>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                    <div className="font-semibold text-slate-500 text-[10px]">Tier 1: Course Faculty</div>
-                    <div className="mt-0.5 font-bold">
-                      {reviewingCorrection.faculty_action === 'approved' ? (
-                        <span className="text-emerald-600">✓ Approved</span>
-                      ) : reviewingCorrection.faculty_action === 'rejected' ? (
-                        <span className="text-rose-600">✗ Rejected</span>
-                      ) : reviewingCorrection.faculty_action === 'not_applicable' || reviewingCorrection.subject_name === 'HyperBuild Session' ? (
-                        <span className="text-slate-500">N/A (Admin-Only)</span>
-                      ) : (
-                        <span className="text-amber-600">⏳ Pending Sign-off</span>
-                      )}
-                    </div>
-                    {reviewingCorrection.faculty_approver_name && (
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">By: {reviewingCorrection.faculty_approver_name}</div>
-                    )}
-                    {reviewingCorrection.faculty_remarks && (
-                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.faculty_remarks}"</div>
-                    )}
-                  </div>
 
-                  <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                    <div className="font-semibold text-slate-500 text-[10px]">Tier 2: Academic Admin</div>
-                    <div className="mt-0.5 font-bold">
-                      {reviewingCorrection.admin_action === 'approved' ? (
-                        <span className="text-emerald-600">✓ Approved</span>
-                      ) : reviewingCorrection.admin_action === 'rejected' ? (
-                        <span className="text-rose-600">✗ Rejected</span>
-                      ) : (
-                        <span className="text-amber-600">⏳ Pending Review</span>
-                      )}
-                    </div>
-                    {reviewingCorrection.admin_approver_name && (
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">By: {reviewingCorrection.admin_approver_name}</div>
-                    )}
-                    {reviewingCorrection.admin_remarks && (
-                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.admin_remarks}"</div>
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                  <div className="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Academic Admin</div>
+                  <div className="mt-1 font-medium">
+                    {reviewingCorrection.admin_action === 'approved' ? (
+                      <span className="text-emerald-600 dark:text-emerald-400">Approved</span>
+                    ) : reviewingCorrection.admin_action === 'rejected' ? (
+                      <span className="text-rose-600 dark:text-rose-400">Rejected</span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400">Pending</span>
                     )}
                   </div>
+                  {reviewingCorrection.admin_approver_name && (
+                    <div className="text-[10px] text-slate-400 truncate mt-0.5">{reviewingCorrection.admin_approver_name}</div>
+                  )}
+                  {reviewingCorrection.admin_remarks && (
+                    <div className="text-[10px] text-slate-500 italic mt-0.5 truncate">"{reviewingCorrection.admin_remarks}"</div>
+                  )}
                 </div>
               </div>
 
               {/* Reviewing As Role Selector (if user has multiple roles) */}
               {isFaculty && isAdmin && reviewingCorrection.faculty_action !== 'not_applicable' && reviewingCorrection.subject_name !== 'HyperBuild Session' && (
-                <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-between">
-                  <span className="font-semibold text-slate-600 dark:text-slate-300">Submit Review As:</span>
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="font-medium text-slate-600 dark:text-slate-300">Submit Review As:</span>
                   <div className="flex gap-1">
                     <button
                       type="button"
                       onClick={() => setReviewAsRole('faculty')}
-                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
                         reviewAsRole === 'faculty'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border'
+                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600'
                       }`}
                     >
                       Course Faculty
@@ -4606,10 +4567,10 @@ export const AttendancePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setReviewAsRole('admin')}
-                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
                         reviewAsRole === 'admin'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border'
+                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600'
                       }`}
                     >
                       Academic Admin
@@ -4619,40 +4580,40 @@ export const AttendancePage: React.FC = () => {
               )}
 
               {/* Informative Guidance Alert on Dual-Approval Policy */}
-              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300">
+              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-400">
                 {reviewAsRole === 'admin' && reviewingCorrection.faculty_action !== 'approved' && (
                   <p>
-                    ⚠️ <strong>Notice:</strong> Faculty review is still pending. Your administrative approval will be saved, but the student's attendance record and cumulative matrix will only update once the Course Faculty also grants approval.
+                    Faculty review is pending. Your administrative approval will be saved, and the student's attendance record will update once the Course Faculty also approves.
                   </p>
                 )}
                 {reviewAsRole === 'faculty' && reviewingCorrection.admin_action !== 'approved' && (
                   <p>
-                    ℹ️ <strong>Notice:</strong> Your faculty review will be recorded. The attendance correction will be officially applied to the student's records once Academic Administration completes final review.
+                    Your faculty review will be recorded. The attendance correction will be officially applied once Academic Administration completes final review.
                   </p>
                 )}
                 {((reviewAsRole === 'admin' && reviewingCorrection.faculty_action === 'approved') ||
                   (reviewAsRole === 'faculty' && reviewingCorrection.admin_action === 'approved')) && (
-                  <p className="text-emerald-800 dark:text-emerald-300">
-                    ✓ <strong>Final Sign-off:</strong> The other party has already approved! Submitting your approval now will complete the dual-approval requirements, update the student's attendance record, and dispatch a resolution confirmation email.
+                  <p className="text-emerald-700 dark:text-emerald-400 font-medium">
+                    The other party has already approved. Submitting your approval now will finalize the dispute and update the student's attendance record.
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Decision</label>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1.5">Decision</label>
                 <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-600">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-medium text-slate-800 dark:text-slate-200 text-xs">
                     <input
                       type="radio"
                       name="reviewAction"
                       value="approved"
                       checked={reviewAction === 'approved'}
                       onChange={() => setReviewAction('approved')}
-                      className="accent-emerald-600"
+                      className="accent-indigo-600"
                     />
                     Approve Request
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer font-bold text-rose-600">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-medium text-slate-800 dark:text-slate-200 text-xs">
                     <input
                       type="radio"
                       name="reviewAction"
@@ -4667,24 +4628,24 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Review Remarks / Rationale</label>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Remarks / Note (Optional)</label>
                 <textarea
                   rows={2}
                   value={reviewRemarks}
                   onChange={(e) => setReviewRemarks(e.target.value)}
                   placeholder="Enter decision rationale or justification..."
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
                 />
               </div>
 
-              {reviewError && <p className="text-rose-600 text-xs font-bold">{reviewError}</p>}
+              {reviewError && <p className="text-rose-600 text-xs font-medium">{reviewError}</p>}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setReviewingCorrection(null)}
-                className="px-4 py-2 rounded-xl border text-slate-600 font-bold text-xs cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -4698,7 +4659,7 @@ export const AttendancePage: React.FC = () => {
                   }
                 }}
                 disabled={facultyReviewMutation.isPending || adminReviewMutation.isPending}
-                className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs disabled:opacity-50 cursor-pointer shadow-sm hover:bg-indigo-700"
+                className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-medium text-xs disabled:opacity-50 cursor-pointer hover:bg-indigo-700 transition-colors"
               >
                 {facultyReviewMutation.isPending || adminReviewMutation.isPending ? 'Submitting...' : `Submit as ${reviewAsRole === 'faculty' ? 'Faculty' : 'Admin'}`}
               </button>
