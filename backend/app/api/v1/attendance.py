@@ -95,13 +95,19 @@ async def mark_and_lock_attendance(
 async def get_subject_attendance_summary(
     subject_id: UUID = Query(...),
     batch_id: Optional[UUID] = Query(None),
+    payload=Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
     try:
-        summary = await attendance_service.get_subject_wise_attendance(db, subject_id, batch_id)
+        summary = await attendance_service.get_subject_wise_attendance(
+            db, subject_id, batch_id, current_user_id=user_id, user_roles=roles
+        )
         return ResponseEnvelope(data=summary)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        status_code = status.HTTP_403_FORBIDDEN if "Access denied" in str(e) else status.HTTP_404_NOT_FOUND
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 
 @router.get(
@@ -148,13 +154,19 @@ async def get_subject_attendance_matrix(
     subject_id: UUID = Query(...),
     batch_id: Optional[UUID] = Query(None),
     category: Optional[str] = Query(None),
+    payload=Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
     try:
-        matrix = await attendance_service.get_subject_attendance_matrix(db, subject_id, batch_id, category=category)
+        matrix = await attendance_service.get_subject_attendance_matrix(
+            db, subject_id, batch_id, category=category, current_user_id=user_id, user_roles=roles
+        )
         return ResponseEnvelope(data=matrix)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        status_code = status.HTTP_403_FORBIDDEN if "Access denied" in str(e) else status.HTTP_404_NOT_FOUND
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 
 @router.get(
@@ -223,10 +235,19 @@ async def get_debarment_risk(
     batch_id: Optional[UUID] = Query(None),
     subject_id: Optional[UUID] = Query(None),
     category: Optional[str] = Query(None),
+    payload=Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
     students = await attendance_service.get_debarment_risk_students(
-        db, threshold_pct=threshold, batch_id=batch_id, subject_id=subject_id, category_filter=category
+        db,
+        threshold_pct=threshold,
+        batch_id=batch_id,
+        subject_id=subject_id,
+        category_filter=category,
+        current_user_id=user_id,
+        user_roles=roles,
     )
     return ResponseEnvelope(data=students)
 

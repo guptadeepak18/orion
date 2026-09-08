@@ -3051,6 +3051,10 @@ export const AttendancePage: React.FC = () => {
                               </div>
                             )}
                           </div>
+                        ) : corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' || (corr.activities_details && corr.activities_details.length > 0) ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700" title="HyperBuild disputes require 1-level Admin approval only">
+                            N/A (Admin Only)
+                          </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                             ⏳ Pending
@@ -3089,7 +3093,7 @@ export const AttendancePage: React.FC = () => {
                       <td className="p-3.5 text-center">
                         {corr.status === 'approved' ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-500 text-white shadow-xs">
-                            DUAL APPROVED ✓
+                            {corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' ? 'ADMIN APPROVED ✓' : 'DUAL APPROVED ✓'}
                           </span>
                         ) : corr.status === 'rejected' ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs">
@@ -3102,28 +3106,39 @@ export const AttendancePage: React.FC = () => {
                         )}
                       </td>
                       <td className="p-3.5 text-right">
-                        {!isStudent && corr.status !== 'approved' && corr.status !== 'rejected' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReviewError(null);
-                              setReviewRemarks('');
-                              setReviewAction('approved');
-                              const facDone = corr.faculty_action === 'approved' || corr.faculty_action === 'rejected';
-                              if (isFaculty && !isAdmin) {
-                                setReviewAsRole('faculty');
-                              } else if (isAdmin && !isFaculty) {
-                                setReviewAsRole('admin');
-                              } else if (isAdmin && isFaculty) {
-                                setReviewAsRole(facDone ? 'admin' : 'faculty');
-                              }
-                              setReviewingCorrection(corr);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-[11px] shadow-sm hover:bg-indigo-700 cursor-pointer"
-                          >
-                            Review
-                          </button>
-                        )}
+                        {!isStudent && corr.status !== 'approved' && corr.status !== 'rejected' && (() => {
+                          const isHb = corr.faculty_action === 'not_applicable' || corr.subject_name === 'HyperBuild Session' || (corr.activities_details && corr.activities_details.length > 0);
+                          // Faculty cannot review HyperBuild disputes (Admin-only) or disputes where faculty already acted
+                          if (isFaculty && !isAdmin && (isHb || corr.faculty_action === 'approved' || corr.faculty_action === 'rejected')) {
+                            return null;
+                          }
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewError(null);
+                                setReviewRemarks('');
+                                setReviewAction('approved');
+                                if (isHb) {
+                                  setReviewAsRole('admin');
+                                } else {
+                                  const facDone = corr.faculty_action === 'approved' || corr.faculty_action === 'rejected';
+                                  if (isFaculty && !isAdmin) {
+                                    setReviewAsRole('faculty');
+                                  } else if (isAdmin && !isFaculty) {
+                                    setReviewAsRole('admin');
+                                  } else if (isAdmin && isFaculty) {
+                                    setReviewAsRole(facDone ? 'admin' : 'faculty');
+                                  }
+                                }
+                                setReviewingCorrection(corr);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-[11px] shadow-sm hover:bg-indigo-700 cursor-pointer"
+                            >
+                              Review
+                            </button>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))
@@ -4468,7 +4483,9 @@ export const AttendancePage: React.FC = () => {
               <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl space-y-2">
                 <div className="font-bold text-[11px] text-indigo-900 dark:text-indigo-200 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
-                  Dual-Approval Verification Pipeline
+                  {reviewingCorrection.faculty_action === 'not_applicable' || reviewingCorrection.subject_name === 'HyperBuild Session'
+                    ? 'Single-Tier Approval Pipeline (Admin Only)'
+                    : 'Dual-Approval Verification Pipeline'}
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
@@ -4478,6 +4495,8 @@ export const AttendancePage: React.FC = () => {
                         <span className="text-emerald-600">✓ Approved</span>
                       ) : reviewingCorrection.faculty_action === 'rejected' ? (
                         <span className="text-rose-600">✗ Rejected</span>
+                      ) : reviewingCorrection.faculty_action === 'not_applicable' || reviewingCorrection.subject_name === 'HyperBuild Session' ? (
+                        <span className="text-slate-500">N/A (Admin-Only)</span>
                       ) : (
                         <span className="text-amber-600">⏳ Pending Sign-off</span>
                       )}
@@ -4512,7 +4531,7 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Reviewing As Role Selector (if user has multiple roles) */}
-              {isFaculty && isAdmin && (
+              {isFaculty && isAdmin && reviewingCorrection.faculty_action !== 'not_applicable' && reviewingCorrection.subject_name !== 'HyperBuild Session' && (
                 <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-between">
                   <span className="font-semibold text-slate-600 dark:text-slate-300">Submit Review As:</span>
                   <div className="flex gap-1">

@@ -1797,10 +1797,44 @@ async def mark_session_attendance(
     session_id: UUID,
     req: SessionAttendanceBulkRequest,
     current_user_id: Optional[UUID] = None,
+    user_roles: Optional[List[str]] = None,
 ) -> SessionAttendanceSheetResponse:
     session = await get_session_by_id(db, session_id)
     if not session:
         raise ValueError("Session not found")
+
+    roles = user_roles or []
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in roles)
+    if not is_admin and current_user_id:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if not fac_id:
+            raise ValueError("Unauthorized: Faculty profile not found.")
+
+        is_assigned = False
+        if fac_type == "internal" and session.faculty_internal_id == fac_id:
+            is_assigned = True
+        elif fac_type == "external" and session.faculty_external_id == fac_id:
+            is_assigned = True
+
+        if not is_assigned and session.subject_id:
+            from app.models.academic import SubjectBatch
+            alloc_stmt = select(SubjectBatch).where(
+                SubjectBatch.subject_id == session.subject_id,
+                SubjectBatch.status == "active",
+            )
+            if fac_type == "internal":
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+            else:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+            if session.batch_id:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.batch_id == session.batch_id)
+            alloc_res = await db.execute(alloc_stmt)
+            if alloc_res.scalars().first():
+                is_assigned = True
+
+        if not is_assigned:
+            raise ValueError("Unauthorized: You are only permitted to mark attendance for your allocated subjects and sessions.")
 
     # Fetch existing records
     att_stmt = select(StudentAttendance).where(StudentAttendance.session_id == session_id)

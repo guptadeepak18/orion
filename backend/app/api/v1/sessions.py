@@ -2,6 +2,7 @@ from datetime import date
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
@@ -201,7 +202,41 @@ async def delete_session(session_id: UUID, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_role(STAFF_ROLES))],
     summary="Get attendance sheet for a session",
 )
-async def get_session_attendance(session_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_session_attendance(
+    session_id: UUID,
+    payload=Depends(get_current_token_payload),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = UUID(payload.get("sub")) if payload.get("sub") else None
+    roles = payload.get("roles", [])
+    is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in roles)
+    is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in roles)
+
+    if is_faculty and not is_admin and user_id:
+        from app.services.attendance_service import get_faculty_profile_id_by_user_id
+        from app.models.academic import SubjectBatch
+        from app.models.session import Session as SessionModel
+        sess = (await db.execute(select(SessionModel).where(SessionModel.id == session_id))).scalar_one_or_none()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Session not found")
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, user_id)
+        if not fac_id:
+            raise HTTPException(status_code=403, detail="Faculty profile not found")
+
+        is_assigned = (fac_type == "internal" and sess.faculty_internal_id == fac_id) or (fac_type == "external" and sess.faculty_external_id == fac_id)
+        if not is_assigned and sess.subject_id:
+            alloc_stmt = select(SubjectBatch).where(SubjectBatch.subject_id == sess.subject_id, SubjectBatch.status == "active")
+            if fac_type == "internal":
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+            else:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+            if sess.batch_id:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.batch_id == sess.batch_id)
+            if (await db.execute(alloc_stmt)).scalars().first():
+                is_assigned = True
+        if not is_assigned:
+            raise HTTPException(status_code=403, detail="Access denied: You are not assigned to this session.")
+
     try:
         sheet = await session_service.get_session_attendance_sheet(db, session_id)
         return ResponseEnvelope(data=sheet)
@@ -224,10 +259,12 @@ async def mark_session_attendance(
     try:
         from uuid import UUID as _UUID
         user_id = _UUID(payload.get("sub")) if payload.get("sub") else None
-        sheet = await session_service.mark_session_attendance(db, session_id, req, user_id)
+        roles = payload.get("roles", [])
+        sheet = await session_service.mark_session_attendance(db, session_id, req, user_id, user_roles=roles)
         return ResponseEnvelope(data=sheet)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        status_code = status.HTTP_403_FORBIDDEN if "Unauthorized" in str(e) else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 
 

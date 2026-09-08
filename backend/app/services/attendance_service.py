@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone, date, time
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from sqlalchemy import select, and_, or_, func, text
+from sqlalchemy import select, and_, or_, func, text, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -254,6 +254,36 @@ async def mark_and_lock_session_attendance(
             "Any change or dispute requires a Dual-Approval Correction Request."
         )
 
+    # Faculty Authorization Guard: Non-admins can only mark attendance for their allocated sessions
+    if not is_admin:
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if not fac_id:
+            raise ValueError("Unauthorized: Faculty profile not found for attendance marking.")
+
+        is_assigned = False
+        if fac_type == "internal" and session.faculty_internal_id == fac_id:
+            is_assigned = True
+        elif fac_type == "external" and session.faculty_external_id == fac_id:
+            is_assigned = True
+
+        if not is_assigned and session.subject_id:
+            alloc_stmt = select(SubjectBatch).where(
+                SubjectBatch.subject_id == session.subject_id,
+                SubjectBatch.status == "active",
+            )
+            if fac_type == "internal":
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+            else:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+            if session.batch_id:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.batch_id == session.batch_id)
+            alloc_res = await db.execute(alloc_stmt)
+            if alloc_res.scalars().first():
+                is_assigned = True
+
+        if not is_assigned:
+            raise ValueError("Unauthorized: You are only permitted to mark attendance for your allocated subjects and sessions.")
+
     now_utc = datetime.now(timezone.utc)
 
     # For HyperBuild sessions with activities that required challenge keys:
@@ -366,10 +396,32 @@ async def get_subject_wise_attendance(
     db: AsyncSession,
     subject_id: UUID,
     batch_id: Optional[UUID] = None,
+    current_user_id: Optional[UUID] = None,
+    user_roles: Optional[List[str]] = None,
 ) -> SubjectAttendanceSummaryResponse:
     """
     Calculates overall course attendance analytics, session list, and student roster matrix.
     """
+    roles = user_roles or []
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly", "finance"] for r in roles)
+
+    if not is_admin and current_user_id:
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if fac_id:
+            alloc_stmt = select(SubjectBatch).where(
+                SubjectBatch.subject_id == subject_id,
+                SubjectBatch.status == "active",
+            )
+            if fac_type == "internal":
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+            else:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+            if batch_id:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.batch_id == batch_id)
+            alloc_res = await db.execute(alloc_stmt)
+            if not alloc_res.scalars().first():
+                raise ValueError("Access denied: You are not allocated to teach this subject.")
+
     sub_stmt = (
         select(Subject)
         .options(
@@ -1227,6 +1279,15 @@ async def create_attendance_correction_request(
     is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in user_roles)
     is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in user_roles)
 
+    # Detect if dispute arises from HyperBuild session or activities
+    is_hyperbuild = False
+    sess_corr = attendance.session
+    if sess_corr:
+        if sess_corr.session_type == "hyperbuild" or (sess_corr.venue and "hyperbuild" in sess_corr.venue.lower()):
+            is_hyperbuild = True
+    if req_in.activity_ids and len(req_in.activity_ids) > 0:
+        is_hyperbuild = True
+
     now_utc = datetime.now(timezone.utc)
     initial_status = "pending_faculty_approval"
     faculty_approver_id = None
@@ -1234,7 +1295,13 @@ async def create_attendance_correction_request(
     faculty_acted_at = None
     faculty_remarks = None
 
-    if is_faculty:
+    if is_hyperbuild:
+        # HyperBuild disputes: Single-tier approval (Admin only). Faculty approval not required.
+        initial_status = "pending_admin_approval"
+        faculty_action = "not_applicable"
+        faculty_acted_at = now_utc
+        faculty_remarks = "Auto-routed: HyperBuild dispute requires Admin approval only"
+    elif is_faculty:
         # Faculty initiated the correction; their tier is implicitly approved
         initial_status = "pending_admin_approval"
         faculty_approver_id = requested_by_id
@@ -1414,24 +1481,30 @@ async def _dispatch_dispute_email(
                 context=context,
             )
 
-        # 2. Dispatch to Faculty on initial submission or when admin reviewed first
-        if event_key == "attendance_dispute_submitted" and faculty_email:
-            fac_ctx = dict(context)
-            await trigger_activity_email(
-                db=db,
-                event_key=event_key,
-                recipient_email=faculty_email,
-                context=fac_ctx,
-            )
-        elif event_key == "attendance_dispute_admin_reviewed" and faculty_email:
-            fac_ctx = dict(context)
-            fac_ctx["next_step_message"] = "Administrative review has been completed. Your faculty review is required to finalize the dispute."
-            await trigger_activity_email(
-                db=db,
-                event_key=event_key,
-                recipient_email=faculty_email,
-                context=fac_ctx,
-            )
+        # 2. Dispatch to Faculty on initial submission or when admin reviewed first (Non-HyperBuild disputes only)
+        is_hb_corr = (
+            corr.faculty_action == "not_applicable"
+            or (session and (session.session_type == "hyperbuild" or (session.venue and "hyperbuild" in session.venue.lower())))
+            or (corr.activity_ids and len(corr.activity_ids) > 0)
+        )
+        if not is_hb_corr:
+            if event_key == "attendance_dispute_submitted" and faculty_email:
+                fac_ctx = dict(context)
+                await trigger_activity_email(
+                    db=db,
+                    event_key=event_key,
+                    recipient_email=faculty_email,
+                    context=fac_ctx,
+                )
+            elif event_key == "attendance_dispute_admin_reviewed" and faculty_email:
+                fac_ctx = dict(context)
+                fac_ctx["next_step_message"] = "Administrative review has been completed. Your faculty review is required to finalize the dispute."
+                await trigger_activity_email(
+                    db=db,
+                    event_key=event_key,
+                    recipient_email=faculty_email,
+                    context=fac_ctx,
+                )
     except Exception as e:
         logger.error(f"Failed to dispatch dispute email '{event_key}': {e}")
 
@@ -1575,9 +1648,15 @@ async def review_attendance_correction_admin(
     elif corr.session and corr.session.faculty_internal and corr.session.faculty_internal.full_name:
         fac_name = corr.session.faculty_internal.full_name
 
+    is_hb_corr = (
+        corr.faculty_action == "not_applicable"
+        or (corr.session and (corr.session.session_type == "hyperbuild" or (corr.session.venue and "hyperbuild" in corr.session.venue.lower())))
+        or (corr.activity_ids and len(corr.activity_ids) > 0)
+    )
+
     if action == "approved":
-        if corr.faculty_action == "approved":
-            # True Dual-Approval Achieved!
+        if is_hb_corr or corr.faculty_action == "approved":
+            # Single-tier approval (HyperBuild) or true Dual-Approval achieved!
             corr.status = "approved"
             corr.resolved_at = now_utc
             await _apply_attendance_correction(db, corr, now_utc)
@@ -1589,7 +1668,7 @@ async def review_attendance_correction_admin(
                 corr,
                 {
                     "corrected_status": corr.requested_status,
-                    "faculty_name": fac_name,
+                    "faculty_name": "N/A (HyperBuild)" if is_hb_corr else fac_name,
                     "admin_name": adm_name,
                     "updated_attendance_pct": pct_val,
                 }
@@ -1677,17 +1756,66 @@ async def list_attendance_corrections(
                 AttendanceCorrectionRequest.student_id.in_(student_subquery),
             )
         )
-    elif is_faculty and not is_admin:
+    has_session_joined = False
+    if is_faculty and not is_admin:
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, user_id)
         if fac_id:
+            has_session_joined = True
+            # Query active allocated (subject_id, batch_id) pairs from SubjectBatch
             if fac_type == "internal":
-                query = query.join(Session, AttendanceCorrectionRequest.session_id == Session.id).where(
-                    Session.faculty_internal_id == fac_id
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_internal_id == fac_id, SubjectBatch.status == "active"
+                )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_internal_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+
+                query = (
+                    query.join(Session, AttendanceCorrectionRequest.session_id == Session.id)
+                    .where(or_(*fac_conditions))
+                    # Exclude HyperBuild disputes from faculty queue (HyperBuild is Admin-only)
+                    .where(and_(
+                        Session.session_type != "hyperbuild",
+                        or_(Session.venue.is_(None), not_(Session.venue.ilike("%hyperbuild%"))),
+                        or_(AttendanceCorrectionRequest.faculty_action.is_(None), AttendanceCorrectionRequest.faculty_action != "not_applicable"),
+                    ))
                 )
             else:
-                query = query.join(Session, AttendanceCorrectionRequest.session_id == Session.id).where(
-                    Session.faculty_external_id == fac_id
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_external_id == fac_id, SubjectBatch.status == "active"
                 )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_external_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+
+                query = (
+                    query.join(Session, AttendanceCorrectionRequest.session_id == Session.id)
+                    .where(or_(*fac_conditions))
+                    .where(and_(
+                        Session.session_type != "hyperbuild",
+                        or_(Session.venue.is_(None), not_(Session.venue.ilike("%hyperbuild%"))),
+                        or_(AttendanceCorrectionRequest.faculty_action.is_(None), AttendanceCorrectionRequest.faculty_action != "not_applicable"),
+                    ))
+                )
+        else:
+            return []
+
+    if subject_id:
+        if not has_session_joined:
+            query = query.join(Session, AttendanceCorrectionRequest.session_id == Session.id)
+        query = query.where(Session.subject_id == subject_id)
 
     query = query.order_by(AttendanceCorrectionRequest.created_at.desc())
     res = await db.execute(query)
@@ -1707,11 +1835,30 @@ async def get_debarment_risk_students(
     batch_id: Optional[UUID] = None,
     subject_id: Optional[UUID] = None,
     category_filter: Optional[str] = None,
+    current_user_id: Optional[UUID] = None,
+    user_roles: Optional[List[str]] = None,
 ) -> List[DebarredStudentItemResponse]:
     """
     Returns list of students debarred or at risk of exam debarment (< 75% attendance)
     in any subject, evaluated across Category 1 (Academic Lectures) and Category 2 (HyperBuild Activities).
     """
+    roles = user_roles or []
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly"] for r in roles)
+    allocated_subject_ids = None
+    if not is_admin and current_user_id:
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if fac_id:
+            alloc_stmt = select(SubjectBatch.subject_id).where(
+                SubjectBatch.status == "active",
+                SubjectBatch.faculty_internal_id == fac_id if fac_type == "internal" else SubjectBatch.faculty_external_id == fac_id,
+            )
+            alloc_res = await db.execute(alloc_stmt)
+            allocated_subject_ids = set(alloc_res.scalars().all())
+            if not allocated_subject_ids:
+                return []
+        else:
+            return []
+
     query = (
         select(Student)
         .options(
@@ -1737,6 +1884,8 @@ async def get_debarment_risk_students(
             continue
 
         for sb in dossier.subjects_breakdown:
+            if allocated_subject_ids is not None and sb.subject_id not in allocated_subject_ids:
+                continue
             if subject_id and sb.subject_id != subject_id:
                 continue
 
@@ -1922,9 +2071,35 @@ async def get_class_attendance_register(
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
         if fac_id:
             if fac_type == "internal":
-                query = query.where(Session.faculty_internal_id == fac_id)
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_internal_id == fac_id, SubjectBatch.status == "active"
+                )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_internal_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+                query = query.where(or_(*fac_conditions))
             else:
-                query = query.where(Session.faculty_external_id == fac_id)
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_external_id == fac_id, SubjectBatch.status == "active"
+                )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_external_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+                query = query.where(or_(*fac_conditions))
+        else:
+            return []
 
     query = query.order_by(Session.session_date.desc(), Session.start_time.desc())
     res = await db.execute(query)
@@ -2046,6 +2221,8 @@ async def get_subject_attendance_matrix(
     subject_id: UUID,
     batch_id: Optional[UUID] = None,
     category: Optional[str] = None,
+    current_user_id: Optional[UUID] = None,
+    user_roles: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Returns a full cross-tab matrix of students and sessions for a subject,
@@ -2054,6 +2231,26 @@ async def get_subject_attendance_matrix(
       - HyperBuild Activities
     along with overall exam debarment standing.
     """
+    roles = user_roles or []
+    is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly", "finance"] for r in roles)
+
+    if not is_admin and current_user_id:
+        fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+        if fac_id:
+            alloc_stmt = select(SubjectBatch).where(
+                SubjectBatch.subject_id == subject_id,
+                SubjectBatch.status == "active",
+            )
+            if fac_type == "internal":
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+            else:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+            if batch_id:
+                alloc_stmt = alloc_stmt.where(SubjectBatch.batch_id == batch_id)
+            alloc_res = await db.execute(alloc_stmt)
+            if not alloc_res.scalars().first():
+                raise ValueError("Access denied: You are not allocated to teach this subject.")
+
     sub_stmt = (
         select(Subject)
         .options(
@@ -2564,10 +2761,35 @@ async def get_student_class_attendance_ledger(
     # Faculty Scoping: If user is only faculty, restrict to their allocated classes
     if not is_admin and any(r in ["faculty_internal", "faculty_external"] for r in roles) and current_user_id:
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
-        if fac_type == "internal":
-            query = query.where(Session.faculty_internal_id == fac_id)
-        elif fac_type == "external":
-            query = query.where(Session.faculty_external_id == fac_id)
+        if fac_id:
+            if fac_type == "internal":
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_internal_id == fac_id, SubjectBatch.status == "active"
+                )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_internal_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+                query = query.where(or_(*fac_conditions))
+            else:
+                alloc_stmt = select(SubjectBatch.subject_id, SubjectBatch.batch_id).where(
+                    SubjectBatch.faculty_external_id == fac_id, SubjectBatch.status == "active"
+                )
+                alloc_res = await db.execute(alloc_stmt)
+                allocated_pairs = alloc_res.all()
+
+                fac_conditions = [Session.faculty_external_id == fac_id]
+                for s_id, b_id in allocated_pairs:
+                    if b_id:
+                        fac_conditions.append(and_(Session.subject_id == s_id, Session.batch_id == b_id))
+                    else:
+                        fac_conditions.append(Session.subject_id == s_id)
+                query = query.where(or_(*fac_conditions))
         else:
             return {
                 "items": [],

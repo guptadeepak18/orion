@@ -39,9 +39,16 @@ class LMSService:
         return res.scalar_one_or_none()
 
     async def get_enrolled_subjects(
-        self, db: AsyncSession, user: User, program_id: Optional[uuid.UUID] = None, batch_id: Optional[uuid.UUID] = None
+        self,
+        db: AsyncSession,
+        user: User,
+        program_id: Optional[uuid.UUID] = None,
+        batch_id: Optional[uuid.UUID] = None,
+        user_roles: Optional[List[str]] = None,
     ) -> List[EnrolledSubjectCard]:
-        user_roles = [r.name for r in user.roles]
+        # Use explicitly-passed roles (from JWT payload) to avoid ORM lazy-load in async context
+        if user_roles is None:
+            user_roles = [r.name for r in user.roles] if user.roles else []
         is_admin = any(r in ["crc_admin", "crc_coordinator"] for r in user_roles)
         is_student = "student" in user_roles and not is_admin
         is_faculty = any(r in ["faculty_internal", "faculty_external"] for r in user_roles) and not is_admin

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.permissions import get_current_user
+from app.core.permissions import get_current_user, get_current_token_payload
 from app.models.auth import User
 from app.models.academic import Subject
 from app.models.student import Student
@@ -31,12 +31,16 @@ async def get_my_enrolled_subjects(
     batch_id: Optional[uuid.UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    payload: dict = Depends(get_current_token_payload),
 ):
     """Fetch enrolled subjects with LMS summary counters and attendance."""
+    # Pass JWT roles directly to avoid ORM lazy-load issue in async context
+    user_roles = payload.get("roles", [])
     subjects = await lms_service.get_enrolled_subjects(
-        db, current_user, program_id=program_id, batch_id=batch_id
+        db, current_user, program_id=program_id, batch_id=batch_id, user_roles=user_roles
     )
     return subjects
+
 
 
 # --- Subject Overview by Code or ID (human-readable URL) ---

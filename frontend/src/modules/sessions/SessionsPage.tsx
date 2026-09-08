@@ -1,5 +1,5 @@
 import { SearchableVenueSelect } from "./SearchableVenueSelect";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -505,7 +505,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/internal');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: isFaculty || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
   });
 
   const { data: facultyExternal = [] } = useQuery({
@@ -514,7 +514,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/external');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: isFaculty || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
   });
 
   const { data: allAllocations = [] } = useQuery({
@@ -523,8 +523,54 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/allocations');
       return (res.data.data || []) as any[];
     },
-    enabled: showClassModal || !!varianceSession,
+    enabled: isFaculty || showClassModal || !!varianceSession,
   });
+
+  // Resolve current faculty profile for per-session attendance authorization
+  const currentFacultyProfile = useMemo(() => {
+    if (!isFaculty || !user) return null;
+    const fi = (facultyInternal || []).find(
+      (f: any) => (f.user_id && f.user_id === user.id) || (f.email && user.email && f.email.toLowerCase() === user.email.toLowerCase())
+    );
+    if (fi) return { id: fi.id, type: 'internal' as const };
+    const fe = (facultyExternal || []).find(
+      (f: any) => (f.user_id && f.user_id === user.id) || (f.email && user.email && f.email.toLowerCase() === user.email.toLowerCase())
+    );
+    if (fe) return { id: fe.id, type: 'external' as const };
+    return null;
+  }, [isFaculty, user, facultyInternal, facultyExternal]);
+
+  const canMarkSession = (sess: Session) => {
+    if (isAdmin) return true;
+    if (!canMarkAttendance || !isFaculty) return false;
+    if (currentFacultyProfile) {
+      if (currentFacultyProfile.type === 'internal' && sess.faculty_internal_id === currentFacultyProfile.id) {
+        return true;
+      }
+      if (currentFacultyProfile.type === 'external' && sess.faculty_external_id === currentFacultyProfile.id) {
+        return true;
+      }
+    }
+    // Check active SubjectBatch allocations
+    if (sess.subject_id && allAllocations && allAllocations.length > 0) {
+      const match = allAllocations.some((a: any) => {
+        const facMatches = currentFacultyProfile
+          ? (currentFacultyProfile.type === 'internal'
+              ? a.faculty_internal_id === currentFacultyProfile.id
+              : a.faculty_external_id === currentFacultyProfile.id)
+          : false;
+        const subjMatches = a.subject_id === sess.subject_id;
+        const batchMatches = !sess.batch_id || !a.batch_id || a.batch_id === sess.batch_id;
+        return facMatches && subjMatches && batchMatches && a.status === 'active';
+      });
+      if (match) return true;
+    }
+    // Fallback: match session faculty name with logged in user name
+    if (sess.faculty_name && user?.full_name && sess.faculty_name.toLowerCase().includes(user.full_name.toLowerCase())) {
+      return true;
+    }
+    return false;
+  };
 
 
 
@@ -1343,7 +1389,7 @@ export const SessionsPage: React.FC = () => {
       if (found) {
         if (urlModal === 'editClass' && canScheduleSessions && (!showClassModal || editingSession?.id !== found.id)) {
           handleOpenEditClass(found, false);
-        } else if (urlModal === 'markAttendance' && canMarkAttendance && (!attendanceSession || attendanceSession?.id !== found.id)) {
+        } else if (urlModal === 'markAttendance' && canMarkSession(found) && (!attendanceSession || attendanceSession?.id !== found.id)) {
           handleOpenAttendance(found, false);
         }
       }
@@ -1466,7 +1512,7 @@ export const SessionsPage: React.FC = () => {
               <Edit3 className="h-3.5 w-3.5" />
             </button>
           )}
-          {canMarkAttendance && (
+          {canMarkSession(r) && (
             <button
               onClick={() => handleOpenAttendance(r)}
               className="p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
@@ -1891,7 +1937,7 @@ export const SessionsPage: React.FC = () => {
                         <span>Delete</span>
                       </button>
                     )}
-                    {canMarkAttendance && (
+                    {canMarkSession(sess) && (
                       <button
                         onClick={() => handleOpenAttendance(sess)}
                         className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"
