@@ -564,6 +564,11 @@ export const AttendancePage: React.FC = () => {
   const [dossierDivisionFilter, setDossierDivisionFilter] = useState<string>('');
   const [dossierStudentSearch, setDossierStudentSearch] = useState<string>('');
 
+  // Chronological session log filters in Student Dossier
+  const [dossierCategoryFilter, setDossierCategoryFilter] = useState<string>('all');
+  const [dossierSubjectFilter, setDossierSubjectFilter] = useState<string>('all');
+  const [dossierStatusFilter, setDossierStatusFilter] = useState<string>('all');
+
   // Extract available Programs, Batches, and Divisions dynamically
   const availableDossierPrograms = useMemo(() => {
     const map = new Map<string, string>();
@@ -604,19 +609,16 @@ export const AttendancePage: React.FC = () => {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [divisionsListData, studentsListData]);
 
-  // Filter students based on Program, Batch, Division, and Search text
+
+  // Filter students list for Staff Dossier search panel
   const filteredDossierStudents = useMemo(() => {
-    if (!studentsListData || studentsListData.length === 0) return [];
-    return studentsListData.filter((st: any) => {
-      // Program filter
+    return (studentsListData || []).filter((st: any) => {
       if (dossierProgramFilter && st.program_id !== dossierProgramFilter && st.program_name !== dossierProgramFilter) {
         return false;
       }
-      // Batch filter
       if (dossierBatchFilter && st.batch_id !== dossierBatchFilter && st.batch_name !== dossierBatchFilter) {
         return false;
       }
-      // Division filter
       if (dossierDivisionFilter) {
         const hasDivId = Array.isArray(st.division_ids) && st.division_ids.includes(dossierDivisionFilter);
         const hasDivName = Array.isArray(st.division_names) && st.division_names.includes(dossierDivisionFilter);
@@ -625,14 +627,13 @@ export const AttendancePage: React.FC = () => {
           return false;
         }
       }
-      // Student Search (Name, PRN, Roll No, Email)
       if (dossierStudentSearch.trim()) {
         const q = dossierStudentSearch.toLowerCase().trim();
-        const fullName = `${st.first_name || ''} ${st.last_name || ''} ${st.full_name || ''}`.toLowerCase();
-        const prn = (st.prn_number || '').toLowerCase();
-        const roll = (st.roll_no || '').toLowerCase();
-        const email = (st.email_official || st.email || '').toLowerCase();
-        if (!fullName.includes(q) && !prn.includes(q) && !roll.includes(q) && !email.includes(q)) {
+        const matchesName = st.full_name?.toLowerCase().includes(q) || `${st.first_name || ''} ${st.last_name || ''}`.toLowerCase().includes(q);
+        const matchesPrn = st.prn_number?.toLowerCase().includes(q);
+        const matchesEmail = st.email_official?.toLowerCase().includes(q) || st.email?.toLowerCase().includes(q);
+        const matchesRoll = st.roll_no?.toLowerCase().includes(q);
+        if (!matchesName && !matchesPrn && !matchesEmail && !matchesRoll) {
           return false;
         }
       }
@@ -640,7 +641,7 @@ export const AttendancePage: React.FC = () => {
     });
   }, [studentsListData, dossierProgramFilter, dossierBatchFilter, dossierDivisionFilter, dossierStudentSearch]);
 
-  // Sync selected student when filtered list changes or initial load
+  // Auto-select first student in filtered list if current selection is invalid
   useEffect(() => {
     if (activeTab === 'students') {
       if (isStudent && studentProfileId) {
@@ -670,6 +671,25 @@ export const AttendancePage: React.FC = () => {
     enabled: isStudent ? true : !!effectiveDossierId,
   });
 
+  // Filtered session records for chronological session log in Dossier
+  const filteredDossierSessionRecords = useMemo(() => {
+    if (!studentDossierData?.session_records) return [];
+    return studentDossierData.session_records.filter((rec: any) => {
+      if (dossierCategoryFilter !== 'all') {
+        const cat = rec.category || (rec.activity_id || rec.activity_no ? 'hyperbuild_activity' : 'academic_lecture');
+        if (dossierCategoryFilter === 'academic' && cat !== 'academic_lecture') return false;
+        if (dossierCategoryFilter === 'hyperbuild' && cat !== 'hyperbuild_activity') return false;
+      }
+      if (dossierSubjectFilter !== 'all') {
+        if (rec.subject_id !== dossierSubjectFilter && rec.subject_code !== dossierSubjectFilter) return false;
+      }
+      if (dossierStatusFilter !== 'all') {
+        if (rec.status !== dossierStatusFilter) return false;
+      }
+      return true;
+    });
+  }, [studentDossierData, dossierCategoryFilter, dossierSubjectFilter, dossierStatusFilter]);
+
   // Export Student Attendance Dossier to Excel (.xlsx) matching Daily Student Ledger format
   const handleExportDossierExcel = () => {
     if (!studentDossierData) return;
@@ -686,6 +706,7 @@ export const AttendancePage: React.FC = () => {
         } catch (e) {}
       }
       const timeSlot = rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time} - ${rec.end_time}` : '');
+      const catLabel = rec.category_label || (rec.category === 'hyperbuild_activity' || rec.activity_no ? 'HyperBuild Activity' : 'Academic Lecture');
       return {
         'Roll No': studentDossierData.roll_no || '—',
         'PRN Number': studentDossierData.student_prn,
@@ -695,8 +716,10 @@ export const AttendancePage: React.FC = () => {
         'Session Date': rec.session_date,
         'Day of Week': dayOfWeek,
         'Time Slot': timeSlot,
+        'Category': catLabel,
         'Subject Code': rec.subject_code || '—',
         'Subject Name': rec.subject_name,
+        'Activity / Topic': rec.activity_no ? `Act #${rec.activity_no}: ${rec.activity_title || ''}` : (rec.topic_name || rec.topic_delivered || '—'),
         'Faculty Name': rec.faculty_name || 'Faculty',
         'Venue / Classroom': rec.venue || '—',
         'Attendance Status': (rec.status || '').toUpperCase(),
@@ -714,8 +737,10 @@ export const AttendancePage: React.FC = () => {
       { wch: 14 },
       { wch: 12 },
       { wch: 16 },
+      { wch: 22 },
       { wch: 14 },
       { wch: 30 },
+      { wch: 28 },
       { wch: 22 },
       { wch: 16 },
       { wch: 18 },
@@ -727,24 +752,37 @@ export const AttendancePage: React.FC = () => {
     const subjectRows = (studentDossierData.subjects_breakdown || []).map((sb: any) => ({
       'Subject Code': sb.subject_code || '—',
       'Subject Name': sb.subject_name,
-      'Classes Attended': sb.attended,
-      'Classes Conducted': sb.total_sessions,
-      'Attendance %': `${sb.percentage}%`,
-      'Compliance Standing':
-        sb.percentage >= 75
-          ? 'Safe (≥75%)'
-          : sb.percentage >= 60
-          ? 'Warning (60-74%)'
-          : 'Debarred (<60%)',
+      'Academic Lectures Conducted': sb.academic_total ?? 0,
+      'Academic Lectures Attended': sb.academic_attended ?? 0,
+      'Academic Lectures %': `${sb.academic_percentage ?? 0}%`,
+      'Academic Standing': sb.academic_status || (sb.academic_eligible ? 'Eligible (≥75%)' : 'Debarred (<75%)'),
+      'HyperBuild Activities Conducted': sb.hyperbuild_total ?? 0,
+      'HyperBuild Activities Attended': sb.hyperbuild_attended ?? 0,
+      'HyperBuild Activities %': `${sb.hyperbuild_percentage ?? 0}%`,
+      'HyperBuild Standing': sb.hyperbuild_status || (sb.hyperbuild_eligible ? 'Eligible (≥75%)' : 'Debarred (<75%)'),
+      'Total Sessions': sb.total_sessions ?? 0,
+      'Total Attended': sb.attended ?? 0,
+      'Overall Attendance %': `${sb.percentage}%`,
+      'Exam Eligibility Status': sb.is_exam_eligible ? 'ELIGIBLE FOR EXAM' : 'DEBARRED FROM EXAM',
+      'Debarment Reason / Notes': sb.debarment_reason || (sb.is_exam_eligible ? 'Meets dual 75% requirement' : 'Failed 75% threshold'),
     }));
     const wsSubjects = XLSX.utils.json_to_sheet(subjectRows);
     wsSubjects['!cols'] = [
       { wch: 14 },
       { wch: 32 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 16 },
       { wch: 24 },
+      { wch: 24 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 24 },
+      { wch: 36 },
     ];
     XLSX.utils.book_append_sheet(workbook, wsSubjects, 'Subject Summary');
 
@@ -755,11 +793,17 @@ export const AttendancePage: React.FC = () => {
       { 'Field': 'Roll Number', 'Details': studentDossierData.roll_no || '—' },
       { 'Field': 'Academic Program', 'Details': studentDossierData.program_name || '—' },
       { 'Field': 'Batch', 'Details': studentDossierData.batch_name || '—' },
+      { 'Field': 'Academic Lectures Conducted', 'Details': studentDossierData.overall_academic_total ?? 0 },
+      { 'Field': 'Academic Lectures Attended', 'Details': studentDossierData.overall_academic_attended ?? 0 },
+      { 'Field': 'Academic Lectures Attendance %', 'Details': `${studentDossierData.overall_academic_percentage ?? 0}%` },
+      { 'Field': 'HyperBuild Activities Conducted', 'Details': studentDossierData.overall_hyperbuild_total ?? 0 },
+      { 'Field': 'HyperBuild Activities Attended', 'Details': studentDossierData.overall_hyperbuild_attended ?? 0 },
+      { 'Field': 'HyperBuild Activities Attendance %', 'Details': `${studentDossierData.overall_hyperbuild_percentage ?? 0}%` },
       { 'Field': 'Total Classes Conducted', 'Details': studentDossierData.total_classes_conducted || 0 },
       { 'Field': 'Total Classes Attended', 'Details': studentDossierData.total_classes_attended || 0 },
       { 'Field': 'Cumulative Attendance %', 'Details': `${studentDossierData.overall_attendance_percentage ?? 0}%` },
       {
-        'Field': 'Compliance Standing',
+        'Field': 'Overall Standing',
         'Details':
           (studentDossierData.overall_attendance_percentage ?? 0) >= 75
             ? 'Safe (≥75%)'
@@ -767,10 +811,11 @@ export const AttendancePage: React.FC = () => {
             ? 'Warning (60-74%)'
             : 'Debarred (<60%)',
       },
+      { 'Field': 'Exam Eligibility Rule', 'Details': 'Mandatory minimum 75% in BOTH Academic Lectures and HyperBuild Activities for each subject.' },
       { 'Field': 'Exported At', 'Details': new Date().toLocaleString() },
     ];
     const wsProfile = XLSX.utils.json_to_sheet(profileRows);
-    wsProfile['!cols'] = [{ wch: 28 }, { wch: 40 }];
+    wsProfile['!cols'] = [{ wch: 32 }, { wch: 48 }];
     XLSX.utils.book_append_sheet(workbook, wsProfile, 'Student Overview');
 
     const safePrn = (studentDossierData.student_prn || 'Record').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -846,14 +891,75 @@ export const AttendancePage: React.FC = () => {
   // TAB 6: DEBARMENT COMPLIANCE & RECOVERY CALCULATOR (< 75%)
   // ─────────────────────────────────────────────────────────────────────────────
   const [debarmentThreshold, setDebarmentThreshold] = useState<number>(75.0);
+  const [debarmentBatchId, setDebarmentBatchId] = useState<string>('');
+  const [debarmentSubjectId, setDebarmentSubjectId] = useState<string>('');
+  const [debarmentCategory, setDebarmentCategory] = useState<string>('all');
+  const [debarmentSearch, setDebarmentSearch] = useState<string>('');
+
   const { data: debarredStudentsData = [], isPending: debarmentLoading } = useQuery({
-    queryKey: ['debarment_risk', debarmentThreshold],
+    queryKey: ['debarment_risk', debarmentThreshold, debarmentBatchId, debarmentSubjectId, debarmentCategory],
     queryFn: async () => {
-      const res = await api.get(`/attendance/debarment-risk?threshold=${debarmentThreshold}`);
+      const params = new URLSearchParams();
+      params.append('threshold', String(debarmentThreshold));
+      if (debarmentBatchId) params.append('batch_id', debarmentBatchId);
+      if (debarmentSubjectId) params.append('subject_id', debarmentSubjectId);
+      if (debarmentCategory && debarmentCategory !== 'all') params.append('category', debarmentCategory);
+      const res = await api.get(`/attendance/debarment-risk?${params.toString()}`);
       return (res.data?.data || []) as any[];
     },
     enabled: !isStudent && activeTab === 'compliance',
   });
+
+  const filteredDebarredStudents = useMemo(() => {
+    if (!debarmentSearch.trim()) return debarredStudentsData;
+    const q = debarmentSearch.toLowerCase().trim();
+    return debarredStudentsData.filter((item: any) =>
+      (item.student_name && item.student_name.toLowerCase().includes(q)) ||
+      (item.student_prn && item.student_prn.toLowerCase().includes(q)) ||
+      (item.roll_no && item.roll_no.toLowerCase().includes(q)) ||
+      (item.subject_name && item.subject_name.toLowerCase().includes(q)) ||
+      (item.subject_code && item.subject_code.toLowerCase().includes(q))
+    );
+  }, [debarredStudentsData, debarmentSearch]);
+
+  const handleExportDebarmentExcel = () => {
+    if (!filteredDebarredStudents || filteredDebarredStudents.length === 0) return;
+    const workbook = XLSX.utils.book_new();
+    const rows = filteredDebarredStudents.map((st: any) => ({
+      'Student Name': st.student_name,
+      'PRN Number': st.student_prn,
+      'Roll No': st.roll_no || '—',
+      'Batch': st.batch_name || '—',
+      'Subject Code': st.subject_code || '—',
+      'Subject Name': st.subject_name || '—',
+      'Academic Lectures %': `${st.academic_percentage ?? 0}%`,
+      'HyperBuild Activities %': `${st.hyperbuild_percentage ?? 0}%`,
+      'Overall Attendance %': `${st.attendance_percentage ?? 0}%`,
+      'Debarred In Category': st.debarred_category === 'both' ? 'Both Academic & HyperBuild' : (st.debarred_category === 'hyperbuild_only' ? 'HyperBuild Only' : 'Academic Only'),
+      'Debarment Reason': st.debarment_reason || 'Attendance < 75%',
+      'Shortfall Sessions': st.shortfall_sessions || 0,
+      'Exam Standing': 'DEBARRED FROM EXAM',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 26 },
+      { wch: 38 },
+      { wch: 18 },
+      { wch: 24 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, ws, 'Debarred Students Registry');
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `Debarred_Students_Registry_${dateStr}.xlsx`);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // TAB: DAILY STUDENT CLASS ATTENDANCE LEDGER
@@ -863,6 +969,7 @@ export const AttendancePage: React.FC = () => {
   const [ledgerBatchId, setLedgerBatchId] = useState<string>('');
   const [ledgerSubjectId, setLedgerSubjectId] = useState<string>('');
   const [ledgerSessionId, setLedgerSessionId] = useState<string>('');
+  const [ledgerCategory, setLedgerCategory] = useState<string>('');
   const [ledgerStatus, setLedgerStatus] = useState<string>('');
   const [ledgerSearch, setLedgerSearch] = useState<string>('');
   const [ledgerLimit, setLedgerLimit] = useState<number>(50);
@@ -882,6 +989,7 @@ export const AttendancePage: React.FC = () => {
       ledgerBatchId,
       ledgerSubjectId,
       ledgerSessionId,
+      ledgerCategory,
       ledgerStatus,
       ledgerSearch,
       ledgerLimit,
@@ -894,6 +1002,7 @@ export const AttendancePage: React.FC = () => {
       if (ledgerBatchId) params.append('batch_id', ledgerBatchId);
       if (ledgerSubjectId) params.append('subject_id', ledgerSubjectId);
       if (ledgerSessionId) params.append('session_id', ledgerSessionId);
+      if (ledgerCategory) params.append('category', ledgerCategory);
       if (ledgerStatus) params.append('status', ledgerStatus);
       if (ledgerSearch.trim()) params.append('search', ledgerSearch.trim());
       if (ledgerLimit) {
@@ -940,10 +1049,12 @@ export const AttendancePage: React.FC = () => {
     setLedgerBatchId('');
     setLedgerSubjectId('');
     setLedgerSessionId('');
+    setLedgerCategory('');
     setLedgerStatus('');
     setLedgerSearch('');
     setLedgerPage(1);
   };
+
 
   // Modal: Raise Correction
   const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<any | null>(null);
@@ -2135,7 +2246,7 @@ export const AttendancePage: React.FC = () => {
           ) : studentDossierData ? (
             <div className="space-y-6">
               {/* Dossier Header Card */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-black text-slate-900 dark:text-white">
                     {studentDossierData.student_name}
@@ -2143,6 +2254,14 @@ export const AttendancePage: React.FC = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     PRN: <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{studentDossierData.student_prn}</span> • {studentDossierData.program_name} • {studentDossierData.batch_name}
                   </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-1.5">
+                      <span>🎓</span> Academic Lectures: <strong className="text-slate-900 dark:text-white">{studentDossierData.overall_academic_attended ?? 0}/{studentDossierData.overall_academic_total ?? 0}</strong> ({studentDossierData.overall_academic_percentage ?? 0}%)
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
+                      <span>⚡</span> HyperBuild Activities: <strong className="text-indigo-900 dark:text-indigo-200">{studentDossierData.overall_hyperbuild_attended ?? 0}/{studentDossierData.overall_hyperbuild_total ?? 0}</strong> ({studentDossierData.overall_hyperbuild_percentage ?? 0}%)
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -2165,42 +2284,227 @@ export const AttendancePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Subject Breakdown Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {(studentDossierData.subjects_breakdown || []).map((sb: any) => (
-                  <div key={sb.subject_id} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded">
-                        {sb.subject_code}
-                      </span>
-                      <span className={`text-xs font-black ${sb.percentage >= 75 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {sb.percentage}%
-                      </span>
-                    </div>
-                    <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">{sb.subject_name}</h4>
-                    <div className="text-[11px] text-slate-500 flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-                      <span>Attended: {sb.attended}/{sb.total_sessions}</span>
-                      <span className={sb.percentage >= 75 ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
-                        {sb.percentage >= 75 ? 'Good Standing' : 'Low (<75%)'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              {/* Subject Breakdown Cards with Dual-Category Breakdown & Exam Eligibility Standing */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-indigo-600" />
+                    Course-by-Course Attendance & Exam Debarment Standing
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Rule: Min 75% required in <strong>Academic</strong> & <strong>HyperBuild</strong> to sit for exams
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {(studentDossierData.subjects_breakdown || []).map((sb: any) => {
+                    const isDebarred = sb.is_debarred;
+                    const acadPct = sb.academic_percentage ?? 0;
+                    const hbPct = sb.hyperbuild_percentage ?? 0;
+                    const hasAcad = (sb.academic_total ?? 0) > 0;
+                    const hasHb = (sb.hyperbuild_total ?? 0) > 0;
+
+                    return (
+                      <div
+                        key={sb.subject_id}
+                        className={`p-4 rounded-2xl bg-white dark:bg-slate-900 border transition-all ${
+                          isDebarred
+                            ? 'border-rose-300 dark:border-rose-900/60 shadow-xs bg-rose-50/10'
+                            : 'border-slate-200 dark:border-slate-800 shadow-xs'
+                        } space-y-3`}
+                      >
+                        {/* Header: Code + Name + Exam Badge */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-mono text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded">
+                              {sb.subject_code}
+                            </span>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-1 line-clamp-1" title={sb.subject_name}>
+                              {sb.subject_name}
+                            </h4>
+                          </div>
+                          <div>
+                            {isDebarred ? (
+                              <span
+                                className="px-2 py-1 rounded-lg text-[10px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shrink-0 whitespace-nowrap"
+                                title={sb.debarment_reason || 'Debarred from exam (< 75%)'}
+                              >
+                                <AlertTriangle className="h-3 w-3 text-rose-600 dark:text-rose-400" />
+                                DEBARRED
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shrink-0 whitespace-nowrap">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                EXAM ELIGIBLE
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Debarment Alert Notice if Debarred */}
+                        {isDebarred && (
+                          <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-[11px] text-rose-700 dark:text-rose-300">
+                            <strong>Debarment Notice:</strong> {sb.debarment_reason}
+                          </div>
+                        )}
+
+                        {/* Dual Category Breakdown */}
+                        <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                          {/* Category 1: Academic Lectures */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <span>🎓</span> Academic Lectures
+                              </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                {hasAcad ? (
+                                  <>
+                                    {sb.academic_attended}/{sb.academic_total}{' '}
+                                    <span className={acadPct >= 75 ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
+                                      ({acadPct}%)
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-slate-400">0 Conducted</span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  !hasAcad ? 'bg-slate-300 dark:bg-slate-700' : acadPct >= 75 ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}
+                                style={{ width: hasAcad ? `${Math.min(100, acadPct)}%` : '0%' }}
+                              />
+                            </div>
+                            {hasAcad && acadPct < 75 && sb.academic_shortfall > 0 && (
+                              <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                                Shortfall: Attend next {sb.academic_shortfall} lecture(s) to reach 75%
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Category 2: HyperBuild Activities */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <span>⚡</span> HyperBuild Activities
+                              </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                {hasHb ? (
+                                  <>
+                                    {sb.hyperbuild_attended}/{sb.hyperbuild_total}{' '}
+                                    <span className={hbPct >= 75 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-rose-600 font-bold'}>
+                                      ({hbPct}%)
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-slate-400">0 Conducted</span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  !hasHb ? 'bg-slate-300 dark:bg-slate-700' : hbPct >= 75 ? 'bg-indigo-500' : 'bg-rose-500'
+                                }`}
+                                style={{ width: hasHb ? `${Math.min(100, hbPct)}%` : '0%' }}
+                              />
+                            </div>
+                            {hasHb && hbPct < 75 && sb.hyperbuild_shortfall > 0 && (
+                              <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                                Shortfall: Complete next {sb.hyperbuild_shortfall} activity/activities to reach 75%
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Overall Footer */}
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <span>Combined: {sb.attended}/{sb.total_sessions} ({sb.percentage}%)</span>
+                          <span className={sb.percentage >= 75 ? 'text-emerald-600 font-bold' : 'text-slate-500 font-medium'}>
+                            {sb.percentage >= 75 ? 'Overall Safe' : 'Overall Low'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Session History Timeline */}
+              {/* Chronological Session Attendance Log with Category, Subject, and Status Filters */}
               <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-indigo-600" />
-                  Chronological Session Attendance Log
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-indigo-600" />
+                    Chronological Session Attendance Log
+                    <span className="text-xs font-normal text-slate-400">
+                      ({filteredDossierSessionRecords.length} records)
+                    </span>
+                  </h3>
+
+                  {/* Filters */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Category Filter */}
+                    <select
+                      value={dossierCategoryFilter}
+                      onChange={(e) => setDossierCategoryFilter(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                    >
+                      <option value="all">All Categories</option>
+                      <option value="academic">🎓 Academic Lectures</option>
+                      <option value="hyperbuild">⚡ HyperBuild Activities</option>
+                    </select>
+
+                    {/* Subject Filter */}
+                    <select
+                      value={dossierSubjectFilter}
+                      onChange={(e) => setDossierSubjectFilter(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 max-w-[180px]"
+                    >
+                      <option value="all">All Subjects</option>
+                      {(studentDossierData.subjects_breakdown || []).map((sb: any) => (
+                        <option key={sb.subject_id} value={sb.subject_id}>
+                          {sb.subject_code ? `[${sb.subject_code}] ` : ''}{sb.subject_name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Status Filter */}
+                    <select
+                      value={dossierStatusFilter}
+                      onChange={(e) => setDossierStatusFilter(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="excused">Excused / OD</option>
+                    </select>
+
+                    {(dossierCategoryFilter !== 'all' || dossierSubjectFilter !== 'all' || dossierStatusFilter !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDossierCategoryFilter('all');
+                          setDossierSubjectFilter('all');
+                          setDossierStatusFilter('all');
+                        }}
+                        className="text-xs font-bold text-rose-600 hover:underline cursor-pointer flex items-center gap-1"
+                      >
+                        <X className="h-3.5 w-3.5" /> Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                       <tr>
                         <th className="p-3">Date</th>
-                        <th className="p-3">Subject</th>
+                        <th className="p-3">Category</th>
+                        <th className="p-3">Subject & Activity / Topic</th>
                         <th className="p-3">Faculty</th>
                         <th className="p-3">Time & Venue</th>
                         <th className="p-3 text-center">Status</th>
@@ -2208,59 +2512,93 @@ export const AttendancePage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {(studentDossierData.session_records || []).map((rec: any) => (
-                        <tr key={rec.attendance_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                          <td className="p-3 font-bold text-slate-900 dark:text-white">{rec.session_date}</td>
-                          <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
-                            {rec.subject_code ? `${rec.subject_code} · ` : ''}{rec.subject_name}
-                          </td>
-                          <td className="p-3 text-slate-600 dark:text-slate-400">{rec.faculty_name || 'Faculty'}</td>
-                          <td className="p-3 text-slate-500 font-mono text-[11px]">
-                            {rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time}-${rec.end_time}` : '')} • {rec.venue}
-                          </td>
-                          <td className="p-3 text-center">
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                                rec.status === 'present'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : rec.status === 'absent'
-                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                                  : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300'
-                              }`}
-                            >
-                              {rec.status}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openCorrectionModal({
-                                  attendance_id: rec.attendance_id || rec.id,
-                                  sessionId: rec.session_id,
-                                  activityId: rec.activity_id,
-                                  studentId: studentDossierData?.student_id,
-                                  studentName: studentDossierData?.student_name,
-                                  studentPrn: studentDossierData?.student_prn,
-                                  subjectName: rec.subject_name,
-                                  sessionDate: rec.session_date,
-                                  sessionTime: rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time} - ${rec.end_time}` : undefined),
-                                  venue: rec.venue,
-                                  currentStatus: rec.status,
-                                })
-                              }
-                              className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 text-slate-700 dark:text-slate-300 font-bold text-[11px] transition-colors cursor-pointer"
-                            >
-                              Dispute
-                            </button>
+                      {filteredDossierSessionRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-8 text-center text-slate-400">
+                            No session records found matching the selected filters.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        filteredDossierSessionRecords.map((rec: any) => {
+                          const isHb = rec.category === 'hyperbuild_activity' || Boolean(rec.activity_no);
+                          return (
+                            <tr key={rec.attendance_id || `${rec.session_id}-${rec.activity_id || ''}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                              <td className="p-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">{rec.session_date}</td>
+                              <td className="p-3 whitespace-nowrap">
+                                {isHb ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 w-fit">
+                                    <span>⚡</span> HyperBuild
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 w-fit">
+                                    <span>🎓</span> Academic
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
+                                <div>
+                                  {rec.subject_code ? `${rec.subject_code} · ` : ''}{rec.subject_name}
+                                </div>
+                                {isHb && rec.activity_title ? (
+                                  <div className="text-[11px] font-normal text-indigo-600 dark:text-indigo-400 mt-0.5">
+                                    Activity #{rec.activity_no}: {rec.activity_title}
+                                  </div>
+                                ) : rec.topic_name ? (
+                                  <div className="text-[11px] font-normal text-slate-400 mt-0.5">
+                                    Topic: {rec.topic_name}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="p-3 text-slate-600 dark:text-slate-400">{rec.faculty_name || 'Faculty'}</td>
+                              <td className="p-3 text-slate-500 font-mono text-[11px]">
+                                {rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time}-${rec.end_time}` : '')} • {rec.venue}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                                    rec.status === 'present'
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                      : rec.status === 'absent'
+                                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                      : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300'
+                                  }`}
+                                >
+                                  {rec.status}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openCorrectionModal({
+                                      attendance_id: rec.attendance_id || rec.id,
+                                      sessionId: rec.session_id,
+                                      activityId: rec.activity_id,
+                                      studentId: studentDossierData?.student_id,
+                                      studentName: studentDossierData?.student_name,
+                                      studentPrn: studentDossierData?.student_prn,
+                                      subjectName: rec.subject_name,
+                                      sessionDate: rec.session_date,
+                                      sessionTime: rec.session_time || (rec.start_time && rec.end_time ? `${rec.start_time} - ${rec.end_time}` : undefined),
+                                      venue: rec.venue,
+                                      currentStatus: rec.status,
+                                    })
+                                  }
+                                  className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 text-slate-700 dark:text-slate-300 font-bold text-[11px] transition-colors cursor-pointer"
+                                >
+                                  Dispute
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
+
           ) : studentDossierError ? (
             <div className="p-8 text-center rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 max-w-xl mx-auto my-8">
               <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
@@ -2476,7 +2814,7 @@ export const AttendancePage: React.FC = () => {
       {activeTab === 'compliance' && (
         <div className="space-y-6">
           {isStudent ? (
-            /* STUDENT PERSONAL COMPLIANCE & RECOVERY CALCULATOR */
+            /* STUDENT PERSONAL COMPLIANCE & DUAL-TRACK EXAM ELIGIBILITY */
             <div className="space-y-6">
               {/* Compliance Status Header Card */}
               <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2484,30 +2822,30 @@ export const AttendancePage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                       <ShieldCheck className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                      Institutional Attendance Compliance & Standing
+                      Institutional Exam Debarment & Compliance Standing
                     </h3>
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
                       (studentDossierData?.total_classes_conducted || 0) === 0
                         ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
-                        : (studentDossierData?.overall_attendance_percentage ?? 0) >= 75
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                        : (studentDossierData?.subjects_breakdown || []).some((sb: any) => sb.is_debarred)
+                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                     }`}>
                       {(studentDossierData?.total_classes_conducted || 0) === 0
                         ? 'Classes Pending'
-                        : (studentDossierData?.overall_attendance_percentage ?? 0) >= 75
-                        ? 'Good Standing'
-                        : 'Attendance Advisory (<75%)'}
+                        : (studentDossierData?.subjects_breakdown || []).some((sb: any) => sb.is_debarred)
+                        ? 'Debarment Risk Active'
+                        : 'Fully Exam Eligible'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Lexicon MILE mandates a minimum of 75% attendance in every course module to remain eligible for examinations and term credits.
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed max-w-3xl">
+                    <strong>Institutional Examination Policy:</strong> Students require a <strong>minimum 75% attendance in BOTH categories</strong> (Academic Lectures AND HyperBuild Activities) for each enrolled course module. Falling below 75% in either category results in examination debarment for that particular subject.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-center">
-                    <div className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">Current Attendance</div>
+                    <div className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">Cumulative Attendance</div>
                     <div className="text-2xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">
                       {(studentDossierData?.total_classes_conducted || 0) > 0
                         ? `${studentDossierData?.overall_attendance_percentage ?? 0}%`
@@ -2517,15 +2855,14 @@ export const AttendancePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Recovery & Buffer Calculator */}
+              {/* Recovery & Buffer Summary */}
               {(() => {
                 const totalCond = studentDossierData?.total_classes_conducted || 0;
                 const totalAtt = studentDossierData?.total_classes_attended || 0;
                 const hasClasses = totalCond > 0;
                 const currentPct = studentDossierData?.overall_attendance_percentage ?? 0;
-                const isCompliant = hasClasses ? currentPct >= 75 : true;
-                const neededClasses = !isCompliant && totalCond > 0 ? Math.max(0, Math.ceil(3 * totalCond - 4 * totalAtt)) : 0;
-                const safeBuffer = isCompliant && totalCond > 0 ? Math.max(0, Math.floor((totalAtt / 0.75) - totalCond)) : 0;
+                const debarredSubjects = (studentDossierData?.subjects_breakdown || []).filter((sb: any) => sb.is_debarred);
+                const hasDebarred = debarredSubjects.length > 0;
 
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2533,7 +2870,7 @@ export const AttendancePage: React.FC = () => {
                     <div className={`p-6 rounded-3xl border shadow-sm space-y-3 ${
                       !hasClasses
                         ? 'bg-slate-50/50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800'
-                        : isCompliant
+                        : !hasDebarred
                         ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40'
                         : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40'
                     }`}>
@@ -2541,26 +2878,26 @@ export const AttendancePage: React.FC = () => {
                         <div className={`p-2.5 rounded-2xl ${
                           !hasClasses
                             ? 'bg-slate-600 text-white'
-                            : isCompliant
+                            : !hasDebarred
                             ? 'bg-emerald-600 text-white'
                             : 'bg-rose-600 text-white'
                         }`}>
-                          {!hasClasses ? <Clock className="h-5 w-5" /> : isCompliant ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                          {!hasClasses ? <Clock className="h-5 w-5" /> : !hasDebarred ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                         </div>
                         <div>
                           <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                             {!hasClasses
                               ? 'Academic Sessions Pending'
-                              : isCompliant
-                              ? 'Compliant Standing'
-                              : 'Attendance Shortfall Target'}
+                              : !hasDebarred
+                              ? 'Compliant Standing Across All Subjects'
+                              : `${debarredSubjects.length} Subject(s) at Risk of Debarment`}
                           </h4>
                           <p className="text-xs text-slate-500">
                             {!hasClasses
                               ? 'No classes have been conducted yet'
-                              : isCompliant
-                              ? 'You meet institutional compliance standards'
-                              : 'Action required to restore eligibility'}
+                              : !hasDebarred
+                              ? 'You satisfy the dual 75% rule in all enrolled modules'
+                              : 'Immediate attendance recovery required to sit for exams'}
                           </p>
                         </div>
                       </div>
@@ -2571,27 +2908,31 @@ export const AttendancePage: React.FC = () => {
                             No sessions have been conducted or marked yet. Attendance tracking and compliance metrics will update dynamically once faculty begin taking roll call.
                           </p>
                         </div>
-                      ) : isCompliant ? (
+                      ) : !hasDebarred ? (
                         <div className="space-y-2 pt-1 text-xs text-slate-700 dark:text-slate-300">
                           <p className="leading-relaxed">
-                            Your cumulative attendance is <strong className="text-emerald-600 font-black">{currentPct}%</strong>, which is above the mandatory 75% threshold.
+                            Your cumulative attendance is <strong className="text-emerald-600 font-black">{currentPct}%</strong> ({totalAtt} of {totalCond} classes attended), and both your Academic Lectures and HyperBuild Activities meet the mandatory 75% threshold in every course.
                           </p>
                           <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between">
-                            <span className="font-semibold text-slate-600 dark:text-slate-400">Permitted Absence Buffer:</span>
-                            <span className="font-black text-emerald-700 dark:text-emerald-300">{safeBuffer} session(s)</span>
+                            <span className="font-semibold text-slate-600 dark:text-slate-400">Exam Eligibility Status:</span>
+                            <span className="font-black text-emerald-700 dark:text-emerald-300">CLEARED FOR ALL EXAMS ✓</span>
                           </div>
                         </div>
                       ) : (
                         <div className="space-y-2 pt-1 text-xs text-slate-700 dark:text-slate-300">
                           <p className="leading-relaxed">
-                            Your cumulative attendance is <strong className="text-rose-600 font-black">{currentPct}%</strong> ({totalAtt} of {totalCond} sessions).
+                            You are currently debarred from exams in: <strong className="text-rose-600 font-bold">{debarredSubjects.map((s: any) => s.subject_code || s.subject_name).join(', ')}</strong> due to sub-75% attendance in one or both categories.
                           </p>
-                          <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/40 flex items-center justify-between">
-                            <span className="font-semibold text-slate-600 dark:text-slate-400">Target to reach 75%:</span>
-                            <span className="font-black text-rose-700 dark:text-rose-300">Attend next {neededClasses} consecutive class(es)</span>
+                          <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/40 space-y-1.5">
+                            {debarredSubjects.map((s: any) => (
+                              <div key={s.subject_id} className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.subject_name}:</span>
+                                <span className="text-rose-600 font-semibold">{s.debarment_reason}</span>
+                              </div>
+                            ))}
                           </div>
                           <p className="text-[11px] text-slate-500 italic">
-                            Tip: Submit medical certificates or on-duty slips via the Dispute Requests tab if any sessions were wrongly recorded as absent.
+                            Tip: Attend all upcoming lectures/labs and submit on-duty/medical slips via the Disputes tab if absences were institutional.
                           </p>
                         </div>
                       )}
@@ -2601,21 +2942,25 @@ export const AttendancePage: React.FC = () => {
                     <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <BookOpen className="h-4 w-4 text-indigo-600" />
-                        Institutional Guidelines & Exemptions
+                        Dual-Track Attendance Policy Rules
                       </h4>
 
                       <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-400">
                         <li className="flex items-start gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                          <span><strong>75% Mandatory Attendance:</strong> Required in each enrolled course to be eligible for end-term examinations.</span>
+                          <span><strong>Category 1 — Academic Lectures:</strong> Standard classroom theory and tutorial sessions. Minimum 75% required.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                          <span><strong>On Duty (OD) & Leave:</strong> Institutional duties, placement activities, and authorized medical leaves must be filed within 3 working days.</span>
+                          <span><strong>Category 2 — HyperBuild Activities:</strong> Applied hands-on labs and challenge exercises. Minimum 75% required.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                          <span><strong>Attendance Disputes:</strong> If biometric or manual attendance was incorrectly marked, use the <em>Dispute</em> button in your Attendance record.</span>
+                          <span><strong>Zero-Tolerance Subject Debarment:</strong> Failing to achieve 75% in <em>either</em> category results in debarment from that subject's end-term exam.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                          <span><strong>Pending Categories:</strong> If no activities or lectures have been conducted yet in a category, you are not penalized until classes take place.</span>
                         </li>
                       </ul>
                     </div>
@@ -2627,35 +2972,86 @@ export const AttendancePage: React.FC = () => {
               <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Layers className="h-4 w-4 text-indigo-600" />
-                  Course-by-Course Attendance Compliance Health
+                  Course-by-Course Exam Eligibility Grid
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {(studentDossierData?.subjects_breakdown || []).map((sb: any) => {
-                    const isSubHigh = sb.percentage >= 75;
+                    const isDebarred = sb.is_debarred;
+                    const acadPct = sb.academic_percentage ?? 0;
+                    const hbPct = sb.hyperbuild_percentage ?? 0;
+                    const hasAcad = (sb.academic_total ?? 0) > 0;
+                    const hasHb = (sb.hyperbuild_total ?? 0) > 0;
+
                     return (
-                      <div key={sb.subject_id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-2">
+                      <div
+                        key={sb.subject_id}
+                        className={`p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border transition-all ${
+                          isDebarred
+                            ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/20'
+                            : 'border-slate-200 dark:border-slate-700/60'
+                        } space-y-2.5`}
+                      >
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded">
                             {sb.subject_code}
                           </span>
-                          <span className={`text-xs font-black ${isSubHigh ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                            {sb.percentage}%
-                          </span>
+                          {isDebarred ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                              DEBARRED FROM EXAM
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              EXAM ELIGIBLE ✓
+                            </span>
+                          )}
                         </div>
-                        <h5 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">{sb.subject_name}</h5>
-                        <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${isSubHigh ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                            style={{ width: `${Math.min(100, sb.percentage)}%` }}
-                          />
+
+                        <h5 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1" title={sb.subject_name}>
+                          {sb.subject_name}
+                        </h5>
+
+                        {/* Dual Category Status */}
+                        <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-700/60 text-[11px]">
+                          {/* Academic */}
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">🎓 Academic Lectures:</span>
+                              <span className={!hasAcad ? 'text-slate-400' : acadPct >= 75 ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
+                                {hasAcad ? `${sb.academic_attended}/${sb.academic_total} (${acadPct}%)` : 'Pending'}
+                              </span>
+                            </div>
+                            <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${!hasAcad ? 'bg-slate-300' : acadPct >= 75 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                style={{ width: hasAcad ? `${Math.min(100, acadPct)}%` : '0%' }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* HyperBuild */}
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">⚡ HyperBuild Activities:</span>
+                              <span className={!hasHb ? 'text-slate-400' : hbPct >= 75 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-rose-600 font-bold'}>
+                                {hasHb ? `${sb.hyperbuild_attended}/${sb.hyperbuild_total} (${hbPct}%)` : 'Pending'}
+                              </span>
+                            </div>
+                            <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${!hasHb ? 'bg-slate-300' : hbPct >= 75 ? 'bg-indigo-500' : 'bg-rose-500'}`}
+                                style={{ width: hasHb ? `${Math.min(100, hbPct)}%` : '0%' }}
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between text-[11px] text-slate-500 pt-0.5">
-                          <span>{sb.attended}/{sb.total_sessions} attended</span>
-                          <span className={isSubHigh ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
-                            {isSubHigh ? 'Compliant' : 'Below 75%'}
-                          </span>
-                        </div>
+
+                        {/* Debarment note if debarred */}
+                        {isDebarred && sb.debarment_reason && (
+                          <div className="p-2 rounded-lg bg-rose-100/60 dark:bg-rose-950/60 text-[10px] text-rose-800 dark:text-rose-300 font-medium">
+                            {sb.debarment_reason}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2663,88 +3059,216 @@ export const AttendancePage: React.FC = () => {
               </div>
             </div>
           ) : (
-            /* STAFF BATCH LOW ATTENDANCE WATCHLIST */
+            /* STAFF SUBJECT-LEVEL EXAM DEBARMENT REGISTRY */
             <>
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    Low Attendance Watchlist (&lt; 75%)
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Students below the compliance threshold with calculated recovery session targets.
-                  </p>
+              {/* Header & Filter Toolbar */}
+              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-rose-600" />
+                      Subject Exam Debarment Registry (&lt; 75%)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Subject-by-subject debarment tracking enforcing the dual 75% rule (Academic Lectures & HyperBuild Activities).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-500">Threshold:</span>
+                      {[75, 65, 50].map((th) => (
+                        <button
+                          key={th}
+                          onClick={() => setDebarmentThreshold(th)}
+                          className={`px-3 py-1 rounded-xl text-xs font-black cursor-pointer ${
+                            debarmentThreshold === th
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          &lt; {th}%
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleExportDebarmentExcel}
+                      disabled={filteredDebarredStudents.length === 0}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" /> Export Registry (.xlsx)
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-slate-500">Threshold:</span>
-                  {[75, 65, 50].map((th) => (
-                    <button
-                      key={th}
-                      onClick={() => setDebarmentThreshold(th)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer ${
-                        debarmentThreshold === th
-                          ? 'bg-rose-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}
+                {/* Filter Controls Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  {/* Batch Filter */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      Filter by Batch
+                    </label>
+                    <select
+                      value={debarmentBatchId}
+                      onChange={(e) => setDebarmentBatchId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
                     >
-                      &lt; {th}%
-                    </button>
-                  ))}
+                      <option value="">All Batches</option>
+                      {batchesListData.map((b: any) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Subject Filter */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      Filter by Subject
+                    </label>
+                    <select
+                      value={debarmentSubjectId}
+                      onChange={(e) => setDebarmentSubjectId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                    >
+                      <option value="">All Subjects</option>
+                      {subjectsListData.map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s.code ? `[${s.code}] ` : ''}{s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Category Filter */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      Debarment Category
+                    </label>
+                    <select
+                      value={debarmentCategory}
+                      onChange={(e) => setDebarmentCategory(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                    >
+                      <option value="all">All Debarred Categories</option>
+                      <option value="academic">🎓 Academic Lectures Only (&lt;75%)</option>
+                      <option value="hyperbuild">⚡ HyperBuild Activities Only (&lt;75%)</option>
+                      <option value="both">⚠️ Both Categories (&lt;75%)</option>
+                    </select>
+                  </div>
+
+                  {/* Search Student */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      Search Student / Subject
+                    </label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={debarmentSearch}
+                        onChange={(e) => setDebarmentSearch(e.target.value)}
+                        placeholder="Name, PRN, Subject..."
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                      />
+                      {debarmentSearch && (
+                        <button
+                          onClick={() => setDebarmentSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
+              {/* Subject Debarment Registry Table */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="p-3.5">Student</th>
                       <th className="p-3.5">Batch</th>
-                      <th className="p-3.5 text-center">Current Attendance %</th>
-                      <th className="p-3.5 text-center">Attended / Total</th>
-                      <th className="p-3.5 text-center">Recovery Target</th>
-                      <th className="p-3.5 text-right">Status</th>
+                      <th className="p-3.5">Subject</th>
+                      <th className="p-3.5 text-center">Academic %</th>
+                      <th className="p-3.5 text-center">HyperBuild %</th>
+                      <th className="p-3.5 text-center">Debarred In</th>
+                      <th className="p-3.5 text-center">Shortfall Target</th>
+                      <th className="p-3.5 text-right">Exam Standing</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {debarmentLoading ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400">Evaluating attendance risk...</td>
+                        <td colSpan={8} className="p-8 text-center text-slate-400">Evaluating subject-by-subject debarment standings...</td>
                       </tr>
-                    ) : debarredStudentsData.length === 0 ? (
+                    ) : filteredDebarredStudents.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-emerald-600 font-bold">
-                          ✓ No students are currently below the {debarmentThreshold}% attendance threshold!
+                        <td colSpan={8} className="p-8 text-center text-emerald-600 font-bold">
+                          ✓ No students are currently debarred under the selected filters!
                         </td>
                       </tr>
                     ) : (
-                      debarredStudentsData.map((st: any) => (
-                        <tr key={st.student_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                          <td className="p-3.5 font-bold text-slate-900 dark:text-white">
-                            <div>{st.student_name}</div>
-                            <div className="text-[11px] font-mono text-slate-400">{st.student_prn}</div>
-                          </td>
-                          <td className="p-3.5 text-slate-700 dark:text-slate-300 font-medium">{st.batch_name}</td>
-                          <td className="p-3.5 text-center font-black text-rose-600 text-sm">
-                            {st.total_sessions > 0
-                              ? `${Math.round((st.attended_sessions / st.total_sessions) * 1000) / 10}%`
-                              : `${st.attendance_percentage}%`}
-                          </td>
-                          <td className="p-3.5 text-center font-semibold text-slate-600 dark:text-slate-400">
-                            {st.attended_sessions} / {st.total_sessions}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                              Must attend {st.shortfall_sessions} more classes
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-right">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 uppercase">
-                              Low Attendance (&lt;{debarmentThreshold}%)
-                            </span>
-                          </td>
-                        </tr>
-                      ))
+                      filteredDebarredStudents.map((st: any) => {
+                        const isBoth = st.debarred_category === 'both';
+                        const isHbOnly = st.debarred_category === 'hyperbuild_only';
+
+                        return (
+                          <tr key={`${st.student_id}-${st.subject_id || 'all'}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                            <td className="p-3.5 font-bold text-slate-900 dark:text-white">
+                              <div>{st.student_name}</div>
+                              <div className="text-[11px] font-mono text-slate-400">{st.student_prn}{st.roll_no ? ` · Roll: ${st.roll_no}` : ''}</div>
+                            </td>
+                            <td className="p-3.5 text-slate-700 dark:text-slate-300 font-medium">{st.batch_name}</td>
+                            <td className="p-3.5">
+                              <div className="font-bold text-slate-800 dark:text-slate-200">{st.subject_name || 'All Subjects'}</div>
+                              {st.subject_code && (
+                                <div className="text-[10px] font-mono text-slate-400">{st.subject_code}</div>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className={`font-black text-sm ${st.academic_percentage < debarmentThreshold ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                {st.academic_percentage}%
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className={`font-black text-sm ${st.hyperbuild_percentage < debarmentThreshold ? 'text-rose-600' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                {st.hyperbuild_percentage}%
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              {isBoth ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                  ⚠️ Both Categories
+                                </span>
+                              ) : isHbOnly ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                                  ⚡ HyperBuild Only
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                  🎓 Academic Only
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                Shortfall: {st.shortfall_sessions} session(s)
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-600 text-white uppercase shadow-xs">
+                                DEBARRED FROM EXAM
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2753,6 +3277,7 @@ export const AttendancePage: React.FC = () => {
           )}
         </div>
       )}
+
 
       {/* ═══════════════════════════════════════════════════════════════════════
           TAB: DAILY STUDENT CLASS ATTENDANCE LEDGER
@@ -2907,7 +3432,7 @@ export const AttendancePage: React.FC = () => {
                 ))}
               </div>
 
-              {(ledgerStartDate || ledgerEndDate || ledgerBatchId || ledgerSubjectId || ledgerStatus || ledgerSearch) && (
+              {(ledgerStartDate || ledgerEndDate || ledgerBatchId || ledgerSubjectId || ledgerCategory || ledgerStatus || ledgerSearch) && (
                 <button
                   type="button"
                   onClick={handleResetLedgerFilters}
@@ -2919,7 +3444,7 @@ export const AttendancePage: React.FC = () => {
             </div>
 
             {/* Filter Inputs Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
               {/* Start Date */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
@@ -2996,6 +3521,25 @@ export const AttendancePage: React.FC = () => {
                 </select>
               </div>
 
+              {/* Category Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Category
+                </label>
+                <select
+                  value={ledgerCategory}
+                  onChange={(e) => {
+                    setLedgerCategory(e.target.value);
+                    setLedgerPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                >
+                  <option value="">All Categories</option>
+                  <option value="academic">🎓 Academic Lectures</option>
+                  <option value="hyperbuild">⚡ HyperBuild Activities</option>
+                </select>
+              </div>
+
               {/* Status Filter */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
@@ -3057,7 +3601,8 @@ export const AttendancePage: React.FC = () => {
                     <th className="p-3.5 pl-5">Student Information</th>
                     <th className="p-3.5">Batch / Program</th>
                     <th className="p-3.5">Class Date & Slot</th>
-                    <th className="p-3.5">Subject & Activity</th>
+                    <th className="p-3.5">Category</th>
+                    <th className="p-3.5">Subject & Activity / Topic</th>
                     <th className="p-3.5">Faculty & Venue</th>
                     <th className="p-3.5 text-center">Status</th>
                     <th className="p-3.5">Timestamp / Notes</th>
@@ -3067,14 +3612,14 @@ export const AttendancePage: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {studentLedgerLoading ? (
                     <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-400">
+                      <td colSpan={9} className="p-12 text-center text-slate-400">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />
                         <span className="text-xs font-bold">Loading student class attendance ledger...</span>
                       </td>
                     </tr>
                   ) : studentLedgerError ? (
                     <tr>
-                      <td colSpan={8} className="p-12 text-center">
+                      <td colSpan={9} className="p-12 text-center">
                         <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto mb-2" />
                         <p className="text-sm font-bold text-rose-900 dark:text-rose-200">Unable to load attendance ledger</p>
                         <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 max-w-md mx-auto">
@@ -3091,7 +3636,7 @@ export const AttendancePage: React.FC = () => {
                     </tr>
                   ) : !studentLedgerData?.items || studentLedgerData.items.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-400">
+                      <td colSpan={9} className="p-12 text-center text-slate-400">
                         <ClipboardList className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No attendance records found</p>
                         <p className="text-xs text-slate-400 mt-1">Try expanding your date range or adjusting the filters above.</p>
@@ -3107,6 +3652,8 @@ export const AttendancePage: React.FC = () => {
                   ) : (
                     studentLedgerData.items.map((item: any) => {
                       const stLower = (item.status || '').toLowerCase();
+                      const isHb = item.category === 'HyperBuild Activity' || item.session_type === 'hyperbuild' || Boolean(item.activity_no);
+
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                           {/* Student Info */}
@@ -3156,7 +3703,20 @@ export const AttendancePage: React.FC = () => {
                             </div>
                           </td>
 
-                          {/* Subject & Activity */}
+                          {/* Category */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            {isHb ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 w-fit">
+                                <span>⚡</span> HyperBuild
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 w-fit">
+                                <span>🎓</span> Academic
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Subject & Activity / Topic */}
                           <td className="p-3.5">
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
@@ -3165,17 +3725,16 @@ export const AttendancePage: React.FC = () => {
                               <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title={item.subject_name}>
                                 {item.subject_name}
                               </span>
-                              {item.session_type === 'hyperbuild' && (
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300">
-                                  HyperBuild
-                                </span>
-                              )}
                             </div>
-                            {item.topic_delivered && (
+                            {item.activity_title ? (
+                              <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold truncate max-w-[220px] mt-0.5" title={item.activity_title}>
+                                Act #{item.activity_no}: {item.activity_title}
+                              </div>
+                            ) : item.topic_delivered ? (
                               <div className="text-[10.5px] text-slate-500 truncate max-w-[220px] mt-0.5" title={item.topic_delivered}>
                                 {item.topic_delivered}
                               </div>
-                            )}
+                            ) : null}
                           </td>
 
                           {/* Faculty & Venue */}
@@ -3775,6 +4334,7 @@ export const AttendancePage: React.FC = () => {
           batchId: ledgerBatchId,
           subjectId: ledgerSubjectId,
           sessionId: ledgerSessionId,
+          category: ledgerCategory,
           status: ledgerStatus,
           search: ledgerSearch,
         }}

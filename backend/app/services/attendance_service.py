@@ -752,6 +752,8 @@ async def get_student_attendance_dossier(
                         "id": sub_id,
                         "name": sub_name,
                         "code": sub_code,
+                        "academic": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
+                        "hyperbuild": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
                         "total": 0,
                         "attended": 0,
                         "absent": 0,
@@ -759,12 +761,16 @@ async def get_student_attendance_dossier(
                     }
 
                 subjects_map[sub_id]["total"] += 1
+                subjects_map[sub_id]["hyperbuild"]["total"] += 1
                 if is_att:
                     subjects_map[sub_id]["attended"] += 1
+                    subjects_map[sub_id]["hyperbuild"]["attended"] += 1
                 elif act_status in ["excused", "leave_approved", "od_duty", "on_duty", "on duty"]:
                     subjects_map[sub_id]["excused"] += 1
+                    subjects_map[sub_id]["hyperbuild"]["excused"] += 1
                 else:
                     subjects_map[sub_id]["absent"] += 1
+                    subjects_map[sub_id]["hyperbuild"]["absent"] += 1
 
                 fac_name = "Faculty"
                 if sess.faculty_internal:
@@ -796,6 +802,10 @@ async def get_student_attendance_dossier(
                         has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
                         correction_request_id=corr.id if corr else None,
                         correction_status=corr.status if corr else None,
+                        category="hyperbuild_activity",
+                        category_label="HyperBuild Activity",
+                        activity_title=act.title,
+                        activity_no=act.activity_no,
                     )
                 )
 
@@ -822,18 +832,24 @@ async def get_student_attendance_dossier(
                             "id": sub_id,
                             "name": sub_name,
                             "code": sub_code,
+                            "academic": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
+                            "hyperbuild": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
                             "total": 0,
                             "attended": 0,
                             "absent": 0,
                             "excused": 0,
                         }
                     subjects_map[sub_id]["total"] += 1
+                    subjects_map[sub_id]["hyperbuild"]["total"] += 1
                     if is_attended:
                         subjects_map[sub_id]["attended"] += 1
+                        subjects_map[sub_id]["hyperbuild"]["attended"] += 1
                     elif r.status in ["excused", "leave_approved", "od_duty", "on_duty", "on duty"]:
                         subjects_map[sub_id]["excused"] += 1
+                        subjects_map[sub_id]["hyperbuild"]["excused"] += 1
                     else:
                         subjects_map[sub_id]["absent"] += 1
+                        subjects_map[sub_id]["hyperbuild"]["absent"] += 1
 
                     fac_name = "Faculty"
                     if sess.faculty_internal:
@@ -863,6 +879,10 @@ async def get_student_attendance_dossier(
                             has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
                             correction_request_id=corr.id if corr else None,
                             correction_status=corr.status if corr else None,
+                            category="hyperbuild_activity",
+                            category_label="HyperBuild Activity",
+                            activity_title="HyperBuild Workshop Session",
+                            activity_no=1,
                         )
                     )
 
@@ -897,12 +917,19 @@ async def get_student_attendance_dossier(
                     sub_name = f"{stype} Session"
                     sub_code = (sess.session_type or "GEN").upper()[:10]
 
+            is_hb_fallback = sess.session_type == "hyperbuild" or (sess.venue and "hyperbuild" in sess.venue.lower())
+            category_key = "hyperbuild" if is_hb_fallback else "academic"
+            category_slug = "hyperbuild_activity" if is_hb_fallback else "academic_lecture"
+            category_label_str = "HyperBuild Activity" if is_hb_fallback else "Academic Lecture"
+
             # Subject breakdown aggregation
             if sub_id not in subjects_map:
                 subjects_map[sub_id] = {
                     "id": sub_id,
                     "name": sub_name,
                     "code": sub_code,
+                    "academic": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
+                    "hyperbuild": {"total": 0, "attended": 0, "absent": 0, "excused": 0},
                     "total": 0,
                     "attended": 0,
                     "absent": 0,
@@ -910,12 +937,16 @@ async def get_student_attendance_dossier(
                 }
 
             subjects_map[sub_id]["total"] += 1
+            subjects_map[sub_id][category_key]["total"] += 1
             if is_attended:
                 subjects_map[sub_id]["attended"] += 1
-            elif r.status == "absent":
-                subjects_map[sub_id]["absent"] += 1
-            else:
+                subjects_map[sub_id][category_key]["attended"] += 1
+            elif r.status in ["excused", "leave_approved", "od_duty", "on_duty", "on duty"]:
                 subjects_map[sub_id]["excused"] += 1
+                subjects_map[sub_id][category_key]["excused"] += 1
+            else:
+                subjects_map[sub_id]["absent"] += 1
+                subjects_map[sub_id][category_key]["absent"] += 1
 
             fac_name = "Faculty"
             if sess.faculty_internal:
@@ -943,30 +974,99 @@ async def get_student_attendance_dossier(
                     has_pending_correction=corr is not None and corr.status in ["pending_faculty_approval", "pending_admin_approval"],
                     correction_request_id=corr.id if corr else None,
                     correction_status=corr.status if corr else None,
+                    category=category_slug,
+                    category_label=category_label_str,
+                    activity_title=None,
+                    activity_no=None,
                 )
             )
 
-    # Convert subjects map to list
+    # Convert subjects map to list with dual-category metrics and exam eligibility rule
     subjects_breakdown: List[StudentSubjectAttendanceBreakdown] = []
+    overall_academic_total = 0
+    overall_academic_attended = 0
+    overall_hyperbuild_total = 0
+    overall_hyperbuild_attended = 0
+
     for s_data in subjects_map.values():
         t = s_data["total"]
         a = s_data["attended"]
         pct = round((a / t * 100.0), 1) if t > 0 else 100.0
+
+        acad = s_data["academic"]
+        acad_total = acad["total"]
+        acad_att = acad["attended"]
+        overall_academic_total += acad_total
+        overall_academic_attended += acad_att
+        acad_pct = round((acad_att / acad_total * 100.0), 1) if acad_total > 0 else None
+        acad_eligible = (acad_total == 0) or (acad_pct is not None and acad_pct >= 75.0)
+        acad_status = "pending" if acad_total == 0 else ("safe" if acad_eligible else "at_risk")
+        acad_shortfall = max(0, int((0.75 * acad_total - acad_att) / 0.25) + 1) if (acad_total > 0 and acad_pct < 75.0) else 0
+
+        hb = s_data["hyperbuild"]
+        hb_total = hb["total"]
+        hb_att = hb["attended"]
+        overall_hyperbuild_total += hb_total
+        overall_hyperbuild_attended += hb_att
+        hb_pct = round((hb_att / hb_total * 100.0), 1) if hb_total > 0 else None
+        hb_eligible = (hb_total == 0) or (hb_pct is not None and hb_pct >= 75.0)
+        hb_status = "pending" if hb_total == 0 else ("safe" if hb_eligible else "at_risk")
+        hb_shortfall = max(0, int((0.75 * hb_total - hb_att) / 0.25) + 1) if (hb_total > 0 and hb_pct < 75.0) else 0
+
+        # Institutional Policy: Student must have >= 75% in BOTH categories (among conducted categories)
+        is_exam_eligible = acad_eligible and hb_eligible
+        is_debarred = (t > 0) and (not is_exam_eligible)
+
+        if not acad_eligible and not hb_eligible:
+            debarred_cat = "both"
+            debar_reason = f"Debarred: Both Academic Lectures ({acad_pct}%) and HyperBuild Activities ({hb_pct}%) are below 75%"
+        elif not acad_eligible:
+            debarred_cat = "academic_only"
+            debar_reason = f"Debarred: Academic Lectures attendance is {acad_pct}% (minimum 75% required)"
+        elif not hb_eligible:
+            debarred_cat = "hyperbuild_only"
+            debar_reason = f"Debarred: HyperBuild Activities attendance is {hb_pct}% (minimum 75% required)"
+        else:
+            debarred_cat = None
+            debar_reason = "Eligible for Examination (Meets 75% institutional requirement in both categories)"
+
         subjects_breakdown.append(
             StudentSubjectAttendanceBreakdown(
                 subject_id=s_data["id"],
                 subject_name=s_data["name"],
                 subject_code=s_data["code"],
+                academic_total=acad_total,
+                academic_attended=acad_att,
+                academic_absent=acad["absent"],
+                academic_excused=acad["excused"],
+                academic_percentage=acad_pct,
+                academic_eligible=acad_eligible,
+                academic_status=acad_status,
+                academic_shortfall=acad_shortfall,
+                hyperbuild_total=hb_total,
+                hyperbuild_attended=hb_att,
+                hyperbuild_absent=hb["absent"],
+                hyperbuild_excused=hb["excused"],
+                hyperbuild_percentage=hb_pct,
+                hyperbuild_eligible=hb_eligible,
+                hyperbuild_status=hb_status,
+                hyperbuild_shortfall=hb_shortfall,
                 total_sessions=t,
                 attended=a,
                 absent=s_data["absent"],
                 excused=s_data["excused"],
                 percentage=pct,
-                is_at_risk=pct < 75.0 and t >= 3,
+                is_exam_eligible=is_exam_eligible,
+                is_debarred=is_debarred,
+                debarred_category=debarred_cat,
+                debarment_reason=debar_reason,
+                is_at_risk=is_debarred or (pct < 75.0 and t >= 3),
             )
         )
 
     overall_pct = round((attended_classes / total_classes * 100.0), 1) if total_classes > 0 else (round(student.attendance_percentage, 1) if student.attendance_percentage else 0.0)
+    overall_acad_pct = round((overall_academic_attended / overall_academic_total * 100.0), 1) if overall_academic_total > 0 else 100.0
+    overall_hb_pct = round((overall_hyperbuild_attended / overall_hyperbuild_total * 100.0), 1) if overall_hyperbuild_total > 0 else 100.0
 
     return StudentAttendanceDossierResponse(
         student_id=student.id,
@@ -978,6 +1078,12 @@ async def get_student_attendance_dossier(
         overall_attendance_percentage=overall_pct,
         total_classes_conducted=total_classes,
         total_classes_attended=attended_classes,
+        overall_academic_total=overall_academic_total,
+        overall_academic_attended=overall_academic_attended,
+        overall_academic_percentage=overall_acad_pct,
+        overall_hyperbuild_total=overall_hyperbuild_total,
+        overall_hyperbuild_attended=overall_hyperbuild_attended,
+        overall_hyperbuild_percentage=overall_hb_pct,
         subjects_breakdown=subjects_breakdown,
         session_records=session_items,
     )
@@ -1583,9 +1689,12 @@ async def get_debarment_risk_students(
     db: AsyncSession,
     threshold_pct: float = 75.0,
     batch_id: Optional[UUID] = None,
+    subject_id: Optional[UUID] = None,
+    category_filter: Optional[str] = None,
 ) -> List[DebarredStudentItemResponse]:
     """
-    Returns list of students with attendance below threshold (< 75%).
+    Returns list of students debarred or at risk of exam debarment (< 75% attendance)
+    in any subject, evaluated across Category 1 (Academic Lectures) and Category 2 (HyperBuild Activities).
     """
     query = (
         select(Student)
@@ -1603,76 +1712,73 @@ async def get_debarment_risk_students(
     res = await db.execute(query)
     students = res.scalars().all()
 
-    output = []
-    student_ids = [st.id for st in students]
-    att_counts_map: Dict[UUID, Dict[str, int]] = {st.id: {"total": 0, "attended": 0} for st in students}
-
-    if student_ids:
-        att_stmt = (
-            select(
-                StudentAttendance.student_id,
-                StudentAttendance.status,
-            )
-            .join(Session, StudentAttendance.session_id == Session.id)
-            .where(
-                StudentAttendance.student_id.in_(student_ids),
-                Session.is_deleted == False,
-                Session.status != "cancelled",
-            )
-        )
-        att_res = await db.execute(att_stmt)
-        for s_id, status in att_res.all():
-            if s_id in att_counts_map:
-                att_counts_map[s_id]["total"] += 1
-                if status in PRESENT_STATUSES:
-                    att_counts_map[s_id]["attended"] += 1
+    output: List[DebarredStudentItemResponse] = []
 
     for st in students:
-        counts = att_counts_map.get(st.id, {"total": 0, "attended": 0})
-        total_conducted = counts["total"]
-        attended = counts["attended"]
-
-        # Calculate dynamic attendance percentage
-        if total_conducted > 0:
-            calc_pct = round((attended / total_conducted * 100.0), 1)
-        elif st.attendance_percentage is not None and st.attendance_percentage > 0:
-            calc_pct = round(st.attendance_percentage, 1)
-        else:
-            calc_pct = 0.0
-
-        # Synchronize stored attendance_percentage if sessions exist
-        if total_conducted > 0 and st.attendance_percentage != calc_pct:
-            st.attendance_percentage = calc_pct
-
-        # Debarment risk: only students who actually have conducted sessions and whose attendance is below threshold
-        if total_conducted == 0 or calc_pct >= threshold_pct:
+        try:
+            dossier = await get_student_attendance_dossier(db, st.id)
+        except Exception:
             continue
 
-        # Calculate classes needed to reach threshold
-        # (attended + x) / (total + x) >= (threshold / 100)
-        needed = 0
-        target = (threshold_pct / 100.0) * total_conducted
-        if attended < target:
-            shortfall_rate = 1.0 - (threshold_pct / 100.0)
-            if shortfall_rate > 0:
-                needed = int((target - attended) / shortfall_rate) + 1
+        for sb in dossier.subjects_breakdown:
+            if subject_id and sb.subject_id != subject_id:
+                continue
 
-        output.append(
-            DebarredStudentItemResponse(
-                student_id=st.id,
-                student_name=st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
-                student_prn=st.prn_number or st.roll_no or "",
-                roll_no=st.roll_no,
-                program_name=st.program.name if st.program else "PGDM",
-                batch_name=st.batch.name if st.batch else "Batch 2026",
-                attendance_percentage=calc_pct,
-                total_sessions=total_conducted,
-                attended_sessions=attended,
-                shortfall_sessions=max(0, needed),
+            # Debarment Rule: Minimum 75% in Academic Lectures AND 75% in HyperBuild Activities
+            acad_debarred = (sb.academic_total > 0) and (sb.academic_percentage is not None and sb.academic_percentage < threshold_pct)
+            hb_debarred = (sb.hyperbuild_total > 0) and (sb.hyperbuild_percentage is not None and sb.hyperbuild_percentage < threshold_pct)
+
+            if not (acad_debarred or hb_debarred):
+                continue
+
+            if acad_debarred and hb_debarred:
+                debar_cat = "both"
+                reason = f"Debarred: Both Academic Lectures ({sb.academic_percentage}%) and HyperBuild ({sb.hyperbuild_percentage}%) are below {threshold_pct}%"
+            elif acad_debarred:
+                debar_cat = "academic"
+                reason = f"Debarred: Academic Lectures attendance is {sb.academic_percentage}% (minimum {threshold_pct}% required)"
+            else:
+                debar_cat = "hyperbuild"
+                reason = f"Debarred: HyperBuild Activities attendance is {sb.hyperbuild_percentage}% (minimum {threshold_pct}% required)"
+
+            if category_filter and category_filter not in ["all", ""]:
+                if category_filter == "academic" and debar_cat not in ["academic", "both"]:
+                    continue
+                elif category_filter == "hyperbuild" and debar_cat not in ["hyperbuild", "both"]:
+                    continue
+                elif category_filter == "both" and debar_cat != "both":
+                    continue
+
+            shortfall = sb.academic_shortfall if acad_debarred else sb.hyperbuild_shortfall
+
+            output.append(
+                DebarredStudentItemResponse(
+                    student_id=st.id,
+                    student_name=st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
+                    student_prn=st.prn_number or st.roll_no or "",
+                    roll_no=st.roll_no,
+                    program_name=st.program.name if st.program else "PGDM",
+                    batch_name=st.batch.name if st.batch else "Batch 2026",
+                    subject_id=sb.subject_id,
+                    subject_name=sb.subject_name,
+                    subject_code=sb.subject_code,
+                    overall_percentage=sb.percentage,
+                    attendance_percentage=sb.percentage,
+                    total_sessions=sb.total_sessions,
+                    attended_sessions=sb.attended,
+                    shortfall_sessions=shortfall,
+                    academic_percentage=sb.academic_percentage,
+                    academic_attended=sb.academic_attended,
+                    academic_total=sb.academic_total,
+                    hyperbuild_percentage=sb.hyperbuild_percentage,
+                    hyperbuild_attended=sb.hyperbuild_attended,
+                    hyperbuild_total=sb.hyperbuild_total,
+                    debarred_category=debar_cat,
+                    debarment_reason=reason,
+                )
             )
-        )
 
-    output.sort(key=lambda x: (x.attendance_percentage, x.student_name))
+    output.sort(key=lambda x: (x.student_name, x.subject_name or ""))
     return output
 
 
@@ -2254,6 +2360,7 @@ async def get_student_class_attendance_ledger(
     """
     eff_status = attendance_status or status_filter
     eff_search = search or search_query
+    eff_category = kwargs.get("category") or kwargs.get("category_filter")
 
     roles = user_roles or []
     is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly", "finance", "admin", "super_admin"] for r in roles)
@@ -2399,6 +2506,8 @@ async def get_student_class_attendance_ledger(
             fac_name = fe.name
 
         if sess.session_type == "hyperbuild":
+            if eff_category and eff_category.lower().strip() in ["academic", "academic_lecture"]:
+                continue
             acts = hb_acts_by_sess.get(sess.id, [])
             if subject_id:
                 acts = [a for a in acts if a.subject_id == subject_id]
@@ -2507,6 +2616,9 @@ async def get_student_class_attendance_ledger(
                         "subject_code": s_code,
                         "subject_name": s_name,
                         "session_type": sess.session_type,
+                        "category": "HyperBuild Activity",
+                        "activity_title": act.title,
+                        "activity_no": act.activity_no,
                         "topic_delivered": t_title,
                         "venue": f"{sess.venue or 'HyperBuild Lab'} · Act #{act.activity_no}",
                         "faculty_name": fac_name,
@@ -2518,6 +2630,9 @@ async def get_student_class_attendance_ledger(
                 continue
 
         # Regular session (or fallback if no activities)
+        if eff_category and eff_category.lower().strip() in ["hyperbuild", "hyperbuild_activity"]:
+            continue
+
         if subject_id and sess.subject_id != subject_id:
             continue
 
@@ -2584,6 +2699,9 @@ async def get_student_class_attendance_ledger(
             "subject_code": sub_code,
             "subject_name": sub_name,
             "session_type": sess.session_type,
+            "category": "Academic Lecture",
+            "activity_title": None,
+            "activity_no": None,
             "topic_delivered": topic_title,
             "venue": sess.venue or "Classroom",
             "faculty_name": fac_name,

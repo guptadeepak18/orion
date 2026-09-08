@@ -103,12 +103,40 @@ class StudentSubjectAttendanceBreakdown(BaseModel):
     subject_id: UUID
     subject_name: str
     subject_code: Optional[str] = None
-    total_sessions: int
-    attended: int
-    absent: int
-    excused: int
-    percentage: float
-    is_at_risk: bool
+
+    # Category 1: Academic Lectures
+    academic_total: int = 0
+    academic_attended: int = 0
+    academic_absent: int = 0
+    academic_excused: int = 0
+    academic_percentage: Optional[float] = None
+    academic_eligible: bool = True
+    academic_status: str = "safe"  # "safe" | "at_risk" | "pending"
+    academic_shortfall: int = 0
+
+    # Category 2: HyperBuild Activities
+    hyperbuild_total: int = 0
+    hyperbuild_attended: int = 0
+    hyperbuild_absent: int = 0
+    hyperbuild_excused: int = 0
+    hyperbuild_percentage: Optional[float] = None
+    hyperbuild_eligible: bool = True
+    hyperbuild_status: str = "safe"  # "safe" | "at_risk" | "pending"
+    hyperbuild_shortfall: int = 0
+
+    # Combined metrics
+    total_sessions: int = 0
+    attended: int = 0
+    absent: int = 0
+    excused: int = 0
+    percentage: float = 0.0
+
+    # Exam Debarment & Eligibility Standing
+    is_exam_eligible: bool = True
+    is_debarred: bool = False
+    debarred_category: Optional[str] = None  # None | "academic_only" | "hyperbuild_only" | "both"
+    debarment_reason: Optional[str] = None
+    is_at_risk: bool = False
 
 
 class StudentSessionAttendanceRecordItem(BaseModel):
@@ -129,6 +157,10 @@ class StudentSessionAttendanceRecordItem(BaseModel):
     has_pending_correction: bool = False
     correction_request_id: Optional[UUID] = None
     correction_status: Optional[str] = None
+    category: str = "academic_lecture"  # "academic_lecture" | "hyperbuild_activity"
+    category_label: str = "Academic Lecture"  # "Academic Lecture" | "HyperBuild Activity"
+    activity_title: Optional[str] = None
+    activity_no: Optional[int] = None
 
 
 class StudentAttendanceDossierResponse(BaseModel):
@@ -141,6 +173,12 @@ class StudentAttendanceDossierResponse(BaseModel):
     overall_attendance_percentage: float
     total_classes_conducted: int
     total_classes_attended: int
+    overall_academic_total: int = 0
+    overall_academic_attended: int = 0
+    overall_academic_percentage: float = 0.0
+    overall_hyperbuild_total: int = 0
+    overall_hyperbuild_attended: int = 0
+    overall_hyperbuild_percentage: float = 0.0
     subjects_breakdown: List[StudentSubjectAttendanceBreakdown]
     session_records: List[StudentSessionAttendanceRecordItem]
 
@@ -152,10 +190,22 @@ class DebarredStudentItemResponse(BaseModel):
     roll_no: Optional[str] = None
     program_name: Optional[str] = None
     batch_name: Optional[str] = None
-    attendance_percentage: float
+    subject_id: Optional[UUID] = None
+    subject_name: Optional[str] = None
+    subject_code: Optional[str] = None
+    overall_percentage: float
+    attendance_percentage: float  # Backwards compatibility
     total_sessions: int
     attended_sessions: int
     shortfall_sessions: int
+    academic_percentage: Optional[float] = None
+    academic_attended: int = 0
+    academic_total: int = 0
+    hyperbuild_percentage: Optional[float] = None
+    hyperbuild_attended: int = 0
+    hyperbuild_total: int = 0
+    debarred_category: str = "overall"  # "academic", "hyperbuild", "both", "overall"
+    debarment_reason: str = ""
 
 
 class StudentLedgerItem(BaseModel):
@@ -190,6 +240,9 @@ class StudentLedgerItem(BaseModel):
     marked_at: Optional[datetime] = None
     activity_id: Optional[UUID] = None
     attendance_id: Optional[UUID] = None
+    category: Optional[str] = None  # "Academic Lecture" | "HyperBuild Activity"
+    activity_title: Optional[str] = None
+    activity_no: Optional[int] = None
 
 
 class StudentLedgerSummary(BaseModel):
@@ -217,6 +270,8 @@ class StudentLedgerExportRequest(BaseModel):
     batch_id: Optional[UUID] = None
     subject_id: Optional[UUID] = None
     session_id: Optional[UUID] = None
+    category: Optional[str] = None
     status: Optional[str] = None
     search: Optional[str] = None
     filename: Optional[str] = None
+

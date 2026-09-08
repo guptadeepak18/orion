@@ -34,6 +34,9 @@ export const ALL_EXPORT_FIELDS: ExportFieldOption[] = [
   { key: 'trimester', label: 'Trimester', category: 'student' },
 
   // Session & Class Details
+  { key: 'category', label: 'Session Category (Academic / HyperBuild)', category: 'session' },
+  { key: 'activity_title', label: 'HyperBuild Activity Title', category: 'session' },
+  { key: 'activity_no', label: 'HyperBuild Activity Number', category: 'session' },
   { key: 'session_date', label: 'Session Date (YYYY-MM-DD)', category: 'session' },
   { key: 'day_of_week', label: 'Day of Week', category: 'session' },
   { key: 'time_slot', label: 'Time Slot', category: 'session' },
@@ -120,6 +123,7 @@ interface ExportAttendanceExcelModalProps {
     batchId?: string;
     subjectId?: string;
     sessionId?: string;
+    category?: string;
     status?: string;
     search?: string;
   };
@@ -185,6 +189,7 @@ export const ExportAttendanceExcelModal: React.FC<ExportAttendanceExcelModalProp
         batch_id: filters.batchId || null,
         subject_id: filters.subjectId || null,
         session_id: filters.sessionId || null,
+        category: filters.category || null,
         status: filters.status || null,
         search: filters.search || null,
         filename: safeFilename,

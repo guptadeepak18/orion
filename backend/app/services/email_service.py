@@ -368,12 +368,23 @@ def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bo
         "html": html_content,
     }
     try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(url, json=payload, headers=headers)
-            if resp.status_code in (200, 201, 204):
+        with httpx.Client(timeout=25.0) as client:
+            resp = None
+            for attempt in range(2):
+                try:
+                    resp = client.post(url, json=payload, headers=headers)
+                    break
+                except httpx.TimeoutException:
+                    if attempt == 0:
+                        logger.warning(f"[Hostinger Mail API] Read/Connect timeout sending to {target_email}. Retrying once...")
+                        time_module.sleep(1.0)
+                        continue
+                    raise
+
+            if resp is not None and resp.status_code in (200, 201, 204):
                 logger.info(f"[Hostinger Mail API] Email delivered to {target_email}")
                 return True
-            else:
+            elif resp is not None:
                 resp_text = resp.text.lower()
                 logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
                 # Trip circuit breaker if rate limit or quota exceeded
@@ -386,8 +397,9 @@ def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bo
                         reason=f"Quota/rate limit hit ({resp.status_code}): {resp.text[:120]}",
                     )
     except Exception as e:
-        logger.error(f"[Hostinger Mail API] Request failed: {e}")
-        _trip_circuit_breaker("hostinger", duration_seconds=300.0, reason=f"Connection failure: {str(e)[:100]}")
+        logger.error(f"[Hostinger Mail API] Request failed for {target_email}: {e}")
+        # Only trip circuit breaker if non-transient, and for shorter window
+        _trip_circuit_breaker("hostinger", duration_seconds=60.0, reason=f"Connection failure: {str(e)[:100]}")
     return False
 
 

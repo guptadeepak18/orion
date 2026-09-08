@@ -854,7 +854,11 @@ async def get_activity_live_roster(
     batch_id = activity.session.batch_id
     st_stmt = (
         select(Student)
-        .where(Student.batch_id == batch_id, Student.is_active == True)
+        .where(
+            Student.batch_id == batch_id,
+            Student.is_active == True,
+            Student.is_deleted == False,
+        )
         .order_by(Student.roll_no.asc(), Student.full_name.asc())
     )
     st_res = await db.execute(st_stmt)

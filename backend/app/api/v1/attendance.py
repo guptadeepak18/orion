@@ -216,10 +216,15 @@ async def get_student_attendance_dossier(
 async def get_debarment_risk(
     threshold: float = Query(75.0),
     batch_id: Optional[UUID] = Query(None),
+    subject_id: Optional[UUID] = Query(None),
+    category: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    students = await attendance_service.get_debarment_risk_students(db, threshold, batch_id)
+    students = await attendance_service.get_debarment_risk_students(
+        db, threshold_pct=threshold, batch_id=batch_id, subject_id=subject_id, category_filter=category
+    )
     return ResponseEnvelope(data=students)
+
 
 
 @router.post(
@@ -353,6 +358,7 @@ async def get_student_class_attendance_ledger(
     subject_id: Optional[UUID] = Query(None, description="Subject ID filter"),
     session_id: Optional[UUID] = Query(None, description="Specific Session ID filter"),
     faculty_id: Optional[UUID] = Query(None, description="Faculty ID filter"),
+    category: Optional[str] = Query(None, description="Category filter ('academic' or 'hyperbuild')"),
     status: Optional[str] = Query(None, description="Attendance status filter (present, absent, late, excused)"),
     search: Optional[str] = Query(None, description="Search term for student name, PRN, email, or roll no"),
     limit: Optional[int] = Query(None, ge=1, le=5000, description="Page size limit"),
@@ -371,6 +377,7 @@ async def get_student_class_attendance_ledger(
         subject_id=subject_id,
         session_id=session_id,
         faculty_id=faculty_id,
+        category=category,
         status_filter=status,
         search_query=search,
         current_user_id=user_id,
@@ -403,6 +410,7 @@ async def export_student_ledger_excel(
         subject_id=req.subject_id,
         session_id=req.session_id,
         faculty_id=None,
+        category=req.category,
         status_filter=req.status,
         search_query=req.search,
         current_user_id=user_id,
