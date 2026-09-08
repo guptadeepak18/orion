@@ -774,10 +774,49 @@ class LMSService:
 
         pct = round((attended_count / total_conducted) * 100, 1) if total_conducted > 0 else 100.0
 
+        acad_total = total_conducted
+        acad_att = attended_count
+        acad_pct = pct
+        hb_total = 0
+        hb_att = 0
+        hb_pct = None
+        is_eligible = pct >= 75.0
+        is_deb = not is_eligible and total_conducted > 0
+        deb_reason = None if is_eligible else f"Debarred: Attendance is {pct}% (minimum 75% required)"
+
+        try:
+            from app.services.attendance_service import get_student_attendance_dossier
+            dossier = await get_student_attendance_dossier(db, student_id)
+            sb = next((s for s in dossier.subjects_breakdown if s.subject_id == subject_id), None)
+            if sb:
+                acad_total = sb.academic_total
+                acad_att = sb.academic_attended
+                acad_pct = sb.academic_percentage
+                hb_total = sb.hyperbuild_total
+                hb_att = sb.hyperbuild_attended
+                hb_pct = sb.hyperbuild_percentage
+                is_eligible = sb.is_exam_eligible
+                is_deb = sb.is_debarred
+                deb_reason = sb.debarment_reason
+                pct = sb.percentage
+                total_conducted = sb.total_sessions
+                attended_count = sb.attended
+        except Exception:
+            pass
+
         return SubjectAttendanceResponse(
             total_sessions_conducted=total_conducted,
             sessions_attended=attended_count,
             attendance_percentage=pct,
+            academic_total=acad_total,
+            academic_attended=acad_att,
+            academic_percentage=acad_pct,
+            hyperbuild_total=hb_total,
+            hyperbuild_attended=hb_att,
+            hyperbuild_percentage=hb_pct,
+            is_exam_eligible=is_eligible,
+            is_debarred=is_deb,
+            debarment_reason=deb_reason,
             sessions_log=logs
         )
 

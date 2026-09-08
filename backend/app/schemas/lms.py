@@ -214,6 +214,15 @@ class SubjectAttendanceResponse(BaseModel):
     total_sessions_conducted: int
     sessions_attended: int
     attendance_percentage: float
+    academic_total: Optional[int] = 0
+    academic_attended: Optional[int] = 0
+    academic_percentage: Optional[float] = None
+    hyperbuild_total: Optional[int] = 0
+    hyperbuild_attended: Optional[int] = 0
+    hyperbuild_percentage: Optional[float] = None
+    is_exam_eligible: Optional[bool] = True
+    is_debarred: Optional[bool] = False
+    debarment_reason: Optional[str] = None
     sessions_log: List[SubjectAttendanceSessionItem]
 
 

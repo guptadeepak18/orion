@@ -35,6 +35,7 @@ async def list_allocated_sessions(
     session_date: Optional[date] = Query(None),
     subject_id: Optional[UUID] = Query(None),
     batch_id: Optional[UUID] = Query(None),
+    category: Optional[str] = Query(None),
     payload=Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
@@ -50,6 +51,7 @@ async def list_allocated_sessions(
         date_filter=session_date,
         subject_id=subject_id,
         batch_id=batch_id,
+        category=category,
     )
     return ResponseEnvelope(data=sessions)
 
@@ -115,6 +117,7 @@ async def get_class_attendance_register(
     batch_id: Optional[UUID] = Query(None),
     faculty_id: Optional[UUID] = Query(None),
     status: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
     payload=Depends(get_current_token_payload),
     db: AsyncSession = Depends(get_db),
 ):
@@ -128,6 +131,7 @@ async def get_class_attendance_register(
         batch_id=batch_id,
         faculty_id=faculty_id,
         attendance_status=status,
+        category=category,
         current_user_id=user_id,
         user_roles=roles,
     )
@@ -143,10 +147,11 @@ async def get_class_attendance_register(
 async def get_subject_attendance_matrix(
     subject_id: UUID = Query(...),
     batch_id: Optional[UUID] = Query(None),
+    category: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        matrix = await attendance_service.get_subject_attendance_matrix(db, subject_id, batch_id)
+        matrix = await attendance_service.get_subject_attendance_matrix(db, subject_id, batch_id, category=category)
         return ResponseEnvelope(data=matrix)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

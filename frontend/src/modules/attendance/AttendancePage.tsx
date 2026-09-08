@@ -23,6 +23,7 @@ import {
   FileSpreadsheet,
   Layers,
   ShieldCheck,
+  ShieldAlert,
   ClipboardList,
   Filter,
   RotateCcw,
@@ -111,6 +112,7 @@ export const AttendancePage: React.FC = () => {
   };
 
   const [sessionDateFilter, setSessionDateFilter] = useState<string>('');
+  const [sessionCategoryFilter, setSessionCategoryFilter] = useState<string>('');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(selectedSessionIdParam || null);
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
   const [remarksMap, setRemarksMap] = useState<Record<string, string>>({});
@@ -134,10 +136,11 @@ export const AttendancePage: React.FC = () => {
 
   // Query allocated sessions
   const { data: allocatedSessionsData = [], isPending: sessionsLoading, refetch: refetchSessions } = useQuery({
-    queryKey: ['attendance_allocated_sessions', sessionDateFilter],
+    queryKey: ['attendance_allocated_sessions', sessionDateFilter, sessionCategoryFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (sessionDateFilter) params.append('session_date', sessionDateFilter);
+      if (sessionCategoryFilter) params.append('category', sessionCategoryFilter);
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await api.get(`/attendance/sessions${qs}`);
       return (res.data?.data || []) as any[];
@@ -348,17 +351,19 @@ export const AttendancePage: React.FC = () => {
   const [registerEndDate, setRegisterEndDate] = useState<string>('');
   const [registerSubjectId, setRegisterSubjectId] = useState<string>('');
   const [registerStatusFilter, setRegisterStatusFilter] = useState<string>('');
+  const [registerCategory, setRegisterCategory] = useState<string>('');
   const [registerSearch, setRegisterSearch] = useState<string>('');
   const [selectedAbsenteesModal, setSelectedAbsenteesModal] = useState<any | null>(null);
 
   const { data: classRegisterData = [], isPending: registerLoading } = useQuery({
-    queryKey: ['class_attendance_register', registerStartDate, registerEndDate, registerSubjectId, registerStatusFilter],
+    queryKey: ['class_attendance_register', registerStartDate, registerEndDate, registerSubjectId, registerStatusFilter, registerCategory],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (registerStartDate) params.append('start_date', registerStartDate);
       if (registerEndDate) params.append('end_date', registerEndDate);
       if (registerSubjectId) params.append('subject_id', registerSubjectId);
       if (registerStatusFilter) params.append('status', registerStatusFilter);
+      if (registerCategory) params.append('category', registerCategory);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await api.get(`/attendance/register${qs}`);
@@ -452,14 +457,16 @@ export const AttendancePage: React.FC = () => {
     }
   }, [activeTab, subjectsListData, selectedSubjectId, selectedSubjectIdParam]);
 
+  const [matrixCategoryFilter, setMatrixCategoryFilter] = useState<'all' | 'academic' | 'hyperbuild'>('all');
   const [matrixStudentSearch, setMatrixStudentSearch] = useState<string>('');
   const [matrixTierFilter, setMatrixTierFilter] = useState<string>('all');
 
   const { data: subjectMatrixData, isPending: matrixLoading } = useQuery({
-    queryKey: ['subject_attendance_matrix', selectedSubjectId],
+    queryKey: ['subject_attendance_matrix', selectedSubjectId, matrixCategoryFilter],
     queryFn: async () => {
       if (!selectedSubjectId) return null;
-      const res = await api.get(`/attendance/subject-matrix?subject_id=${selectedSubjectId}`);
+      const catParam = matrixCategoryFilter !== 'all' ? `&category=${matrixCategoryFilter}` : '';
+      const res = await api.get(`/attendance/subject-matrix?subject_id=${selectedSubjectId}${catParam}`);
       return res.data?.data;
     },
     enabled: activeTab === 'matrix' && !!selectedSubjectId,
@@ -468,7 +475,14 @@ export const AttendancePage: React.FC = () => {
   const filteredMatrixStudents = useMemo(() => {
     if (!subjectMatrixData?.students) return [];
     return subjectMatrixData.students.filter((st: any) => {
-      if (matrixTierFilter !== 'all' && st.tier !== matrixTierFilter) return false;
+      if (matrixTierFilter === 'eligible' && !st.is_exam_eligible) return false;
+      if (matrixTierFilter === 'debarred' && !st.is_debarred) return false;
+      if (matrixTierFilter === 'debarred_academic' && st.debarred_category !== 'academic_only' && st.debarred_category !== 'both') return false;
+      if (matrixTierFilter === 'debarred_hyperbuild' && st.debarred_category !== 'hyperbuild_only' && st.debarred_category !== 'both') return false;
+      if (matrixTierFilter === 'safe' && st.tier !== 'safe') return false;
+      if (matrixTierFilter === 'warning' && st.tier !== 'warning') return false;
+      if (matrixTierFilter === 'not_started' && st.tier !== 'not_started') return false;
+
       if (matrixStudentSearch.trim()) {
         const q = matrixStudentSearch.toLowerCase();
         return (
@@ -483,8 +497,22 @@ export const AttendancePage: React.FC = () => {
 
   const handleExportMatrixCSV = () => {
     if (!subjectMatrixData) return;
-    const sessionCols = (subjectMatrixData.sessions || []).map((s: any) => `S${s.session_no} (${s.session_date})`);
-    const headers = ['Roll No', 'PRN', 'Student Name', 'Total Attended', 'Total Classes', 'Overall %', 'Status Tier', ...sessionCols];
+    const sessionCols = (subjectMatrixData.sessions || []).map((s: any) => `${s.session_code || `S${s.session_no}`} (${s.session_date})`);
+    const headers = [
+      'Roll No',
+      'PRN',
+      'Student Name',
+      'Academic Attended',
+      'Academic Total',
+      'Academic %',
+      'HyperBuild Attended',
+      'HyperBuild Total',
+      'HyperBuild %',
+      'Exam Eligible (>=75% Both)',
+      'Debarment Standing',
+      'Debarment Reason',
+      ...sessionCols,
+    ];
 
     const rows = (subjectMatrixData.students || []).map((st: any) => {
       const sessionVals = (subjectMatrixData.sessions || []).map((s: any) => {
@@ -495,10 +523,15 @@ export const AttendancePage: React.FC = () => {
         `"${st.roll_no}"`,
         `"${st.student_prn}"`,
         `"${st.student_name.replace(/"/g, '""')}"`,
-        st.total_attended,
-        st.total_conducted,
-        `${st.percentage}%`,
-        `"${st.tier.toUpperCase()}"`,
+        st.academic_attended ?? 0,
+        st.academic_total ?? 0,
+        st.academic_percentage !== null ? `${st.academic_percentage}%` : 'Pending',
+        st.hyperbuild_attended ?? 0,
+        st.hyperbuild_total ?? 0,
+        st.hyperbuild_percentage !== null ? `${st.hyperbuild_percentage}%` : 'Pending',
+        st.is_exam_eligible ? 'YES' : 'NO',
+        st.is_debarred ? 'DEBARRED' : 'ELIGIBLE',
+        `"${(st.debarment_reason || '').replace(/"/g, '""')}"`,
         ...sessionVals,
       ];
     });
@@ -507,7 +540,7 @@ export const AttendancePage: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Subject_Attendance_Matrix_${subjectMatrixData.subject_code}.csv`);
+    link.setAttribute('download', `Subject_Attendance_Matrix_${subjectMatrixData.subject_code}_${matrixCategoryFilter}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1232,6 +1265,43 @@ export const AttendancePage: React.FC = () => {
                     All Dates
                   </button>
                 </div>
+
+                {/* Category Filter */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSessionCategoryFilter('')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                      !sessionCategoryFilter
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionCategoryFilter('academic')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                      sessionCategoryFilter === 'academic'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    🎓 Academic
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionCategoryFilter('hyperbuild')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                      sessionCategoryFilter === 'hyperbuild'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    ⚡ HyperBuild
+                  </button>
+                </div>
               </div>
 
               {/* Session Cards List */}
@@ -1255,9 +1325,18 @@ export const AttendancePage: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                            {getSessionCode(s)}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                              {getSessionCode(s)}
+                            </span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              s.is_hyperbuild || s.category === 'hyperbuild_session'
+                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300'
+                            }`}>
+                              {s.is_hyperbuild || s.category === 'hyperbuild_session' ? '⚡ HyperBuild' : '🎓 Academic'}
+                            </span>
+                          </div>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
                               s.is_locked
@@ -1640,7 +1719,7 @@ export const AttendancePage: React.FC = () => {
             </div>
 
             {/* Filter Inputs Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">From Date</label>
                 <input
@@ -1672,6 +1751,19 @@ export const AttendancePage: React.FC = () => {
                   {(subjectsListData || []).map((s: any) => (
                     <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Category</label>
+                <select
+                  value={registerCategory}
+                  onChange={(e) => setRegisterCategory(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="">All Categories</option>
+                  <option value="academic">🎓 Academic Lectures</option>
+                  <option value="hyperbuild">⚡ HyperBuild Sessions</option>
                 </select>
               </div>
 
@@ -1745,8 +1837,15 @@ export const AttendancePage: React.FC = () => {
                           </td>
                           <td className="p-3.5">
                             <div className="font-bold text-slate-900 dark:text-white">{reg.subject_name}</div>
-                            <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
                               <span className="font-mono">{reg.subject_code}</span>
+                              <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                                reg.is_hyperbuild || reg.category === 'hyperbuild_session'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300'
+                              }`}>
+                                {reg.is_hyperbuild || reg.category === 'hyperbuild_session' ? '⚡ HyperBuild' : '🎓 Academic'}
+                              </span>
                               {reg.session_type && (
                                 <span className="px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px]">
                                   {reg.session_type}
@@ -1843,46 +1942,99 @@ export const AttendancePage: React.FC = () => {
       ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'matrix' && (
         <div className="space-y-6">
-          {/* Subject & Batch Selector */}
-          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-indigo-600 shrink-0" />
-                <select
-                  value={selectedSubjectId}
-                  onChange={(e) => {
-                    setSelectedSubjectId(e.target.value);
-                    updateParams({ subjectId: e.target.value });
-                  }}
-                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-900 dark:text-white"
-                >
-                  {(subjectsListData || []).map((s: any) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
+          {/* Subject & Category Selector Bar */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Subject Selector */}
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-indigo-600 shrink-0" />
+                  <select
+                    value={selectedSubjectId}
+                    onChange={(e) => {
+                      setSelectedSubjectId(e.target.value);
+                      updateParams({ subjectId: e.target.value });
+                    }}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    {(subjectsListData || []).map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Category Mode Switcher */}
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setMatrixCategoryFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      matrixCategoryFilter === 'all'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    All (Dual Track)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixCategoryFilter('academic')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      matrixCategoryFilter === 'academic'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    🎓 Academic Lectures
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixCategoryFilter('hyperbuild')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      matrixCategoryFilter === 'hyperbuild'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    ⚡ HyperBuild Activities
+                  </button>
+                </div>
               </div>
 
-              <div className="relative">
+              {/* Export Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportMatrixCSV}
+                  disabled={!subjectMatrixData}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" /> Export Matrix (CSV)
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Row: Student Search & Exam Status / Tier Filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="relative flex-1 sm:max-w-xs">
                 <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Filter student in matrix..."
+                  placeholder="Search student name, PRN, roll..."
                   value={matrixStudentSearch}
                   onChange={(e) => setMatrixStudentSearch(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
                 />
               </div>
 
-              <div className="flex items-center gap-1 text-[11px] font-bold">
-                <span className="text-slate-400 mr-1">Tier:</span>
+              <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-bold">
+                <span className="text-slate-400 mr-1">Filter:</span>
                 {[
-                  { id: 'all', label: 'All' },
-                  { id: 'safe', label: 'Safe (≥75%)' },
-                  { id: 'warning', label: 'Warning (60-74%)' },
-                  { id: 'debarred', label: 'Debarred (<60%)' },
-                  ...(subjectMatrixData?.students?.some((st: any) => st.tier === 'not_started')
-                    ? [{ id: 'not_started', label: 'Not Started' }]
-                    : []),
+                  { id: 'all', label: 'All Students' },
+                  { id: 'eligible', label: '✓ Exam Eligible (≥75% both)' },
+                  { id: 'debarred', label: '⚠️ Debarred (<75%)' },
+                  { id: 'debarred_academic', label: 'Debarred: Academic' },
+                  { id: 'debarred_hyperbuild', label: 'Debarred: HyperBuild' },
                 ].map((tier) => (
                   <button
                     key={tier.id}
@@ -1890,7 +2042,11 @@ export const AttendancePage: React.FC = () => {
                     onClick={() => setMatrixTierFilter(tier.id)}
                     className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       matrixTierFilter === tier.id
-                        ? 'bg-indigo-600 text-white'
+                        ? tier.id.startsWith('debarred')
+                          ? 'bg-rose-600 text-white'
+                          : tier.id === 'eligible'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-indigo-600 text-white'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
                     }`}
                   >
@@ -1899,52 +2055,90 @@ export const AttendancePage: React.FC = () => {
                 ))}
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportMatrixCSV}
-                disabled={!subjectMatrixData}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                <Download className="h-3.5 w-3.5" /> Export Matrix (CSV)
-              </button>
-            </div>
           </div>
 
-          {/* Matrix Summary Stats Banner */}
+          {/* Summary Stats Cards: Distinct Academic vs HyperBuild & Exam Eligibility */}
           {subjectMatrixData && (
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Classes</div>
-                <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
-                  {subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions}
-                  {(subjectMatrixData.total_scheduled || 0) > (subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions) && (
-                    <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 ml-1">
-                      / {subjectMatrixData.total_scheduled} sched
-                    </span>
-                  )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              {/* Card 1: Academic Lectures */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <span>🎓</span> Academic Lectures
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    {subjectMatrixData.academic_summary?.total_conducted ?? 0} conducted
+                    {(subjectMatrixData.academic_summary?.total_scheduled || 0) > (subjectMatrixData.academic_summary?.total_conducted || 0) &&
+                      ` / ${subjectMatrixData.academic_summary.total_scheduled} sched`}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                    {(subjectMatrixData.academic_summary?.total_conducted ?? 0) === 0
+                      ? '—'
+                      : `${subjectMatrixData.academic_summary?.average_percentage ?? 0}%`}
+                    <span className="text-[11px] font-normal text-slate-400 ml-1">avg</span>
+                  </div>
+                  <div className="text-xs font-medium text-slate-500">
+                    <span className="text-emerald-600 font-bold">{subjectMatrixData.academic_summary?.safe_count ?? 0}</span> safe ·{' '}
+                    <span className="text-rose-600 font-bold">{subjectMatrixData.academic_summary?.debarred_count ?? 0}</span> &lt; 75%
+                  </div>
                 </div>
               </div>
-              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Class Average</div>
-                <div className="text-lg font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
-                  {(subjectMatrixData.total_conducted ?? subjectMatrixData.total_sessions) === 0
-                    ? '—'
-                    : `${subjectMatrixData.average_attendance_percentage}%`}
+
+              {/* Card 2: HyperBuild Activities */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <span>⚡</span> HyperBuild Activities
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    {subjectMatrixData.hyperbuild_summary?.total_conducted ?? 0} conducted
+                    {(subjectMatrixData.hyperbuild_summary?.total_scheduled || 0) > (subjectMatrixData.hyperbuild_summary?.total_conducted || 0) &&
+                      ` / ${subjectMatrixData.hyperbuild_summary.total_scheduled} sched`}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                    {(subjectMatrixData.hyperbuild_summary?.total_conducted ?? 0) === 0
+                      ? '—'
+                      : `${subjectMatrixData.hyperbuild_summary?.average_percentage ?? 0}%`}
+                    <span className="text-[11px] font-normal text-slate-400 ml-1">avg</span>
+                  </div>
+                  <div className="text-xs font-medium text-slate-500">
+                    <span className="text-emerald-600 font-bold">{subjectMatrixData.hyperbuild_summary?.safe_count ?? 0}</span> safe ·{' '}
+                    <span className="text-rose-600 font-bold">{subjectMatrixData.hyperbuild_summary?.debarred_count ?? 0}</span> &lt; 75%
+                  </div>
                 </div>
               </div>
-              <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 text-center">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Safe (≥ 75%)</div>
-                <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{subjectMatrixData.safe_count}</div>
-              </div>
-              <div className="p-4 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-center">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Warning (60-74%)</div>
-                <div className="text-lg font-black text-amber-700 dark:text-amber-300 mt-0.5">{subjectMatrixData.warning_count}</div>
-              </div>
-              <div className="p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/40 text-center">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Debarred (&lt; 60%)</div>
-                <div className="text-lg font-black text-rose-700 dark:text-rose-300 mt-0.5">{subjectMatrixData.debarred_count}</div>
+
+              {/* Card 3: Exam Eligibility (Min 75% in Both) */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 text-amber-500" /> Exam Eligibility
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    Min 75% both · {subjectMatrixData.total_students} students
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-slate-900 dark:text-white">
+                    <span className="text-emerald-600">{subjectMatrixData.exam_summary?.eligible_count ?? 0}</span>
+                    <span className="text-sm font-normal text-slate-400 mx-1">/</span>
+                    <span className="text-rose-600">{subjectMatrixData.exam_summary?.debarred_count ?? 0}</span>
+                    <span className="text-[11px] font-normal text-slate-400 ml-1.5">(eligible / debarred)</span>
+                  </div>
+                  <div className="text-[11px] font-medium text-slate-500">
+                    {(subjectMatrixData.exam_summary?.debarred_count ?? 0) > 0 ? (
+                      <span className="text-rose-600 font-semibold">
+                        {subjectMatrixData.exam_summary?.debarred_academic_only ?? 0} Acad · {subjectMatrixData.exam_summary?.debarred_hyperbuild_only ?? 0} HB · {subjectMatrixData.exam_summary?.debarred_both ?? 0} Both
+                      </span>
+                    ) : (
+                      <span className="text-emerald-600 font-bold">100% Eligible</span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1955,27 +2149,51 @@ export const AttendancePage: React.FC = () => {
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
                   <tr>
-                    <th className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-30 min-w-[70px]">Roll No</th>
-                    <th className="p-3.5 sticky left-[70px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[120px]">PRN</th>
-                    <th className="p-3.5 sticky left-[190px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[180px]">Student Name</th>
-                    <th className="p-3.5 text-center min-w-[95px]">Overall %</th>
-                    <th className="p-3.5 text-center min-w-[90px]">Attended</th>
+                    <th className="p-3 sticky left-0 bg-slate-50 dark:bg-slate-800 z-30 min-w-[65px]">Roll No</th>
+                    <th className="p-3 sticky left-[65px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[110px]">PRN</th>
+                    <th className="p-3 sticky left-[175px] bg-slate-50 dark:bg-slate-800 z-30 min-w-[170px]">Student Name</th>
+
+                    {matrixCategoryFilter === 'all' ? (
+                      <>
+                        <th className="p-3 text-center min-w-[95px]">🎓 Academic %</th>
+                        <th className="p-3 text-center min-w-[100px]">⚡ HyperBuild %</th>
+                        <th className="p-3 text-center min-w-[100px]">Exam Standing</th>
+                      </>
+                    ) : matrixCategoryFilter === 'academic' ? (
+                      <>
+                        <th className="p-3 text-center min-w-[85px]">Attended</th>
+                        <th className="p-3 text-center min-w-[95px]">Academic %</th>
+                        <th className="p-3 text-center min-w-[90px]">Status</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="p-3 text-center min-w-[85px]">Attended</th>
+                        <th className="p-3 text-center min-w-[95px]">HyperBuild %</th>
+                        <th className="p-3 text-center min-w-[90px]">Status</th>
+                      </>
+                    )}
+
                     {subjectMatrixData?.sessions?.map((s: any) => (
                       <th
                         key={s.id}
-                        className={`p-3 text-center min-w-[60px] font-mono text-[10px] ${
+                        className={`p-2.5 text-center min-w-[65px] font-mono text-[10px] ${
                           s.is_conducted === false ? 'opacity-70 bg-slate-100/50 dark:bg-slate-800/40' : ''
                         }`}
+                        title={
+                          s.is_hyperbuild
+                            ? `⚡ HyperBuild Activity: ${s.activity_title || s.session_code} (${s.session_date})`
+                            : `🎓 Academic Lecture: ${s.session_code} (${s.session_date})`
+                        }
                       >
-                        <div className="flex items-center justify-center gap-1">
-                          <span>S{s.session_no}</span>
+                        <div className="flex items-center justify-center gap-1 font-bold">
+                          <span>{s.is_hyperbuild ? '⚡' : '🎓'} {s.session_code || `S${s.session_no}`}</span>
                           {s.is_conducted === false && (
-                            <span className="px-1 py-0.2 text-[8px] font-sans font-bold uppercase rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400" title="Scheduled / Future lecture">
+                            <span className="px-1 py-0.2 text-[7.5px] font-sans font-bold uppercase rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
                               Sched
                             </span>
                           )}
                         </div>
-                        <div className="text-slate-400 font-normal">{s.session_date.slice(5)}</div>
+                        <div className="text-slate-400 font-normal">{s.session_date?.slice(5) || ''}</div>
                       </th>
                     ))}
                   </tr>
@@ -1983,49 +2201,157 @@ export const AttendancePage: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {matrixLoading ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-400">Loading subject matrix...</td>
+                      <td colSpan={12} className="p-8 text-center text-slate-400">Loading subject matrix...</td>
                     </tr>
                   ) : filteredMatrixStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-400">No student records found.</td>
+                      <td colSpan={12} className="p-8 text-center text-slate-400">No student records match the selected filter.</td>
                     </tr>
                   ) : (
                     filteredMatrixStudents.map((st: any) => {
-                      const isHigh = st.percentage >= 75;
-                      const isMid = st.percentage >= 60 && st.percentage < 75;
                       return (
                         <tr key={st.student_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                           <td className="p-3 font-mono font-bold sticky left-0 bg-white dark:bg-slate-900 z-10 text-slate-700 dark:text-slate-300">
                             {st.roll_no}
                           </td>
-                          <td className="p-3 font-mono text-[11px] font-bold sticky left-[70px] bg-white dark:bg-slate-900 z-10 text-slate-600 dark:text-slate-400">
+                          <td className="p-3 font-mono text-[11px] font-bold sticky left-[65px] bg-white dark:bg-slate-900 z-10 text-slate-600 dark:text-slate-400">
                             {st.student_prn}
                           </td>
-                          <td className="p-3 font-bold sticky left-[190px] bg-white dark:bg-slate-900 z-10 text-slate-900 dark:text-white">
+                          <td className="p-3 font-bold sticky left-[175px] bg-white dark:bg-slate-900 z-10 text-slate-900 dark:text-white">
                             {st.student_name}
                           </td>
-                          <td className="p-3 text-center">
-                            {st.total_conducted === 0 || st.tier === 'not_started' ? (
-                              <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                Not Started
-                              </span>
-                            ) : (
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
-                                  isHigh
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                    : isMid
-                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
-                                }`}
-                              >
-                                {st.percentage}%
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center font-semibold text-slate-700 dark:text-slate-300">
-                            {st.total_attended} / {st.total_conducted}
-                          </td>
+
+                          {matrixCategoryFilter === 'all' ? (
+                            <>
+                              {/* Academic % */}
+                              <td className="p-3 text-center">
+                                {st.academic_total === 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    No Classes
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full font-bold text-[10.5px] ${
+                                      st.academic_percentage >= 75
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {st.academic_percentage}%{' '}
+                                    <span className="text-[9px] opacity-75 font-normal">
+                                      ({st.academic_attended}/{st.academic_total})
+                                    </span>
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* HyperBuild % */}
+                              <td className="p-3 text-center">
+                                {st.hyperbuild_total === 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    No Classes
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full font-bold text-[10.5px] ${
+                                      st.hyperbuild_percentage >= 75
+                                        ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {st.hyperbuild_percentage}%{' '}
+                                    <span className="text-[9px] opacity-75 font-normal">
+                                      ({st.hyperbuild_attended}/{st.hyperbuild_total})
+                                    </span>
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Exam Debarment Standing */}
+                              <td className="p-3 text-center">
+                                {st.academic_total === 0 && st.hyperbuild_total === 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800">
+                                    Pending
+                                  </span>
+                                ) : st.is_debarred ? (
+                                  <span
+                                    className="px-2 py-0.5 rounded-full font-black text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 inline-flex items-center gap-1 cursor-help"
+                                    title={st.debarment_reason || 'Debarred from exam (< 75%)'}
+                                  >
+                                    <AlertTriangle className="h-2.5 w-2.5 text-rose-600" />
+                                    DEBARRED
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-flex items-center gap-1">
+                                    <CheckCircle2 className="h-2.5 w-2.5 text-emerald-600" />
+                                    ELIGIBLE
+                                  </span>
+                                )}
+                              </td>
+                            </>
+                          ) : matrixCategoryFilter === 'academic' ? (
+                            <>
+                              <td className="p-3 text-center font-semibold text-slate-700 dark:text-slate-300">
+                                {st.academic_attended} / {st.academic_total}
+                              </td>
+                              <td className="p-3 text-center">
+                                {st.academic_total === 0 ? (
+                                  <span className="text-slate-400 text-[10px]">Pending</span>
+                                ) : (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
+                                      st.academic_eligible
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {st.academic_percentage}%
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                {st.academic_total === 0 ? (
+                                  <span className="text-slate-400 text-[10px]">Pending</span>
+                                ) : st.academic_eligible ? (
+                                  <span className="text-emerald-600 font-bold text-[11px]">Safe</span>
+                                ) : (
+                                  <span className="text-rose-600 font-bold text-[11px]">Debarred</span>
+                                )}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="p-3 text-center font-semibold text-slate-700 dark:text-slate-300">
+                                {st.hyperbuild_attended} / {st.hyperbuild_total}
+                              </td>
+                              <td className="p-3 text-center">
+                                {st.hyperbuild_total === 0 ? (
+                                  <span className="text-slate-400 text-[10px]">Pending</span>
+                                ) : (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
+                                      st.hyperbuild_eligible
+                                        ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {st.hyperbuild_percentage}%
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                {st.hyperbuild_total === 0 ? (
+                                  <span className="text-slate-400 text-[10px]">Pending</span>
+                                ) : st.hyperbuild_eligible ? (
+                                  <span className="text-indigo-600 font-bold text-[11px]">Safe</span>
+                                ) : (
+                                  <span className="text-rose-600 font-bold text-[11px]">Debarred</span>
+                                )}
+                              </td>
+                            </>
+                          )}
+
+                          {/* Session Attendance Check Cells */}
                           {subjectMatrixData?.sessions?.map((s: any) => {
                             const stat = st.attendance_by_session?.[s.id] || 'unmarked';
                             const isScheduled = s.is_conducted === false;
@@ -2049,8 +2375,8 @@ export const AttendancePage: React.FC = () => {
                                   }`}
                                   title={
                                     isScheduled
-                                      ? `Session ${s.session_no}: Scheduled (Future class)`
-                                      : `Session ${s.session_no}: ${stat.toUpperCase()}`
+                                      ? `${s.session_code || `Session ${s.session_no}`}: Scheduled (Future class)`
+                                      : `${s.session_code || `Session ${s.session_no}`}: ${stat.toUpperCase()}`
                                   }
                                 >
                                   {isScheduled

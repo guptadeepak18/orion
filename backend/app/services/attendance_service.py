@@ -79,6 +79,7 @@ async def get_allocated_sessions_for_user(
     date_filter: Optional[date] = None,
     subject_id: Optional[UUID] = None,
     batch_id: Optional[UUID] = None,
+    category: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Returns sessions available for attendance marking.
@@ -105,6 +106,11 @@ async def get_allocated_sessions_for_user(
         query = query.where(Session.subject_id == subject_id)
     if batch_id:
         query = query.where(Session.batch_id == batch_id)
+
+    if category == "hyperbuild":
+        query = query.where(or_(Session.session_type == "hyperbuild", Session.venue.ilike("%hyperbuild%")))
+    elif category == "academic":
+        query = query.where(and_(Session.session_type != "hyperbuild", not_(Session.venue.ilike("%hyperbuild%"))))
 
     if not is_admin:
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, user_id)
@@ -173,18 +179,22 @@ async def get_allocated_sessions_for_user(
         elif s.faculty_external:
             fac_name = s.faculty_external.name or "External Faculty"
 
+        is_hb = s.session_type == "hyperbuild" or (s.venue and "hyperbuild" in s.venue.lower())
+
         output.append({
             "id": s.id,
             "session_date": s.session_date,
             "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
             "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
             "session_type": s.session_type,
+            "category": "hyperbuild_session" if is_hb else "academic_lecture",
+            "category_label": "HyperBuild Session" if is_hb else "Academic Lecture",
             "program_name": s.program.name if s.program else None,
             "batch_id": s.batch_id,
             "batch_name": s.batch.name if s.batch else None,
             "subject_id": s.subject_id,
-            "subject_name": s.subject.name if s.subject else ("HyperBuild Session" if s.session_type == "hyperbuild" else "Class Session"),
-            "subject_code": s.subject.code if s.subject else ("HB" if s.session_type == "hyperbuild" else "SUB"),
+            "subject_name": s.subject.name if s.subject else ("HyperBuild Session" if is_hb else "Class Session"),
+            "subject_code": s.subject.code if s.subject else ("HB" if is_hb else "SUB"),
             "venue": s.venue,
             "faculty_name": fac_name,
             "status": s.status,
@@ -1865,6 +1875,7 @@ async def get_class_attendance_register(
     batch_id: Optional[UUID] = None,
     faculty_id: Optional[UUID] = None,
     attendance_status: Optional[str] = None,
+    category: Optional[str] = None,
     current_user_id: Optional[UUID] = None,
     user_roles: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
@@ -1895,6 +1906,11 @@ async def get_class_attendance_register(
         query = query.where(Session.subject_id == subject_id)
     if batch_id:
         query = query.where(Session.batch_id == batch_id)
+
+    if category == "hyperbuild":
+        query = query.where(or_(Session.session_type == "hyperbuild", Session.venue.ilike("%hyperbuild%")))
+    elif category == "academic":
+        query = query.where(and_(Session.session_type != "hyperbuild", not_(Session.venue.ilike("%hyperbuild%"))))
 
     if not is_admin and current_user_id:
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
@@ -1948,12 +1964,12 @@ async def get_class_attendance_register(
 
             if a.status in PRESENT_STATUSES:
                 present_count += 1
-                if a.status == "late":
-                    late_count += 1
-                elif a.status in ["excused", "leave_approved"]:
-                    excused_count += 1
-                elif a.status in ["od_duty", "on_duty", "on duty"]:
-                    od_count += 1
+            elif a.status in ["od_duty", "on_duty"]:
+                od_count += 1
+            elif a.status == "late":
+                late_count += 1
+            elif a.status == "excused":
+                excused_count += 1
             else:
                 absent_count += 1
                 absentees.append({
@@ -1961,15 +1977,15 @@ async def get_class_attendance_register(
                     "student_name": st_name,
                     "student_prn": st_prn,
                     "roll_no": st_roll,
-                    "remarks": a.remarks,
+                    "remarks": a.remarks or "Absent without excuse",
                 })
 
-        today_date = date.today()
-        is_future = bool(s.session_date and s.session_date > today_date)
-        is_marked = total_students > 0 and (s.attendance_status == "marked" or any(a.status for a in atts))
+        # Calculate session classification
+        today = date.today()
+        is_marked = s.attendance_status == "marked" or s.status == "completed" or len(atts) > 0
+        is_future = (s.session_date and s.session_date > today)
 
-        # Check status filter
-        if attendance_status in ["marked", "finalized"] and not is_marked:
+        if attendance_status == "marked" and not is_marked:
             continue
         elif attendance_status == "pending" and (is_marked or is_future):
             continue
@@ -1985,19 +2001,23 @@ async def get_class_attendance_register(
         elif s.faculty_external:
             fac_name = s.faculty_external.name or "External Faculty"
 
+        is_hb = s.session_type == "hyperbuild" or (s.venue and "hyperbuild" in s.venue.lower())
+
         register_out.append({
             "id": str(s.id),
             "session_date": s.session_date.isoformat() if s.session_date else "",
             "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
             "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
             "session_type": s.session_type or "Regular Lecture",
+            "category": "hyperbuild_activity" if is_hb else "academic_lecture",
+            "category_label": "HyperBuild Activity" if is_hb else "Academic Lecture",
             "hyperbuild_activity_no": s.hyperbuild_activity_no,
             "program_name": s.program.name if s.program else None,
             "batch_id": str(s.batch_id) if s.batch_id else None,
             "batch_name": s.batch.name if s.batch else "General Batch",
             "subject_id": str(s.subject_id) if s.subject_id else None,
-            "subject_name": s.subject.name if s.subject else ("HyperBuild Session" if s.session_type == "hyperbuild" else "Class Session"),
-            "subject_code": s.subject.code if s.subject else ("HB" if s.session_type == "hyperbuild" else "SUB"),
+            "subject_name": s.subject.name if s.subject else ("HyperBuild Session" if is_hb else "Class Session"),
+            "subject_code": s.subject.code if s.subject else ("HB" if is_hb else "SUB"),
             "venue": s.venue or "Campus Classroom",
             "faculty_name": fac_name,
             "attendance_status": calc_status,
@@ -2019,10 +2039,14 @@ async def get_subject_attendance_matrix(
     db: AsyncSession,
     subject_id: UUID,
     batch_id: Optional[UUID] = None,
+    category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Returns a full cross-tab matrix of students and sessions for a subject,
-    ideal for generating cumulative spreadsheets, gradebooks, and debarment flags.
+    maintaining completely separate metrics and eligibility for:
+      - Academic Lectures
+      - HyperBuild Activities
+    along with overall exam debarment standing.
     """
     sub_stmt = (
         select(Subject)
@@ -2122,37 +2146,57 @@ async def get_subject_attendance_matrix(
     all_cand_students = st_res.scalars().all()
     students = [st for st in all_cand_students if is_student_eligible_for_subject(subject, st)]
 
-    # Combine regular sessions and hyperbuild activities in chronological order
-    combined_sessions: List[Dict[str, Any]] = []
+    # ── Separate and index regular lectures vs HyperBuild activities ──
     sessions_with_attendance = {s_id for (_, s_id) in att_map.keys()}
 
+    regular_items: List[Dict[str, Any]] = []
     for s in all_sessions:
         s_date = s.session_date or date.min
         s_time = s.start_time or time.min
         is_conducted = (s.attendance_status == "marked") or (s.status == "completed") or (s.id in sessions_with_attendance)
-        combined_sessions.append({
+        regular_items.append({
             "type": "regular",
+            "category": "academic_lecture",
+            "category_label": "Academic Lecture",
             "date": s_date,
             "time": s_time,
             "obj": s,
             "is_conducted": is_conducted,
         })
+    regular_items.sort(key=lambda x: (x["date"], x["time"]))
+    for i, item in enumerate(regular_items):
+        item["session_code"] = f"L{i + 1}"
+        item["lecture_no"] = i + 1
+
+    hyperbuild_items: List[Dict[str, Any]] = []
     for act in conducted_hb_activities:
         s_date = act.session.session_date if act.session else date.min
         s_time = act.start_time or (act.session.start_time if act.session else time.min)
-        combined_sessions.append({
+        hyperbuild_items.append({
             "type": "hyperbuild",
+            "category": "hyperbuild_activity",
+            "category_label": "HyperBuild Activity",
             "date": s_date,
             "time": s_time,
             "obj": act,
             "is_conducted": True,
         })
+    hyperbuild_items.sort(key=lambda x: (x["date"], x["time"]))
+    for i, item in enumerate(hyperbuild_items):
+        item["session_code"] = f"HB{i + 1}"
+        item["hb_no"] = i + 1
 
-    combined_sessions.sort(key=lambda x: (x["date"], x["time"]))
+    # Filter visible sessions according to category filter
+    if category == "academic":
+        visible_sessions = list(regular_items)
+    elif category == "hyperbuild":
+        visible_sessions = list(hyperbuild_items)
+    else:
+        visible_sessions = sorted(regular_items + hyperbuild_items, key=lambda x: (x["date"], x["time"]))
 
-    # Build sessions header
+    # Build sessions header for visible sessions
     sessions_header = []
-    for idx, item in enumerate(combined_sessions):
+    for idx, item in enumerate(visible_sessions):
         is_cond = item.get("is_conducted", True)
         if item["type"] == "regular":
             s = item["obj"]
@@ -2174,6 +2218,9 @@ async def get_subject_attendance_matrix(
             sessions_header.append({
                 "id": str(s.id),
                 "session_no": idx + 1,
+                "session_code": item.get("session_code", f"L{idx + 1}"),
+                "category": "academic_lecture",
+                "category_label": "Academic Lecture",
                 "session_date": s.session_date.isoformat() if s.session_date else "",
                 "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
                 "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
@@ -2219,6 +2266,11 @@ async def get_subject_attendance_matrix(
             sessions_header.append({
                 "id": str(act.id),
                 "session_no": idx + 1,
+                "session_code": item.get("session_code", f"HB{idx + 1}"),
+                "category": "hyperbuild_activity",
+                "category_label": "HyperBuild Activity",
+                "activity_title": act.title,
+                "activity_no": act.activity_no,
                 "session_date": sess.session_date.isoformat() if sess.session_date else "",
                 "start_time": s_time_str,
                 "end_time": e_time_str,
@@ -2229,22 +2281,75 @@ async def get_subject_attendance_matrix(
                 "percentage": pct,
                 "is_conducted": True,
                 "is_hyperbuild": True,
-                "activity_title": act.title,
             })
 
-    # Build students matrix rows based ONLY on conducted sessions
-    total_conducted = sum(1 for item in combined_sessions if item.get("is_conducted", True))
-    total_scheduled = len(combined_sessions)
+    # ── Build students matrix rows with separate Academic vs HyperBuild metrics ──
+    conducted_regular = [it for it in regular_items if it.get("is_conducted", True)]
+    acad_conducted_total = len(conducted_regular)
+    hb_conducted_total = len(hyperbuild_items)
+
+    view_conducted_total = sum(1 for item in visible_sessions if item.get("is_conducted", True))
+    view_scheduled_total = len(visible_sessions)
+
     students_matrix = []
-    safe_count = 0
-    warning_count = 0
-    debarred_count = 0
 
     for st in students:
-        attended = 0
-        records: Dict[str, str] = {}
+        # 1. Academic Lecture calculations
+        acad_att = 0
+        for item in conducted_regular:
+            s = item["obj"]
+            rec = att_map.get((st.id, s.id))
+            if rec and rec.status in PRESENT_STATUSES:
+                acad_att += 1
 
-        for item in combined_sessions:
+        acad_pct = round((acad_att / acad_conducted_total * 100.0), 1) if acad_conducted_total > 0 else None
+        acad_eligible = (acad_conducted_total == 0) or (acad_pct is not None and acad_pct >= 75.0)
+        acad_shortfall = max(0, int((0.75 * acad_conducted_total - acad_att) / 0.25) + 1) if (acad_conducted_total > 0 and acad_pct < 75.0) else 0
+
+        # 2. HyperBuild Activity calculations
+        hb_att = 0
+        for item in hyperbuild_items:
+            act = item["obj"]
+            act_req_key = (act.challenge_key is not None) or (act.status in ["active", "closed"]) or len(act.verifications) > 0
+            p_st = parent_sess_att_map.get((act.session_id, st.id))
+            parent_is_p = p_st in PRESENT_STATUSES
+            v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+            v_is_p = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+
+            if act_req_key:
+                if parent_is_p and v_is_p:
+                    hb_att += 1
+            else:
+                if parent_is_p:
+                    hb_att += 1
+
+        hb_pct = round((hb_att / hb_conducted_total * 100.0), 1) if hb_conducted_total > 0 else None
+        hb_eligible = (hb_conducted_total == 0) or (hb_pct is not None and hb_pct >= 75.0)
+        hb_shortfall = max(0, int((0.75 * hb_conducted_total - hb_att) / 0.25) + 1) if (hb_conducted_total > 0 and hb_pct < 75.0) else 0
+
+        # 3. Overall Exam Debarment Standing (Minimum 75% in BOTH categories)
+        total_all_conducted = acad_conducted_total + hb_conducted_total
+        is_exam_eligible = acad_eligible and hb_eligible
+        is_debarred = (total_all_conducted > 0) and (not is_exam_eligible)
+
+        if not acad_eligible and not hb_eligible:
+            debarred_cat = "both"
+            debar_reason = f"Debarred: Both Academic Lectures ({acad_pct}%) and HyperBuild Activities ({hb_pct}%) are below 75%"
+        elif not acad_eligible:
+            debarred_cat = "academic_only"
+            debar_reason = f"Debarred: Academic Lectures attendance is {acad_pct}% (minimum 75% required)"
+        elif not hb_eligible:
+            debarred_cat = "hyperbuild_only"
+            debar_reason = f"Debarred: HyperBuild Activities attendance is {hb_pct}% (minimum 75% required)"
+        else:
+            debarred_cat = None
+            debar_reason = "Eligible for Examination (Meets 75% requirement in both categories)"
+
+        # 4. Status mapping for currently visible sessions in matrix table
+        records: Dict[str, str] = {}
+        view_attended = 0
+
+        for item in visible_sessions:
             if item["type"] == "regular":
                 s = item["obj"]
                 rec = att_map.get((st.id, s.id))
@@ -2252,7 +2357,7 @@ async def get_subject_attendance_matrix(
                     if rec:
                         records[str(s.id)] = rec.status
                         if rec.status in PRESENT_STATUSES:
-                            attended += 1
+                            view_attended += 1
                     else:
                         records[str(s.id)] = "unmarked"
                 else:
@@ -2268,67 +2373,129 @@ async def get_subject_attendance_matrix(
                 if act_req_key:
                     if parent_is_p and v_is_p:
                         records[str(act.id)] = "present"
-                        attended += 1
+                        view_attended += 1
                     else:
                         records[str(act.id)] = "absent"
                 else:
                     if parent_is_p:
                         records[str(act.id)] = "present"
-                        attended += 1
+                        view_attended += 1
                     else:
                         records[str(act.id)] = "absent"
 
-        pct = round((attended / total_conducted * 100), 1) if total_conducted > 0 else 0.0
+        view_pct = round((view_attended / view_conducted_total * 100.0), 1) if view_conducted_total > 0 else 0.0
 
-        if total_conducted == 0:
-            tier = "not_started"
-        elif pct >= 75.0:
-            tier = "safe"
-            safe_count += 1
-        elif pct >= 60.0:
-            tier = "warning"
-            warning_count += 1
-        else:
+        if is_debarred:
             tier = "debarred"
-            debarred_count += 1
-
-        # Needed classes formula to reach 75%
-        needed = 0
-        if pct < 75.0 and total_conducted > 0:
-            target = 0.75 * total_conducted
-            if target > attended:
-                needed = int((target - attended) / 0.25) + 1
+        elif view_conducted_total == 0:
+            tier = "not_started"
+        elif view_pct >= 75.0:
+            tier = "safe"
+        else:
+            tier = "warning"
 
         students_matrix.append({
             "student_id": str(st.id),
             "student_name": f"{st.first_name} {st.last_name or ''}".strip(),
             "student_prn": st.prn_number or st.roll_no or "PRN-N/A",
             "roll_no": st.roll_no or "-",
-            "total_attended": attended,
-            "total_conducted": total_conducted,
-            "percentage": pct,
+
+            # Academic Lectures breakdown
+            "academic_total": acad_conducted_total,
+            "academic_attended": acad_att,
+            "academic_percentage": acad_pct,
+            "academic_eligible": acad_eligible,
+            "academic_shortfall": acad_shortfall,
+
+            # HyperBuild Activities breakdown
+            "hyperbuild_total": hb_conducted_total,
+            "hyperbuild_attended": hb_att,
+            "hyperbuild_percentage": hb_pct,
+            "hyperbuild_eligible": hb_eligible,
+            "hyperbuild_shortfall": hb_shortfall,
+
+            # Exam Eligibility & Debarment Standing
+            "is_exam_eligible": is_exam_eligible,
+            "is_debarred": is_debarred,
+            "debarred_category": debarred_cat,
+            "debarment_reason": debar_reason,
+
+            # Currently visible view metrics
+            "total_attended": view_attended,
+            "total_conducted": view_conducted_total,
+            "percentage": view_pct,
             "tier": tier,
-            "needed_classes_for_75": max(0, needed),
+            "needed_classes_for_75": max(acad_shortfall, hb_shortfall),
             "attendance_by_session": records,
         })
 
-    avg_pct = round(
-        sum(st["percentage"] for st in students_matrix if st["tier"] != "not_started") / sum(1 for st in students_matrix if st["tier"] != "not_started"), 1
+    # Summary calculations
+    acad_avg_pct = round(
+        sum((st["academic_percentage"] or 0.0) for st in students_matrix if st["academic_percentage"] is not None) /
+        max(1, sum(1 for st in students_matrix if st["academic_percentage"] is not None)),
+        1
+    ) if acad_conducted_total > 0 else 0.0
+
+    hb_avg_pct = round(
+        sum((st["hyperbuild_percentage"] or 0.0) for st in students_matrix if st["hyperbuild_percentage"] is not None) /
+        max(1, sum(1 for st in students_matrix if st["hyperbuild_percentage"] is not None)),
+        1
+    ) if hb_conducted_total > 0 else 0.0
+
+    view_avg_pct = round(
+        sum(st["percentage"] for st in students_matrix if st["tier"] != "not_started") /
+        max(1, sum(1 for st in students_matrix if st["tier"] != "not_started")),
+        1
     ) if (students_matrix and any(st["tier"] != "not_started" for st in students_matrix)) else 0.0
+
+    safe_count = sum(1 for st in students_matrix if st["tier"] == "safe")
+    warning_count = sum(1 for st in students_matrix if st["tier"] == "warning")
+    debarred_count = sum(1 for st in students_matrix if st["is_debarred"])
+
+    academic_summary = {
+        "total_conducted": acad_conducted_total,
+        "total_scheduled": len(regular_items),
+        "average_percentage": acad_avg_pct,
+        "safe_count": sum(1 for st in students_matrix if st["academic_eligible"]),
+        "debarred_count": sum(1 for st in students_matrix if (acad_conducted_total > 0 and not st["academic_eligible"])),
+    }
+
+    hyperbuild_summary = {
+        "total_conducted": hb_conducted_total,
+        "total_scheduled": len(hyperbuild_items),
+        "average_percentage": hb_avg_pct,
+        "safe_count": sum(1 for st in students_matrix if st["hyperbuild_eligible"]),
+        "debarred_count": sum(1 for st in students_matrix if (hb_conducted_total > 0 and not st["hyperbuild_eligible"])),
+    }
+
+    exam_summary = {
+        "total_students": len(students),
+        "eligible_count": sum(1 for st in students_matrix if st["is_exam_eligible"]),
+        "debarred_count": debarred_count,
+        "debarred_academic_only": sum(1 for st in students_matrix if st["debarred_category"] == "academic_only"),
+        "debarred_hyperbuild_only": sum(1 for st in students_matrix if st["debarred_category"] == "hyperbuild_only"),
+        "debarred_both": sum(1 for st in students_matrix if st["debarred_category"] == "both"),
+    }
 
     return {
         "subject_id": str(subject.id),
         "subject_name": subject.name,
         "subject_code": subject.code or subject.course_code or "SUB",
         "batch_id": str(batch_id) if batch_id else None,
-        "total_sessions": total_conducted,
-        "total_conducted": total_conducted,
-        "total_scheduled": total_scheduled,
+        "category": category or "all",
+        "total_sessions": view_conducted_total,
+        "total_conducted": view_conducted_total,
+        "total_scheduled": view_scheduled_total,
         "total_students": len(students),
-        "average_attendance_percentage": avg_pct,
+        "average_attendance_percentage": view_avg_pct,
         "safe_count": safe_count,
         "warning_count": warning_count,
         "debarred_count": debarred_count,
+        "exam_eligible_count": exam_summary["eligible_count"],
+        "exam_debarred_count": exam_summary["debarred_count"],
+        "academic_summary": academic_summary,
+        "hyperbuild_summary": hyperbuild_summary,
+        "exam_summary": exam_summary,
         "sessions": sessions_header,
         "students": students_matrix,
     }
