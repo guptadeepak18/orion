@@ -146,11 +146,6 @@ class ThoughtService:
         )
         self.gemini_models = [
             "gemini-2.5-flash",
-            "gemini-3.7-flash",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
-            "gemini-flash-latest",
-            "gemini-pro-latest"
         ]
         # Memory cache: key is date string "YYYY-MM-DD"
         self._cache: Dict[str, Dict[str, Any]] = {}
@@ -186,7 +181,7 @@ class ThoughtService:
         for model in self.gemini_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
             try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
+                async with httpx.AsyncClient(timeout=2.5) as client:
                     resp = await client.post(
                         url,
                         headers={"content-type": "application/json"},

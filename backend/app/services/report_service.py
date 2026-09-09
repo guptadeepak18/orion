@@ -90,16 +90,25 @@ async def get_syllabus_completion_index(
     res = await db.execute(stmt)
     subjects = res.scalars().all()
 
+    sub_ids = [s.id for s in subjects]
+    topic_counts = {}
+    if sub_ids:
+        counts_stmt = (
+            select(
+                Topic.subject_id,
+                func.count(Topic.id).label("total"),
+                func.count(func.nullif(Topic.is_completed, False)).label("completed"),
+            )
+            .where(Topic.subject_id.in_(sub_ids))
+            .group_by(Topic.subject_id)
+        )
+        c_res = await db.execute(counts_stmt)
+        for s_id, tot, comp in c_res.all():
+            topic_counts[s_id] = (tot or 0, comp or 0)
+
     report = []
     for sub in subjects:
-        top_stmt = select(func.count(Topic.id)).where(Topic.subject_id == sub.id)
-        t_res = await db.execute(top_stmt)
-        total_topics = t_res.scalar() or 0
-
-        comp_stmt = select(func.count(Topic.id)).where(Topic.subject_id == sub.id, Topic.is_completed == True)
-        c_res = await db.execute(comp_stmt)
-        completed_topics = c_res.scalar() or 0
-
+        total_topics, completed_topics = topic_counts.get(sub.id, (0, 0))
         pct = (completed_topics / total_topics * 100.0) if total_topics > 0 else 0.0
         report.append({
             "subject_code": sub.code,
