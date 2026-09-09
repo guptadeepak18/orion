@@ -227,6 +227,8 @@ export const StudentsPage: React.FC = () => {
       const res = await api.get(`/students?${params.toString()}`);
       return res.data.data as Student[];
     },
+    enabled: activeSection === 'directory',
+    staleTime: 60 * 1000,
   });
   const students = studentsData || [];
 

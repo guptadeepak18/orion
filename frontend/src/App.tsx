@@ -1,36 +1,45 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { useAuthStore } from './lib/store';
 import { Layout } from './components/Layout';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { UnauthorizedPage } from './pages/UnauthorizedPage';
-import { AcademicPage } from './modules/academic/AcademicPage';
-import { SubjectsPage } from './modules/subjects/SubjectsPage';
-import { StudentsPage } from './modules/students/StudentsPage';
-import { SessionsPage } from './modules/sessions/SessionsPage';
-import { FacultyPage } from './modules/faculty/FacultyPage';
-import { FinancePage } from './modules/finance/FinancePage';
-import { ApprovalsPage } from './modules/approvals/ApprovalsPage';
-import { FeedbackPage } from './modules/feedback/FeedbackPage';
-import { ReportsPage } from './modules/reports/ReportsPage';
-import { SystemSettingsPage } from './modules/system/SystemSettingsPage';
-import { EmailTemplatesPage } from './modules/system/EmailTemplatesPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { VerifyEmailPage } from './pages/VerifyEmailPage';
-import { PendingApprovalPage } from './pages/PendingApprovalPage';
-import { StudentProfilePage } from './pages/StudentProfilePage';
-import { UsersPage } from './modules/users/UsersPage';
-import { LMSPage } from './modules/lms/LMSPage';
-import { SubjectLMSHub } from './modules/lms/SubjectLMSHub';
-import { CaseStudyBankPage } from './modules/case-studies/CaseStudyBankPage';
-import { CaseStudyDetailPage } from './modules/case-studies/CaseStudyDetailPage';
-import { AttendancePage } from './modules/attendance/AttendancePage';
-import { ProactiveIntelligenceHub } from './modules/ai/ProactiveIntelligenceHub';
-import { GradebookPage } from './modules/gradebook/GradebookPage';
+
+// Code-split dynamic route imports to keep initial bundle size minimal
+const LoginPage = React.lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const DashboardPage = React.lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const UnauthorizedPage = React.lazy(() => import('./pages/UnauthorizedPage').then(m => ({ default: m.UnauthorizedPage })));
+const AcademicPage = React.lazy(() => import('./modules/academic/AcademicPage').then(m => ({ default: m.AcademicPage })));
+const SubjectsPage = React.lazy(() => import('./modules/subjects/SubjectsPage').then(m => ({ default: m.SubjectsPage })));
+const StudentsPage = React.lazy(() => import('./modules/students/StudentsPage').then(m => ({ default: m.StudentsPage })));
+const SessionsPage = React.lazy(() => import('./modules/sessions/SessionsPage').then(m => ({ default: m.SessionsPage })));
+const FacultyPage = React.lazy(() => import('./modules/faculty/FacultyPage').then(m => ({ default: m.FacultyPage })));
+const FinancePage = React.lazy(() => import('./modules/finance/FinancePage').then(m => ({ default: m.FinancePage })));
+const ApprovalsPage = React.lazy(() => import('./modules/approvals/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })));
+const FeedbackPage = React.lazy(() => import('./modules/feedback/FeedbackPage').then(m => ({ default: m.FeedbackPage })));
+const ReportsPage = React.lazy(() => import('./modules/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const SystemSettingsPage = React.lazy(() => import('./modules/system/SystemSettingsPage').then(m => ({ default: m.SystemSettingsPage })));
+const EmailTemplatesPage = React.lazy(() => import('./modules/system/EmailTemplatesPage').then(m => ({ default: m.EmailTemplatesPage })));
+const RegisterPage = React.lazy(() => import('./pages/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
+const VerifyEmailPage = React.lazy(() => import('./pages/VerifyEmailPage').then(m => ({ default: m.VerifyEmailPage })));
+const PendingApprovalPage = React.lazy(() => import('./pages/PendingApprovalPage').then(m => ({ default: m.PendingApprovalPage })));
+const StudentProfilePage = React.lazy(() => import('./pages/StudentProfilePage').then(m => ({ default: m.StudentProfilePage })));
+const UsersPage = React.lazy(() => import('./modules/users/UsersPage').then(m => ({ default: m.UsersPage })));
+const LMSPage = React.lazy(() => import('./modules/lms/LMSPage').then(m => ({ default: m.LMSPage })));
+const SubjectLMSHub = React.lazy(() => import('./modules/lms/SubjectLMSHub').then(m => ({ default: m.SubjectLMSHub })));
+const CaseStudyBankPage = React.lazy(() => import('./modules/case-studies/CaseStudyBankPage').then(m => ({ default: m.CaseStudyBankPage })));
+const CaseStudyDetailPage = React.lazy(() => import('./modules/case-studies/CaseStudyDetailPage').then(m => ({ default: m.CaseStudyDetailPage })));
+const AttendancePage = React.lazy(() => import('./modules/attendance/AttendancePage').then(m => ({ default: m.AttendancePage })));
+const ProactiveIntelligenceHub = React.lazy(() => import('./modules/ai/ProactiveIntelligenceHub').then(m => ({ default: m.ProactiveIntelligenceHub })));
+const GradebookPage = React.lazy(() => import('./modules/gradebook/GradebookPage').then(m => ({ default: m.GradebookPage })));
+
+const PageLoader: React.FC = () => (
+  <div className="min-h-[400px] flex flex-col items-center justify-center space-y-3">
+    <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+    <span className="text-xs font-medium text-slate-400 tracking-wider uppercase animate-pulse">Loading View...</span>
+  </div>
+);
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
   children,
@@ -58,8 +67,9 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -393,7 +403,8 @@ export const App: React.FC = () => {
           />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   );
