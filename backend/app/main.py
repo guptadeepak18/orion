@@ -190,10 +190,11 @@ if os.path.exists(STATIC_DIR):
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
 
-        # Check if direct static file requested (e.g. /logo-light.png, /favicon.ico)
+        # Check if direct static file requested (e.g. /manifest.json, /logo-light.png, /favicon.ico)
         target_file = os.path.join(STATIC_DIR, full_path)
         if full_path and os.path.exists(target_file) and os.path.isfile(target_file):
-            return FileResponse(target_file)
+            media_type = "application/manifest+json" if full_path in ["manifest.json", "manifest.webmanifest"] else None
+            return FileResponse(target_file, media_type=media_type)
 
         # Serve index.html for all client-side routes (/dashboard, /login, /academic, etc.)
         index_file = os.path.join(STATIC_DIR, "index.html")

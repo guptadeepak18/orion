@@ -23,7 +23,7 @@ export const Logo: React.FC<LogoProps> = ({
         <div className="relative flex items-center justify-center h-10 w-10">
           <img
             src="/logo-icon.png"
-            alt="Lexicon MILE"
+            alt="Orion"
             className="h-9 w-9 object-contain transition-transform duration-200 hover:scale-110 drop-shadow-sm"
           />
         </div>
@@ -38,13 +38,13 @@ export const Logo: React.FC<LogoProps> = ({
         {/* Light Mode High-Res Logo */}
         <img
           src="/logo-light.png"
-          alt="Lexicon MILE Logo"
+          alt="Orion Logo"
           className="w-full h-auto object-contain block dark:hidden transition-transform duration-200 hover:scale-[1.01]"
         />
         {/* Dark Mode High-Res Logo */}
         <img
           src="/logo-dark.png"
-          alt="Lexicon MILE Logo"
+          alt="Orion Logo"
           className="w-full h-auto object-contain hidden dark:block transition-transform duration-200 hover:scale-[1.01]"
         />
       </div>
@@ -53,7 +53,7 @@ export const Logo: React.FC<LogoProps> = ({
       {showText && (
         <div className="flex flex-col justify-center items-center mt-1">
           <span className="font-extrabold text-sm tracking-tight gradient-text">
-            Lexicon MILE
+            Orion
           </span>
           <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
             Academic Operations
