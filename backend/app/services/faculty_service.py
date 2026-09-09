@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.core.cache import memory_cache
 from app.models.faculty import FacultyInternal, FacultyExternal, FacultyDocument
 from app.models.session import Session, Engagement
 from app.schemas.faculty import (
@@ -19,13 +20,19 @@ async def create_faculty_internal(db: AsyncSession, f_in: FacultyInternalCreate)
     db.add(fac)
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:internal")
     return fac
 
 
 async def list_faculty_internal(db: AsyncSession) -> List[FacultyInternal]:
+    cached = memory_cache.get("faculty:internal")
+    if cached is not None:
+        return cached
     stmt = select(FacultyInternal).where(FacultyInternal.is_deleted == False).order_by(FacultyInternal.employee_id)
     res = await db.execute(stmt)
-    return list(res.scalars().all())
+    result = list(res.scalars().all())
+    memory_cache.set("faculty:internal", result, ttl_seconds=60)
+    return result
 
 
 async def get_faculty_internal(db: AsyncSession, faculty_id: UUID) -> Optional[FacultyInternal]:
@@ -44,6 +51,7 @@ async def update_faculty_internal(
         setattr(fac, field, value)
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:internal")
     return fac
 
 
@@ -55,6 +63,7 @@ async def archive_faculty_internal(db: AsyncSession, faculty_id: UUID, is_archiv
     fac.is_active = not is_archived
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:internal")
     return fac
 
 
@@ -64,6 +73,7 @@ async def delete_faculty_internal(db: AsyncSession, faculty_id: UUID) -> bool:
         return False
     fac.is_deleted = True
     await db.commit()
+    memory_cache.invalidate_prefix("faculty:internal")
     return True
 
 
@@ -73,13 +83,19 @@ async def create_faculty_external(db: AsyncSession, f_in: FacultyExternalCreate)
     db.add(fac)
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:external")
     return fac
 
 
 async def list_faculty_external(db: AsyncSession) -> List[FacultyExternal]:
+    cached = memory_cache.get("faculty:external")
+    if cached is not None:
+        return cached
     stmt = select(FacultyExternal).where(FacultyExternal.is_deleted == False).order_by(FacultyExternal.name)
     res = await db.execute(stmt)
-    return list(res.scalars().all())
+    result = list(res.scalars().all())
+    memory_cache.set("faculty:external", result, ttl_seconds=60)
+    return result
 
 
 async def get_faculty_external(db: AsyncSession, faculty_id: UUID) -> Optional[FacultyExternal]:
@@ -98,6 +114,7 @@ async def update_faculty_external(
         setattr(fac, field, value)
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:external")
     return fac
 
 
@@ -109,6 +126,7 @@ async def archive_faculty_external(db: AsyncSession, faculty_id: UUID, is_archiv
     fac.is_active = not is_archived
     await db.commit()
     await db.refresh(fac)
+    memory_cache.invalidate_prefix("faculty:external")
     return fac
 
 
@@ -118,6 +136,7 @@ async def delete_faculty_external(db: AsyncSession, faculty_id: UUID) -> bool:
         return False
     fac.is_deleted = True
     await db.commit()
+    memory_cache.invalidate_prefix("faculty:external")
     return True
 
 

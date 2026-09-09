@@ -145,7 +145,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get(`/attendance/sessions${qs}`);
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent,
+    enabled: !isStudent && activeTab === 'sessions',
+    staleTime: 60 * 1000,
   });
 
   // Auto-select first session if none selected and on sessions tab
@@ -441,6 +442,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/subjects');
       return (res.data?.data || []) as any[];
     },
+    enabled: !isStudent && ['register', 'matrix', 'compliance', 'daily_ledger'].includes(activeTab),
+    staleTime: 10 * 60 * 1000,
   });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(
@@ -555,7 +558,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/students');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent,
+    enabled: !isStudent && activeTab === 'students',
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: programsListData = [] } = useQuery({
@@ -564,7 +568,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/programs');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent,
+    enabled: !isStudent && ['students', 'compliance'].includes(activeTab),
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: batchesListData = [] } = useQuery({
@@ -573,7 +578,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent,
+    enabled: !isStudent && ['students', 'compliance', 'daily_ledger'].includes(activeTab),
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: divisionsListData = [] } = useQuery({
@@ -582,7 +588,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/divisions');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent,
+    enabled: !isStudent && activeTab === 'students',
+    staleTime: 10 * 60 * 1000,
   });
 
   const studentProfileId = myStudentProfile?.student?.id || myStudentProfile?.id || '';
@@ -701,7 +708,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get(endpoint);
       return res.data?.data;
     },
-    enabled: isStudent ? true : !!effectiveDossierId,
+    enabled: activeTab === 'students' && (isStudent || !!effectiveDossierId),
+    staleTime: 60 * 1000,
   });
 
   // Filtered session records for chronological session log in Dossier
@@ -875,6 +883,8 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get(`/attendance/corrections${qs}`);
       return (res.data?.data || []) as any[];
     },
+    enabled: activeTab === 'corrections',
+    staleTime: 30 * 1000,
   });
 
   // Dual review mutations with instant optimistic updates

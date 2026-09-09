@@ -469,7 +469,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/programs');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: allBatches = [] } = useQuery({
@@ -478,7 +479,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: allDivisions = [] } = useQuery({
@@ -487,7 +489,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/divisions');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: allSubjects = [] } = useQuery({
@@ -496,7 +499,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/subjects');
       return res.data.data as any[];
     },
-    enabled: showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: facultyInternal = [] } = useQuery({
@@ -505,7 +509,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/internal');
       return res.data.data as any[];
     },
-    enabled: isFaculty || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: isFaculty || (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: facultyExternal = [] } = useQuery({
@@ -514,7 +519,8 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/external');
       return res.data.data as any[];
     },
-    enabled: isFaculty || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance' || viewMode === 'calendar',
+    enabled: isFaculty || (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: allAllocations = [] } = useQuery({
@@ -524,6 +530,7 @@ export const SessionsPage: React.FC = () => {
       return (res.data.data || []) as any[];
     },
     enabled: isFaculty || showClassModal || !!varianceSession,
+    staleTime: 10 * 60 * 1000,
   });
 
   // Resolve current faculty profile for per-session attendance authorization

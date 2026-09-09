@@ -313,15 +313,16 @@ export const DashboardPage: React.FC = () => {
   });
 
   const { data: sessions = [] } = useQuery<SessionItem[]>({
-    queryKey: ['dashboard_sessions'],
+    queryKey: ['dashboard_sessions', todayIso],
     queryFn: async () => {
       try {
-        const res = await api.get('/sessions');
+        const res = await api.get(`/sessions?session_date=${todayIso}`);
         return (res.data.data || []) as SessionItem[];
       } catch {
         return [] as SessionItem[];
       }
     },
+    staleTime: 60 * 1000,
   });
 
   const { data: academicEvents = [] } = useQuery<AcademicEventItem[]>({
@@ -334,6 +335,7 @@ export const DashboardPage: React.FC = () => {
         return [] as AcademicEventItem[];
       }
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: pendingApprovals = [] } = useQuery<PendingApproval[]>({
@@ -347,6 +349,7 @@ export const DashboardPage: React.FC = () => {
       }
     },
     enabled: isAdmin,
+    staleTime: 60 * 1000,
   });
 
   const { data: syllabusList = [] } = useQuery<SyllabusItem[]>({
@@ -359,6 +362,7 @@ export const DashboardPage: React.FC = () => {
         return [] as SyllabusItem[];
       }
     },
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: venueList = [] } = useQuery<VenueItem[]>({
@@ -372,9 +376,10 @@ export const DashboardPage: React.FC = () => {
       }
     },
     enabled: isAdmin,
+    staleTime: 10 * 60 * 1000,
   });
 
-  // Supporting queries for Event Creation (Admin)
+  // Supporting queries for Event Creation (Admin only when modal is open)
   const { data: programs = [] } = useQuery({
     queryKey: ['dashboard_programs'],
     queryFn: async () => {
@@ -385,7 +390,8 @@ export const DashboardPage: React.FC = () => {
         return [];
       }
     },
-    enabled: isAdmin,
+    enabled: isAdmin && showEventModal,
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: batches = [] } = useQuery({
@@ -398,7 +404,8 @@ export const DashboardPage: React.FC = () => {
         return [];
       }
     },
-    enabled: isAdmin,
+    enabled: isAdmin && showEventModal,
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: divisions = [] } = useQuery({
@@ -411,7 +418,8 @@ export const DashboardPage: React.FC = () => {
         return [];
       }
     },
-    enabled: isAdmin,
+    enabled: isAdmin && showEventModal,
+    staleTime: 10 * 60 * 1000,
   });
 
   // ── Helper Categorization ─────────────────────────────────────────────────
@@ -1814,7 +1822,7 @@ export const DashboardPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-3.5">
-                {activeSyllabus.map((sub) => (
+                {activeSyllabus.map((sub: SyllabusItem) => (
                   <div key={sub.subject_code} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <div>
@@ -2008,7 +2016,7 @@ export const DashboardPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {topVenues.map((v) => (
+                    {topVenues.map((v: VenueItem) => (
                       <div
                         key={v.venue}
                         className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"

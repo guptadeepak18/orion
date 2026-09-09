@@ -32,15 +32,15 @@ if db_url.startswith("sqlite"):
         connect_args=connect_args,
     )
 else:
-    # Optimized connection pool for cloud PostgreSQL
+    # Optimized connection pool for cloud PostgreSQL (Aiven Developer-1 cap: 20 connections)
     engine = create_async_engine(
         db_url,
         echo=False,
         future=True,
-        pool_size=10,
-        max_overflow=5,
-        pool_timeout=30.0,
-        pool_recycle=1800,
+        pool_size=5,
+        max_overflow=2,
+        pool_timeout=15.0,
+        pool_recycle=300,
         pool_pre_ping=True,
         connect_args=connect_args,
     )
@@ -60,5 +60,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         try:
             yield session
+        except Exception:
+            await session.rollback()
+            raise
         finally:
+            if session.is_active:
+                await session.rollback()
             await session.close()

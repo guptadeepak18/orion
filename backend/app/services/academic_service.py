@@ -486,6 +486,7 @@ async def create_division(db: AsyncSession, d_in: DivisionCreate) -> Division:
     db.add(division)
     await db.commit()
     await db.refresh(division)
+    memory_cache.invalidate_prefix("academic:divisions")
     return division
 
 
@@ -500,6 +501,11 @@ async def get_division(db: AsyncSession, division_id: UUID) -> Optional[Division
 
 
 async def list_divisions(db: AsyncSession, program_id: Optional[UUID] = None) -> List[Division]:
+    cache_key = f"academic:divisions:{program_id}"
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     from app.models.student import Student, StudentDivision
     from sqlalchemy import func
 
@@ -525,6 +531,7 @@ async def list_divisions(db: AsyncSession, program_id: Optional[UUID] = None) ->
     for d in divisions:
         d.student_count = counts.get(d.id, 0)
 
+    memory_cache.set(cache_key, divisions, ttl_seconds=60)
     return divisions
 
 
@@ -592,6 +599,7 @@ async def update_division(db: AsyncSession, division_id: UUID, d_in: DivisionUpd
         setattr(division, field, value)
     await db.commit()
     await db.refresh(division)
+    memory_cache.invalidate_prefix("academic:divisions")
     return division
 
 
@@ -601,6 +609,7 @@ async def delete_division(db: AsyncSession, division_id: UUID) -> bool:
         return False
     division.is_deleted = True
     await db.commit()
+    memory_cache.invalidate_prefix("academic:divisions")
     return True
 
 
@@ -636,7 +645,7 @@ async def assign_students_to_division(
     if div:
         div.student_count = cnt
         await db.commit()
-
+    memory_cache.invalidate_prefix("academic:divisions")
     return True
 
 
