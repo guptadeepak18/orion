@@ -49,6 +49,7 @@ class ActivityService:
         now_ist = datetime.now(ist).replace(tzinfo=None)
 
         release_schedule = {}
+        timetable_sessions_map = {}
 
         # 3a. Direct sessions mapped to this subject
         session_stmt = select(Session).where(
@@ -68,6 +69,27 @@ class ActivityService:
                     start_dt = datetime.combine(s.session_date, s.start_time)
                     if act_num not in release_schedule or start_dt < release_schedule[act_num]:
                         release_schedule[act_num] = start_dt
+
+                    is_conducted = bool(
+                        s.attendance_status == "marked"
+                        or s.status == "completed"
+                    )
+                    start_fmt = s.start_time.strftime("%I:%M %p").lstrip("0")
+                    end_fmt = s.end_time.strftime("%I:%M %p").lstrip("0")
+                    sess_info = {
+                        "session_id": str(s.id),
+                        "session_date": s.session_date.isoformat(),
+                        "start_time": s.start_time.strftime("%H:%M:%S"),
+                        "end_time": s.end_time.strftime("%H:%M:%S"),
+                        "start_time_formatted": start_fmt,
+                        "end_time_formatted": end_fmt,
+                        "formatted_time": f"{start_fmt} - {end_fmt}",
+                        "status": s.status,
+                        "attendance_status": s.attendance_status,
+                        "is_conducted": is_conducted,
+                    }
+                    if act_num not in timetable_sessions_map or (is_conducted and not timetable_sessions_map[act_num].get("is_conducted")):
+                        timetable_sessions_map[act_num] = sess_info
                 except Exception:
                     continue
 
@@ -89,11 +111,38 @@ class ActivityService:
         for ha, s in ha_res.all():
             try:
                 act_num = int(ha.activity_no)
-                start_dt = datetime.combine(s.session_date, ha.start_time)
+                start_time_val = ha.start_time or s.start_time
+                end_time_val = ha.end_time or s.end_time
+                start_dt = datetime.combine(s.session_date, start_time_val)
                 if act_num not in release_schedule or start_dt < release_schedule[act_num]:
                     release_schedule[act_num] = start_dt
                 if ha.is_submission_locked:
                     locked_schedule[act_num] = ha.lock_reason or "Locked by faculty on timetable"
+
+                is_conducted = bool(
+                    s.attendance_status == "marked"
+                    or s.status == "completed"
+                    or (hasattr(ha, "status") and ha.status in ["active", "closed"])
+                    or ha.challenge_key is not None
+                )
+                start_fmt = start_time_val.strftime("%I:%M %p").lstrip("0")
+                end_fmt = end_time_val.strftime("%I:%M %p").lstrip("0")
+                sess_info = {
+                    "session_id": str(s.id),
+                    "activity_id": str(ha.id),
+                    "session_date": s.session_date.isoformat(),
+                    "start_time": start_time_val.strftime("%H:%M:%S"),
+                    "end_time": end_time_val.strftime("%H:%M:%S"),
+                    "start_time_formatted": start_fmt,
+                    "end_time_formatted": end_fmt,
+                    "formatted_time": f"{start_fmt} - {end_fmt}",
+                    "status": s.status,
+                    "attendance_status": s.attendance_status,
+                    "is_conducted": is_conducted,
+                    "challenge_key": ha.challenge_key,
+                }
+                if act_num not in timetable_sessions_map or (is_conducted and not timetable_sessions_map[act_num].get("is_conducted")):
+                    timetable_sessions_map[act_num] = sess_info
             except Exception:
                 continue
 
@@ -126,6 +175,17 @@ class ActivityService:
         for a in activities:
             if a.activity_no in release_schedule:
                 setattr(a, "scheduled_release_at", release_schedule[a.activity_no])
+            if a.activity_no in timetable_sessions_map:
+                t_info = timetable_sessions_map[a.activity_no]
+                setattr(a, "timetable_session", t_info)
+                setattr(a, "is_conducted", t_info.get("is_conducted", False))
+                setattr(a, "conducted_date", t_info.get("session_date") if t_info.get("is_conducted") else None)
+                setattr(a, "conducted_time", t_info.get("formatted_time") if t_info.get("is_conducted") else None)
+            else:
+                setattr(a, "timetable_session", None)
+                setattr(a, "is_conducted", False)
+                setattr(a, "conducted_date", None)
+                setattr(a, "conducted_time", None)
 
         return activities
 

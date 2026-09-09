@@ -29,6 +29,8 @@ import {
   Edit3,
   Briefcase,
   ExternalLink,
+  CalendarCheck,
+  Calendar,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AICaseAnalyzer } from '../case-studies/AICaseAnalyzer';
@@ -156,6 +158,17 @@ function formatBytes(bytes?: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatSessionDate(dateStr?: string) {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-');
+    const dt = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    return dt.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
@@ -485,36 +498,49 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
   const parsedSteps = parseInstructions(activity.instructions);
 
   return (
-    <div className="rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden transition-all">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 overflow-hidden transition-all">
       {/* ─── Header Bar (Always Visible) ─────────────────────────────────── */}
       <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Left: Number circle, Title & Badges */}
+        {/* Left: Number badge, Title & Badges */}
         <div className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0">
-          <div className="h-11 w-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-base font-black shrink-0 shadow-sm">
+          <div className="h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold shrink-0">
             {activity.activity_no}
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-0">
-            <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-snug">
+            <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white leading-snug">
               Activity {activity.activity_no}: {activity.title}
             </h4>
 
             <div className="flex items-center gap-2 flex-wrap text-xs">
+              {/* Conducted Timetable Badge */}
+              {activity.is_conducted ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  <CalendarCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                  Conducted: {formatSessionDate(activity.conducted_date)}{activity.conducted_time ? ` · ${activity.conducted_time}` : ''}
+                </span>
+              ) : activity.conducted_date ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                  <Calendar className="h-3 w-3 text-slate-400" />
+                  Scheduled: {formatSessionDate(activity.conducted_date)}{activity.conducted_time ? ` · ${activity.conducted_time}` : ''}
+                </span>
+              ) : null}
+
               {activity.unit_mapping && (
-                <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                   {activity.unit_mapping}
                 </span>
               )}
 
               {(activity.estimated_time || activity.mode) && (
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Clock className="h-3 w-3 text-slate-400" />
                   {activity.estimated_time} {activity.mode ? `· ${activity.mode}` : ''}
                 </span>
               )}
 
               {activity.file_naming && (
-                <span className="px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                <span className="px-2 py-0.5 rounded-md font-mono text-[10.5px] bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/80">
                   {activity.file_naming}
                 </span>
               )}
@@ -522,7 +548,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
           </div>
         </div>
 
-        {/* Right: Status Pill & Actions */}
+        {/* Right: Status & Action Controls */}
         <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
           {/* Release & Lock Controls for Faculty/Admin */}
           {isFacultyOrAdmin ? (
@@ -530,20 +556,20 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               <button
                 onClick={() => toggleReleaseMutation.mutate()}
                 disabled={toggleReleaseMutation.isPending}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
                   isReleased
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                    : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                 }`}
                 title="Toggle student visibility (Released / Draft)"
               >
                 {isReleased ? (
                   <>
-                    <Unlock className="h-3.5 w-3.5 text-emerald-600" /> RELEASED
+                    <Unlock className="h-3 w-3 text-emerald-600" /> Released
                   </>
                 ) : (
                   <>
-                    <Lock className="h-3.5 w-3.5 text-slate-500" /> DRAFT (UNRELEASED)
+                    <Lock className="h-3 w-3 text-slate-400" /> Draft
                   </>
                 )}
               </button>
@@ -552,39 +578,39 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               <button
                 onClick={() => toggleLockMutation.mutate()}
                 disabled={toggleLockMutation.isPending}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
                   isLocked
-                    ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
-                    : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                 }`}
                 title={isLocked ? "Submissions are currently locked. Click to unlock." : "Submissions are open. Click to lock."}
               >
                 {isLocked ? (
                   <>
-                    <Lock className="h-3.5 w-3.5 text-rose-600" /> LOCKED
+                    <Lock className="h-3 w-3 text-rose-500" /> Locked
                   </>
                 ) : (
                   <>
-                    <Unlock className="h-3.5 w-3.5 text-indigo-600" /> UNLOCKED
+                    <Unlock className="h-3 w-3 text-slate-400" /> Open
                   </>
                 )}
               </button>
             </div>
           ) : !isReleased ? (
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-xs">
-              <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-              {activity.scheduled_release_at ? 'RELEASES AT CLASS TIME' : 'UNRELEASED'}
+            <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-amber-500" />
+              {activity.scheduled_release_at ? 'Releases at class time' : 'Unreleased'}
             </span>
           ) : isLocked ? (
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 text-rose-600" /> SUBMISSIONS LOCKED
+            <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5">
+              <Lock className="h-3 w-3 text-rose-500" /> Submissions Closed
             </span>
           ) : null}
 
           {/* Submission Status Badge for Students */}
           {isSubmitted && (
-            <span className="px-3 py-1.5 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 shadow-sm">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1.5">
+              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
               {submission?.score != null ? `${submission.score}/100 Marks` : 'Submitted'}
             </span>
           )}
@@ -595,7 +621,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               {onEdit && (
                 <button
                   onClick={() => onEdit(activity)}
-                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
                   title="Edit Activity"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
@@ -604,7 +630,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
               {onDelete && (
                 <button
                   onClick={() => onDelete(activity.id)}
-                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
                   title="Delete Activity"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -616,7 +642,7 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
           {/* Expand/Collapse Chevron Button */}
           <button
             onClick={() => setIsExpanded((v) => !v)}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
             aria-label={isExpanded ? 'Collapse activity' : 'Expand activity'}
           >
             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -629,9 +655,9 @@ export const HyperBuildActivityCard: React.FC<ActivityProps> = ({
         <div className="p-5 sm:p-6 border-t border-slate-100 dark:border-slate-800 space-y-6 bg-slate-50/40 dark:bg-slate-900/40 animate-fadeIn">
           {isStudent && !isReleased ? (
             /* Student Locked Banner: Prevent seeing prompt/case study before class time */
-            <div className="p-8 sm:p-10 rounded-3xl border border-amber-200/90 dark:border-amber-800/60 bg-gradient-to-b from-amber-50/60 via-amber-50/20 to-transparent dark:from-amber-950/30 dark:via-amber-950/10 dark:to-transparent text-center space-y-4">
-              <div className="h-14 w-14 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-sm">
-                <Lock className="h-7 w-7" />
+            <div className="p-6 sm:p-8 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20 text-center space-y-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                <Lock className="h-5 w-5" />
               </div>
               <div className="max-w-lg mx-auto space-y-2">
                 <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">

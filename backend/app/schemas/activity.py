@@ -85,6 +85,10 @@ class ActivityResponse(BaseModel):
     case_study_id: Optional[UUID] = None
     case_studies: Optional[Any] = None
     scheduled_release_at: Optional[datetime] = None
+    is_conducted: bool = False
+    conducted_date: Optional[str] = None
+    conducted_time: Optional[str] = None
+    timetable_session: Optional[Any] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

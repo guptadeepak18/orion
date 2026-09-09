@@ -120,6 +120,10 @@ async def _get_subject_lms_data(db: AsyncSession, subject: Subject, current_user
             "case_study_id": None if is_unreleased_for_student else act.case_study_id,
             "case_studies": [] if is_unreleased_for_student else (act.case_studies or []),
             "my_submission": None,
+            "is_conducted": getattr(act, "is_conducted", False),
+            "conducted_date": getattr(act, "conducted_date", None),
+            "conducted_time": getattr(act, "conducted_time", None),
+            "timetable_session": getattr(act, "timetable_session", None),
         }
         if student:
             sub = await lms_service.get_student_activity_submission(db, act.id, student.id)

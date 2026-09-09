@@ -34,6 +34,10 @@ async def list_subject_activities(
     for a in activities:
         d = ActivityResponse.model_validate(a).model_dump()
         d["scheduled_release_at"] = getattr(a, "scheduled_release_at", None)
+        d["is_conducted"] = getattr(a, "is_conducted", False)
+        d["conducted_date"] = getattr(a, "conducted_date", None)
+        d["conducted_time"] = getattr(a, "conducted_time", None)
+        d["timetable_session"] = getattr(a, "timetable_session", None)
         if is_student and not a.is_released:
             d["why_this_activity"] = None
             d["instructions"] = None

@@ -654,19 +654,19 @@ export const SubjectLMSHub: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800" title="Subject Code">
+          <span className="px-2.5 py-0.5 rounded-md text-xs font-bold uppercase bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800" title="Subject Code">
             {subject.code}
           </span>
           {subject.course_code && (
-            <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700" title="Course Code">
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700" title="Course Code">
               {subject.course_code}
             </span>
           )}
-          <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+          <span className="px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
             Trimester {subject.trimester} • {subject.is_non_credit ? 'Non-Credit' : `${subject.credits} Credits`} • {subject.total_hours || 30} Hours
           </span>
           {subject.course_category === 'elective' && (
-            <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-medium bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
               Elective: {subject.elective_domain || 'Specialization'}
             </span>
           )}
@@ -674,28 +674,28 @@ export const SubjectLMSHub: React.FC = () => {
       </div>
 
       {/* Hero Subject Banner */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 sm:p-8 border border-slate-200/90 dark:border-slate-800 shadow-sm relative overflow-hidden">
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2.5 max-w-3xl">
+      <div className="rounded-xl bg-white dark:bg-slate-900 p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2 max-w-3xl">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                COURSE LEARNING PORTAL
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                Course Portal
               </span>
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                TRIMESTER {subject.trimester}
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                Trimester {subject.trimester}
               </span>
               {subject.programs && subject.programs.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                   {subject.programs.map((p: any) => p.name).join(', ')}
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white leading-snug">
               {subject.name}
             </h1>
 
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-normal">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-normal">
               {parsedSyllabus?.course_overview
                 ? parsedSyllabus.course_overview.slice(0, 220).replace(/\n/g, ' ') + '...'
                 : 'Access syllabus, lecture resources, lab activities, assignments, and attendance records.'}
@@ -704,11 +704,11 @@ export const SubjectLMSHub: React.FC = () => {
 
           {/* Real-Time Student Attendance Card */}
           {attendance && (
-            <div className="flex items-center gap-5 bg-slate-50 dark:bg-slate-800/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0 self-start lg:self-center shadow-xs">
+            <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0 self-start lg:self-center">
               <div className="text-center px-1">
-                <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{attendance.attendance_percentage}%</div>
-                <div className="text-[10px] uppercase font-bold text-slate-500 mt-0.5">Attendance Rate</div>
-                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
+                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{attendance.attendance_percentage}%</div>
+                <div className="text-[10px] uppercase font-semibold text-slate-500 mt-0.5">Attendance Rate</div>
+                <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                   attendance.attendance_percentage >= 75
                     ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                     : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
@@ -716,12 +716,12 @@ export const SubjectLMSHub: React.FC = () => {
                   {attendance.attendance_percentage >= 75 ? 'Eligible' : 'Warning'}
                 </span>
               </div>
-              <div className="text-center px-3 border-l border-slate-200 dark:border-slate-700 space-y-1">
-                <div className="text-xl font-bold text-slate-900 dark:text-white">
-                  {attendance.sessions_attended} <span className="text-slate-400 text-sm font-normal">/ {attendance.total_sessions_conducted}</span>
+              <div className="text-center px-3 border-l border-slate-200 dark:border-slate-700 space-y-0.5">
+                <div className="text-lg font-bold text-slate-900 dark:text-white">
+                  {attendance.sessions_attended} <span className="text-slate-400 text-xs font-normal">/ {attendance.total_sessions_conducted}</span>
                 </div>
-                <div className="text-[10px] uppercase font-bold text-slate-500">Sessions Attended</div>
-                <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">{attendance.total_sessions_conducted} Conducted</div>
+                <div className="text-[10px] uppercase font-semibold text-slate-500">Sessions Attended</div>
+                <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">{attendance.total_sessions_conducted} Conducted</div>
               </div>
             </div>
           )}
@@ -729,7 +729,7 @@ export const SubjectLMSHub: React.FC = () => {
       </div>
 
       {/* Persistent Course Navigation Bar */}
-      <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+      <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -737,9 +737,9 @@ export const SubjectLMSHub: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => navigateToTab(tab.id as TabId)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/25'
+                  ? 'bg-indigo-600 text-white shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
@@ -747,7 +747,7 @@ export const SubjectLMSHub: React.FC = () => {
               <span>{tab.label}</span>
               {tab.count !== null && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
                     isActive ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                   }`}
                 >
@@ -1285,26 +1285,24 @@ export const SubjectLMSHub: React.FC = () => {
       {/* 4. HYPERBUILD AI ACTIVITIES TAB */}
       {activeTab === 'activities' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-amber-500/10 border border-amber-400/30">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
-                <Sparkles className="h-5 w-5" />
-              </div>
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <div>
-                <h4 className="text-sm font-bold text-amber-950 dark:text-amber-200">HyperBuild AI Activities Hub</h4>
-                <p className="text-xs text-amber-800/80 dark:text-amber-300/80">
+                <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">AI Activities & Lab Assignments</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isStudent
-                    ? 'Activities unlock automatically according to your class timetable schedule. Complete and submit your work for AI evaluation.'
-                    : 'All course activities. Activities unlock automatically for students when their scheduled timetable session begins, or can be manually released below.'}
+                    ? 'Activities unlock according to your class timetable schedule. Complete and submit your work for AI evaluation.'
+                    : 'All course activities linked to timetable sessions. Toggle visibility or submission locking below.'}
                 </p>
               </div>
             </div>
           </div>
 
           {activities.length === 0 ? (
-            <div className="p-12 text-center border-2 border-dashed border-amber-200/80 dark:border-amber-900/40 bg-amber-50/20 dark:bg-amber-950/10 rounded-3xl space-y-2">
-              <Sparkles className="h-8 w-8 text-amber-400 mx-auto mb-1" />
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+            <div className="p-10 text-center border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl space-y-2">
+              <Sparkles className="h-6 w-6 text-slate-400 mx-auto mb-1" />
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                 {isStudent ? 'No Activities Released Yet' : 'No Activities Found'}
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
