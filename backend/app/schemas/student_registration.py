@@ -5,7 +5,8 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator, model_validator, ConfigDict
 
 
-ALLOWED_DOMAIN = "mile.education"
+ALLOWED_DOMAINS = ["mile.education", "lexiconedu.in"]
+ALLOWED_DOMAIN = "mile.education"  # Legacy fallback
 
 
 class StudentRegisterRequest(BaseModel):
@@ -54,8 +55,10 @@ class StudentRegisterRequest(BaseModel):
     @classmethod
     def validate_email_domain(cls, v: str) -> str:
         v = v.strip().lower()
-        if not v.endswith(f"@{ALLOWED_DOMAIN}"):
-            raise ValueError(f"Registration is only allowed with @{ALLOWED_DOMAIN} email addresses")
+        if not any(v.endswith(f"@{domain}") for domain in ALLOWED_DOMAINS):
+            raise ValueError(
+                f"Registration is only allowed with official email addresses (@{', @'.join(ALLOWED_DOMAINS)})"
+            )
         return v
 
     @field_validator("password")

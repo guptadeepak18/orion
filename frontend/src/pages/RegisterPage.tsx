@@ -184,13 +184,17 @@ export const RegisterPage: React.FC = () => {
     pwdRules.hasSpecial &&
     pwdRules.matches;
 
+  const ALLOWED_EMAIL_DOMAINS = ['mile.education', 'lexiconedu.in'];
+
   const validateEmail = (val: string) => {
     if (!val) {
       setEmailError('');
       return;
     }
-    if (!val.endsWith('@mile.education')) {
-      setEmailError('Only @mile.education email addresses are allowed');
+    const clean = val.trim().toLowerCase();
+    const isValid = ALLOWED_EMAIL_DOMAINS.some((d) => clean.endsWith(`@${d}`));
+    if (!isValid) {
+      setEmailError('Only @mile.education or @lexiconedu.in email addresses are allowed');
     } else {
       setEmailError('');
     }
@@ -248,7 +252,7 @@ export const RegisterPage: React.FC = () => {
 
   const validateStep1 = () => {
     if (!form.email || emailError) {
-      setError('Please enter a valid @mile.education email');
+      setError('Please enter a valid official email address (@mile.education or @lexiconedu.in)');
       return false;
     }
     if (!form.program_code) {
@@ -440,7 +444,7 @@ export const RegisterPage: React.FC = () => {
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-6">
             {step === 1
-              ? 'Use your official @mile.education email and select your academic program'
+              ? 'Use your official email address and select your academic program'
               : step === 2
               ? 'Tell us more about your personal and family details'
               : 'Select your degree background and preferred specializations'}
@@ -484,7 +488,7 @@ export const RegisterPage: React.FC = () => {
                   <input
                     type="email"
                     className={inputCls}
-                    placeholder="name@mile.education"
+                    placeholder="name@mile.education or name@lexiconedu.in"
                     value={form.email}
                     onChange={(e) => {
                       set('email', e.target.value);

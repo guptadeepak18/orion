@@ -32,15 +32,20 @@ async def ensure_user_for_student(
         user = user_res.unique().scalar_one_or_none()
 
     if not user:
-        # Check alternative domain
-        if "@mile.education" in primary_email:
-            alt_email = primary_email.replace("@mile.education", "@lexiconmile.com")
-            user_res2 = await db.execute(select(User).where(User.email == alt_email))
-            user = user_res2.unique().scalar_one_or_none()
-        elif "@lexiconmile.com" in primary_email:
-            alt_email = primary_email.replace("@lexiconmile.com", "@mile.education")
-            user_res2 = await db.execute(select(User).where(User.email == alt_email))
-            user = user_res2.unique().scalar_one_or_none()
+        # Check alternative domains (@mile.education <-> @lexiconmile.com <-> @lexiconedu.in)
+        domains = ["@mile.education", "@lexiconmile.com", "@lexiconedu.in"]
+        for d in domains:
+            if d in primary_email:
+                prefix = primary_email.split("@")[0]
+                for target_d in domains:
+                    if target_d != d:
+                        alt_email = f"{prefix}{target_d}"
+                        user_res2 = await db.execute(select(User).where(User.email == alt_email))
+                        user = user_res2.unique().scalar_one_or_none()
+                        if user:
+                            break
+                if user:
+                    break
 
     if not user:
         user = User(

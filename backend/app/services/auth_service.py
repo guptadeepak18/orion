@@ -18,14 +18,19 @@ async def authenticate_user(
     clean_email = login_data.email.strip().lower()
     user = await get_user_by_email(db, clean_email)
     
-    # If not found, try alternative domain alias (@mile.education <-> @lexiconmile.com)
+    # If not found, try alternative domain aliases (@mile.education <-> @lexiconmile.com <-> @lexiconedu.in)
     if not user:
-        if "@mile.education" in clean_email:
-            alt_email = clean_email.replace("@mile.education", "@lexiconmile.com")
-            user = await get_user_by_email(db, alt_email)
-        elif "@lexiconmile.com" in clean_email:
-            alt_email = clean_email.replace("@lexiconmile.com", "@mile.education")
-            user = await get_user_by_email(db, alt_email)
+        domains = ["@mile.education", "@lexiconmile.com", "@lexiconedu.in"]
+        for d in domains:
+            if d in clean_email:
+                prefix = clean_email.split("@")[0]
+                for target_d in domains:
+                    if target_d != d:
+                        user = await get_user_by_email(db, f"{prefix}{target_d}")
+                        if user:
+                            break
+                if user:
+                    break
 
     if not user or not user.is_active:
         return None
@@ -120,12 +125,17 @@ async def request_password_reset(db: AsyncSession, raw_email: str) -> bool:
     user = await get_user_by_email(db, clean_email)
     
     if not user:
-        if "@mile.education" in clean_email:
-            alt_email = clean_email.replace("@mile.education", "@lexiconmile.com")
-            user = await get_user_by_email(db, alt_email)
-        elif "@lexiconmile.com" in clean_email:
-            alt_email = clean_email.replace("@lexiconmile.com", "@mile.education")
-            user = await get_user_by_email(db, alt_email)
+        domains = ["@mile.education", "@lexiconmile.com", "@lexiconedu.in"]
+        for d in domains:
+            if d in clean_email:
+                prefix = clean_email.split("@")[0]
+                for target_d in domains:
+                    if target_d != d:
+                        user = await get_user_by_email(db, f"{prefix}{target_d}")
+                        if user:
+                            break
+                if user:
+                    break
 
     if not user:
         # Check enrolled Student table for students enrolled from backend

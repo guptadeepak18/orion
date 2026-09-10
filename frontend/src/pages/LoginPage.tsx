@@ -194,7 +194,7 @@ export const LoginPage: React.FC = () => {
                 Sign In
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-xs mx-auto">
-                Enter your official <span className="font-semibold text-cyan-600 dark:text-cyan-400">@mile.education</span> credentials to access your portal.
+                Enter your official institutional credentials to access your portal.
               </p>
             </div>
 
@@ -227,7 +227,7 @@ export const LoginPage: React.FC = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-50/80 dark:bg-slate-950/70 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all duration-200"
-                    placeholder="name@mile.education"
+                    placeholder="official.email@domain.com"
                     autoComplete="email"
                   />
                 </div>
@@ -283,7 +283,7 @@ export const LoginPage: React.FC = () => {
                   to="/register"
                   className="text-cyan-600 dark:text-cyan-400 font-bold hover:underline"
                 >
-                  Register with @mile.education →
+                  Register using your official email address →
                 </Link>
               </p>
             </div>
