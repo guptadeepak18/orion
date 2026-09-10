@@ -1,9 +1,10 @@
 import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { useAuthStore } from './lib/store';
 import { Layout } from './components/Layout';
+import { PageContentSkeleton } from './components/PageContentSkeleton';
 
 // Code-split dynamic route imports to keep initial bundle size minimal
 const LoginPage = React.lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -34,377 +35,327 @@ const AttendancePage = React.lazy(() => import('./modules/attendance/AttendanceP
 const ProactiveIntelligenceHub = React.lazy(() => import('./modules/ai/ProactiveIntelligenceHub').then(m => ({ default: m.ProactiveIntelligenceHub })));
 const GradebookPage = React.lazy(() => import('./modules/gradebook/GradebookPage').then(m => ({ default: m.GradebookPage })));
 
-const PageLoader: React.FC = () => (
-  <div className="min-h-[400px] flex flex-col items-center justify-center space-y-3">
-    <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
-    <span className="text-xs font-medium text-slate-400 tracking-wider uppercase animate-pulse">Loading View...</span>
-  </div>
-);
-
-const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
-  children,
+/**
+ * Role-based permission guard that wraps individual protected views.
+ * Preserves the surrounding layout without unmounting it.
+ */
+const RoleRoute: React.FC<{ allowedRoles?: string[]; children: React.ReactNode }> = ({
   allowedRoles,
+  children,
 }) => {
+  const { user } = useAuthStore();
+  if (allowedRoles && allowedRoles.length > 0) {
+    const hasRole = allowedRoles.some(
+      (role) => user?.roles.includes(role) || user?.roles.includes('crc_admin')
+    );
+    if (!hasRole) {
+      return <Navigate to="/unauthorized" replace />;
+    }
+  }
+  return <>{children}</>;
+};
+
+/**
+ * Persistent Authenticated Layout Route:
+ * Stays permanently mounted across all protected page navigations.
+ * The sidebar, navbar, avatar, and background NEVER unmount or flash.
+ * Inner page transitions display a subtle glassmorphism skeleton during chunk loading.
+ */
+const AuthenticatedLayoutRoute: React.FC = () => {
   const { accessToken, user } = useAuthStore();
 
   if (!accessToken || !user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && allowedRoles.length > 0) {
-    const hasRole = allowedRoles.some(
-      (role) => user.roles.includes(role) || user.roles.includes('crc_admin')
-    );
-    if (!hasRole) {
-      return <Navigate to="/unauthorized" replace />;
-    }
-  }
-
-  return <Layout>{children}</Layout>;
+  return (
+    <Layout>
+      <Suspense fallback={<PageContentSkeleton />}>
+        <Outlet />
+      </Suspense>
+    </Layout>
+  );
 };
 
 export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/pending-approval" element={<PendingApprovalPage />} />
-          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        <Routes>
+          {/* Public Authentication & Onboarding Routes */}
+          <Route path="/login" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><LoginPage /></Suspense>} />
+          <Route path="/register" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><RegisterPage /></Suspense>} />
+          <Route path="/forgot-password" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><ForgotPasswordPage /></Suspense>} />
+          <Route path="/verify-email" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><VerifyEmailPage /></Suspense>} />
+          <Route path="/pending-approval" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><PendingApprovalPage /></Suspense>} />
+          <Route path="/unauthorized" element={<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><UnauthorizedPage /></Suspense>} />
 
-          <Route
-            path="/student-registrations"
-            element={<Navigate to="/students" replace />}
-          />
+          {/* Persistent Authenticated Application Routes */}
+          <Route element={<AuthenticatedLayoutRoute />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/profile" element={<StudentProfilePage />} />
 
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <StudentProfilePage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/ai-intelligence"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <ProactiveIntelligenceHub />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route path="/lms" element={<LMSPage />} />
+            <Route path="/gradebook" element={<GradebookPage />} />
+            <Route path="/lms/subjects/:subjectCode" element={<SubjectLMSHub />} />
+            <Route path="/lms/subjects/:subjectCode/:section" element={<SubjectLMSHub />} />
+            <Route path="/lms/:subjectCode" element={<SubjectLMSHub />} />
+            <Route path="/lms/:subjectCode/:section" element={<SubjectLMSHub />} />
 
-          <Route
-            path="/ai-intelligence"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'faculty_external',
-                  'finance',
-                  'approver',
-                  'reporting_readonly',
-                ]}
-              >
-                <ProactiveIntelligenceHub />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/academic"
+              element={
+                <RoleRoute allowedRoles={['crc_admin', 'crc_coordinator']}>
+                  <AcademicPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/lms"
-            element={
-              <ProtectedRoute>
-                <LMSPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/subjects"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <SubjectsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/gradebook"
-            element={
-              <ProtectedRoute>
-                <GradebookPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/subjects/faculty-allocation"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <SubjectsPage initialTab="allocations" />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/lms/subjects/:subjectCode"
-            element={
-              <ProtectedRoute>
-                <SubjectLMSHub />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/faculty-allocation"
+              element={<Navigate to="/subjects/faculty-allocation" replace />}
+            />
 
-          <Route
-            path="/lms/subjects/:subjectCode/:section"
-            element={
-              <ProtectedRoute>
-                <SubjectLMSHub />
-              </ProtectedRoute>
-            }
-          />
+            <Route path="/case-studies" element={<CaseStudyBankPage />} />
+            <Route path="/case-studies/:caseStudyId" element={<CaseStudyDetailPage />} />
 
-          <Route
-            path="/lms/:subjectCode"
-            element={
-              <ProtectedRoute>
-                <SubjectLMSHub />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/students"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <StudentsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/lms/:subjectCode/:section"
-            element={
-              <ProtectedRoute>
-                <SubjectLMSHub />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/sessions"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                    'student',
+                  ]}
+                >
+                  <SessionsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/academic"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator']}>
-                <AcademicPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/attendance"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'approver',
+                    'reporting_readonly',
+                    'student',
+                  ]}
+                >
+                  <AttendancePage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/subjects"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external', 'approver', 'reporting_readonly']}>
-                <SubjectsPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/attendance/:tab"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'approver',
+                    'reporting_readonly',
+                    'student',
+                  ]}
+                >
+                  <AttendancePage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/subjects/faculty-allocation"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator', 'faculty_internal', 'faculty_external', 'approver', 'reporting_readonly']}>
-                <SubjectsPage initialTab="allocations" />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/calendar"
+              element={<Navigate to="/sessions?view=calendar" replace />}
+            />
 
-          <Route
-            path="/faculty-allocation"
-            element={
-              <Navigate to="/subjects/faculty-allocation" replace />
-            }
-          />
+            <Route path="/feedback" element={<FeedbackPage />} />
 
-          <Route
-            path="/case-studies"
-            element={
-              <ProtectedRoute>
-                <CaseStudyBankPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/faculty"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_internal',
+                    'faculty_external',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <FacultyPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/case-studies/:caseStudyId"
-            element={
-              <ProtectedRoute>
-                <CaseStudyDetailPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/users"
+              element={
+                <RoleRoute allowedRoles={['crc_admin']}>
+                  <UsersPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/students"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'finance',
-                  'approver',
-                  'reporting_readonly',
-                ]}
-              >
-                <StudentsPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/finance"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'faculty_external',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <FinancePage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/sessions"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'faculty_external',
-                  'finance',
-                  'approver',
-                  'reporting_readonly',
-                  'student',
-                ]}
-              >
-                <SessionsPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/approvals"
+              element={
+                <RoleRoute allowedRoles={['crc_admin', 'crc_coordinator', 'finance', 'approver']}>
+                  <ApprovalsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/attendance"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'faculty_external',
-                  'approver',
-                  'reporting_readonly',
-                  'student',
-                ]}
-              >
-                <AttendancePage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/reports"
+              element={
+                <RoleRoute
+                  allowedRoles={[
+                    'crc_admin',
+                    'crc_coordinator',
+                    'finance',
+                    'approver',
+                    'reporting_readonly',
+                  ]}
+                >
+                  <ReportsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/attendance/:tab"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'faculty_external',
-                  'approver',
-                  'reporting_readonly',
-                  'student',
-                ]}
-              >
-                <AttendancePage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/system"
+              element={
+                <RoleRoute allowedRoles={['crc_admin']}>
+                  <SystemSettingsPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/calendar"
-            element={
-              <ProtectedRoute>
-                <Navigate to="/sessions?view=calendar" replace />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/email-templates"
+              element={
+                <RoleRoute allowedRoles={['crc_admin']}>
+                  <EmailTemplatesPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="/feedback"
-            element={
-              <ProtectedRoute>
-                <FeedbackPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/student-registrations"
+              element={<Navigate to="/students" replace />}
+            />
+          </Route>
 
-          <Route
-            path="/faculty"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_internal',
-                  'faculty_external',
-                  'finance',
-                  'approver',
-                  'reporting_readonly',
-                ]}
-              >
-                <FacultyPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/users"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin']}>
-                <UsersPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/finance"
-            element={
-              <ProtectedRoute
-                allowedRoles={[
-                  'crc_admin',
-                  'crc_coordinator',
-                  'faculty_external',
-                  'finance',
-                  'approver',
-                  'reporting_readonly',
-                ]}
-              >
-                <FinancePage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/approvals"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin', 'crc_coordinator', 'finance', 'approver']}>
-                <ApprovalsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/reports"
-            element={
-              <ProtectedRoute
-                allowedRoles={['crc_admin', 'crc_coordinator', 'finance', 'approver', 'reporting_readonly']}
-              >
-                <ReportsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/system"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin']}>
-                <SystemSettingsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/email-templates"
-            element={
-              <ProtectedRoute allowedRoles={['crc_admin']}>
-                <EmailTemplatesPage />
-              </ProtectedRoute>
-            }
-          />
-
+          {/* Fallback route */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </Suspense>
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   );

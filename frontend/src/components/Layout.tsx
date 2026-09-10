@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { TopLoadingBar } from './TopLoadingBar';
+import { preloadRoute, preloadCoreRoutes } from '../lib/preloader';
 import {
   LayoutDashboard,
   GraduationCap,
@@ -325,11 +327,16 @@ const navCategories: NavCategory[] = [
   },
 ];
 
-export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const { user, updateUser, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+
+  // Preload core routes in background during idle moments for zero-latency page transitions
+  useEffect(() => {
+    preloadCoreRoutes();
+  }, []);
 
   const userRoles = user?.roles || [];
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -550,6 +557,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <div key={item.path} className="relative group flex justify-center">
                       <Link
                         to={item.path}
+                        onMouseEnter={() => preloadRoute(item.path)}
+                        onTouchStart={() => preloadRoute(item.path)}
                         className={`flex items-center justify-center h-10 w-10 rounded-xl transition-all duration-150 ${
                           isActive
                             ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/40 shadow-xs'
@@ -652,6 +661,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                       <Link
                         key={item.path}
                         to={item.path}
+                        onMouseEnter={() => preloadRoute(item.path)}
+                        onTouchStart={() => preloadRoute(item.path)}
                         onClick={() => setMobileMenuOpen(false)}
                         className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-all duration-150 group ${
                           isActive
@@ -693,6 +704,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   return (
     <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      {/* Top Transition Progress Bar */}
+      <TopLoadingBar />
+
       {/* Hidden File Input for Avatar Upload */}
       <input
         type="file"
@@ -910,6 +924,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   <div className="px-2 py-1.5 space-y-0.5">
                     <Link
                       to="/profile"
+                      onMouseEnter={() => preloadRoute('/profile')}
+                      onTouchStart={() => preloadRoute('/profile')}
                       onClick={() => setUserDropdownOpen(false)}
                       className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group"
                     >
@@ -923,6 +939,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     {userRoles.includes('crc_admin') && (
                       <Link
                         to="/system"
+                        onMouseEnter={() => preloadRoute('/system')}
+                        onTouchStart={() => preloadRoute('/system')}
                         onClick={() => setUserDropdownOpen(false)}
                         className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group"
                       >
@@ -954,7 +972,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </header>
 
         {/* Page Container */}
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1">{children}</div>
+        <div className="p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1 page-enter">{children || <Outlet />}</div>
 
         {/* Operational Copilot Drawer */}
         {(userRoles.includes('crc_admin') || userRoles.includes('crc_coordinator')) && (
