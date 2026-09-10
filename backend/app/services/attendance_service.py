@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy import select, and_, or_, func, text, not_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.academic import Program, Batch, Subject, SubjectBatch, Topic
 from app.models.faculty import FacultyInternal, FacultyExternal
@@ -544,9 +544,14 @@ async def get_subject_wise_attendance(
             parent_sess_att_map[(s_id, st_id)] = st_st
 
     # Aggregate attendance for HyperBuild activities of this subject
+    hb_verif_map: Dict[Tuple[UUID, UUID], Any] = {}
+    for act in conducted_hb_activities:
+        for v in act.verifications:
+            hb_verif_map[(act.id, v.student_id)] = v
+
     for act in conducted_hb_activities:
         for st in students:
-            v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+            v_rec = hb_verif_map.get((act.id, st.id))
             if v_rec and v_rec.verification_status in ["verified_present", "late_submission", "present"]:
                 student_att_counts[st.id]["present"] += 1
             elif not v_rec:
@@ -1752,14 +1757,13 @@ async def list_attendance_corrections(
     query = (
         select(AttendanceCorrectionRequest)
         .options(
-            selectinload(AttendanceCorrectionRequest.attendance),
-            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.subject),
-            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.batch),
-            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_internal),
-            selectinload(AttendanceCorrectionRequest.session).selectinload(Session.faculty_external),
-            selectinload(AttendanceCorrectionRequest.student),
-            selectinload(AttendanceCorrectionRequest.faculty_approver),
-            selectinload(AttendanceCorrectionRequest.admin_approver),
+            joinedload(AttendanceCorrectionRequest.session).joinedload(Session.subject),
+            joinedload(AttendanceCorrectionRequest.session).joinedload(Session.batch),
+            joinedload(AttendanceCorrectionRequest.session).joinedload(Session.faculty_internal),
+            joinedload(AttendanceCorrectionRequest.session).joinedload(Session.faculty_external),
+            joinedload(AttendanceCorrectionRequest.student),
+            joinedload(AttendanceCorrectionRequest.faculty_approver),
+            joinedload(AttendanceCorrectionRequest.admin_approver),
         )
     )
 
@@ -1842,11 +1846,38 @@ async def list_attendance_corrections(
 
     query = query.order_by(AttendanceCorrectionRequest.created_at.desc())
     res = await db.execute(query)
-    corrections = res.scalars().all()
+    corrections = res.scalars().unique().all()
+
+    # Pre-collect all activity IDs across all corrections in a single query
+    all_act_ids = set()
+    for c in corrections:
+        if c.activity_ids and isinstance(c.activity_ids, list):
+            for a_id in c.activity_ids:
+                try:
+                    all_act_ids.add(UUID(str(a_id)))
+                except Exception:
+                    pass
+
+    act_dict = {}
+    if all_act_ids:
+        act_stmt = (
+            select(HyperbuildActivity)
+            .options(joinedload(HyperbuildActivity.subject))
+            .where(HyperbuildActivity.id.in_(all_act_ids))
+        )
+        act_res = await db.execute(act_stmt)
+        for act_obj in act_res.scalars().unique().all():
+            act_dict[act_obj.id] = {
+                "id": str(act_obj.id),
+                "activity_no": act_obj.activity_no,
+                "title": act_obj.title,
+                "subject_name": act_obj.subject.name if act_obj.subject else "General",
+                "subject_code": act_obj.subject.code if act_obj.subject else None,
+            }
 
     output = []
     for c in corrections:
-        resp = await format_correction_response(db, c)
+        resp = await format_correction_response(db, c, activities_dict=act_dict)
         output.append(resp)
 
     return output
@@ -1864,6 +1895,7 @@ async def get_debarment_risk_students(
     """
     Returns list of students debarred or at risk of exam debarment (< 75% attendance)
     in any subject, evaluated across Category 1 (Academic Lectures) and Category 2 (HyperBuild Activities).
+    Uses high-performance bulk preloading instead of per-student N+1 queries.
     """
     roles = user_roles or []
     is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly"] for r in roles)
@@ -1882,52 +1914,208 @@ async def get_debarment_risk_students(
         else:
             return []
 
-    query = (
+    # 1. Fetch Students
+    st_stmt = (
         select(Student)
         .options(
-            selectinload(Student.program),
-            selectinload(Student.batch),
+            joinedload(Student.program),
+            joinedload(Student.batch),
         )
-        .where(
-            Student.is_deleted == False,
-        )
+        .where(Student.is_deleted == False, Student.status == "active")
     )
     if batch_id:
-        query = query.where(Student.batch_id == batch_id)
+        st_stmt = st_stmt.where(Student.batch_id == batch_id)
 
-    res = await db.execute(query)
-    students = res.scalars().all()
+    st_res = await db.execute(st_stmt)
+    students = st_res.scalars().unique().all()
+    student_map = {st.id: st for st in students}
+    student_ids = list(student_map.keys())
+    if not student_ids:
+        return []
 
+    # 2. Fetch all relevant StudentAttendance records in ONE query
+    att_stmt = (
+        select(StudentAttendance)
+        .options(
+            selectinload(StudentAttendance.session).selectinload(Session.subject),
+            selectinload(StudentAttendance.session).selectinload(Session.hyperbuild_activities).selectinload(HyperbuildActivity.subject),
+        )
+        .where(
+            StudentAttendance.student_id.in_(student_ids),
+        )
+    )
+    att_res = await db.execute(att_stmt)
+    all_attendances = att_res.scalars().unique().all()
+
+    student_att_map: Dict[UUID, List[StudentAttendance]] = {}
+    for a in all_attendances:
+        if a.student_id not in student_att_map:
+            student_att_map[a.student_id] = []
+        student_att_map[a.student_id].append(a)
+
+    # 3. Fetch all HyperBuild Verifications in ONE query
+    hb_v_stmt = (
+        select(HyperbuildActivityVerification)
+        .where(HyperbuildActivityVerification.student_id.in_(student_ids))
+    )
+    hb_v_res = await db.execute(hb_v_stmt)
+    all_verifs = hb_v_res.scalars().all()
+    verif_map: Dict[tuple[UUID, UUID], Any] = {}
+    for v in all_verifs:
+        verif_map[(v.student_id, v.activity_id)] = v
+
+    # 4. In-memory aggregation across all students
     output: List[DebarredStudentItemResponse] = []
 
     for st in students:
-        try:
-            dossier = await get_student_attendance_dossier(db, st.id)
-        except Exception:
-            continue
+        records = student_att_map.get(st.id, [])
+        subjects_map: Dict[UUID, Dict[str, Any]] = {}
 
-        for sb in dossier.subjects_breakdown:
-            if allocated_subject_ids is not None and sb.subject_id not in allocated_subject_ids:
-                continue
-            if subject_id and sb.subject_id != subject_id:
+        for r in records:
+            sess = r.session
+            if not sess or sess.is_deleted:
                 continue
 
-            # Debarment Rule: Minimum 75% in Academic Lectures AND 75% in HyperBuild Activities
-            acad_debarred = (sb.academic_total > 0) and (sb.academic_percentage is not None and sb.academic_percentage < threshold_pct)
-            hb_debarred = (sb.hyperbuild_total > 0) and (sb.hyperbuild_percentage is not None and sb.hyperbuild_percentage < threshold_pct)
+            # Case A: HyperBuild Session with Activities
+            if sess.hyperbuild_activities and len(sess.hyperbuild_activities) > 0:
+                activities_added_count = 0
+                for act in sorted(sess.hyperbuild_activities, key=lambda a: a.activity_no):
+                    v_rec = verif_map.get((st.id, act.id))
+                    is_conducted = (
+                        (act.status in ["active", "closed"])
+                        or (act.challenge_key is not None)
+                        or (v_rec is not None)
+                        or (sess.attendance_status == "marked")
+                        or (sess.status == "completed")
+                    )
+                    if not is_conducted:
+                        continue
+
+                    sub = act.subject
+                    if sub:
+                        if not is_student_eligible_for_subject(sub, st):
+                            continue
+                        sub_id = sub.id
+                        sub_name = sub.name
+                        sub_code = sub.code or sub.course_code or "SUB"
+                    else:
+                        sub_id = act.id
+                        sub_name = act.title or "HyperBuild Practical Lab"
+                        sub_code = "HYPERBUILD"
+
+                    act_required_key = (
+                        (act.challenge_key is not None)
+                        or (act.status in ["active", "closed"])
+                        or (v_rec is not None)
+                    )
+
+                    parent_is_present = (r.status in PRESENT_STATUSES) or (getattr(r, "roll_call_status", None) in PRESENT_STATUSES)
+                    v_is_present = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
+
+                    if act_required_key:
+                        is_att = parent_is_present and v_is_present
+                    else:
+                        is_att = parent_is_present
+
+                    activities_added_count += 1
+                    if sub_id not in subjects_map:
+                        subjects_map[sub_id] = {
+                            "id": sub_id,
+                            "name": sub_name,
+                            "code": sub_code,
+                            "academic": {"total": 0, "attended": 0},
+                            "hyperbuild": {"total": 0, "attended": 0},
+                        }
+                    subjects_map[sub_id]["hyperbuild"]["total"] += 1
+                    if is_att:
+                        subjects_map[sub_id]["hyperbuild"]["attended"] += 1
+
+                if activities_added_count == 0 and (sess.attendance_status == "marked" or sess.status == "completed"):
+                    sub = sess.subject
+                    if sub and is_student_eligible_for_subject(sub, st):
+                        sub_id = sub.id
+                        sub_name = sub.name
+                        sub_code = sub.code or sub.course_code or "SUB"
+                        is_att = r.status in PRESENT_STATUSES
+                        if sub_id not in subjects_map:
+                            subjects_map[sub_id] = {
+                                "id": sub_id,
+                                "name": sub_name,
+                                "code": sub_code,
+                                "academic": {"total": 0, "attended": 0},
+                                "hyperbuild": {"total": 0, "attended": 0},
+                            }
+                        subjects_map[sub_id]["hyperbuild"]["total"] += 1
+                        if is_att:
+                            subjects_map[sub_id]["hyperbuild"]["attended"] += 1
+
+            # Case B: Standard Lecture
+            else:
+                if not (sess.attendance_status == "marked" or sess.status == "completed"):
+                    continue
+                sub = sess.subject
+                if sub and not is_student_eligible_for_subject(sub, st):
+                    continue
+                if not sub and sess.batch_id and st.batch_id and sess.batch_id != st.batch_id:
+                    continue
+
+                if sub:
+                    sub_id = sub.id
+                    sub_name = sub.name
+                    sub_code = sub.code or sub.course_code or "SUB"
+                else:
+                    sub_id = UUID("00000000-0000-0000-0000-000000000000")
+                    sub_name = "General Academic Lecture"
+                    sub_code = "GEN"
+
+                if sub_id not in subjects_map:
+                    subjects_map[sub_id] = {
+                        "id": sub_id,
+                        "name": sub_name,
+                        "code": sub_code,
+                        "academic": {"total": 0, "attended": 0},
+                        "hyperbuild": {"total": 0, "attended": 0},
+                    }
+
+                is_att = r.status in PRESENT_STATUSES
+                subjects_map[sub_id]["academic"]["total"] += 1
+                if is_att:
+                    subjects_map[sub_id]["academic"]["attended"] += 1
+
+        # Check debarment standing for each subject
+        for sub_id, sb in subjects_map.items():
+            if allocated_subject_ids is not None and sub_id not in allocated_subject_ids:
+                continue
+            if subject_id and sub_id != subject_id:
+                continue
+
+            acad_total = sb["academic"]["total"]
+            acad_att = sb["academic"]["attended"]
+            acad_pct = round((acad_att / acad_total * 100.0), 1) if acad_total > 0 else None
+
+            hb_total = sb["hyperbuild"]["total"]
+            hb_att = sb["hyperbuild"]["attended"]
+            hb_pct = round((hb_att / hb_total * 100.0), 1) if hb_total > 0 else None
+
+            total_sess = acad_total + hb_total
+            total_att = acad_att + hb_att
+            overall_pct = round((total_att / total_sess * 100.0), 1) if total_sess > 0 else 0.0
+
+            acad_debarred = (acad_total > 0) and (acad_pct is not None and acad_pct < threshold_pct)
+            hb_debarred = (hb_total > 0) and (hb_pct is not None and hb_pct < threshold_pct)
 
             if not (acad_debarred or hb_debarred):
                 continue
 
             if acad_debarred and hb_debarred:
                 debar_cat = "both"
-                reason = f"Debarred: Both Academic Lectures ({sb.academic_percentage}%) and HyperBuild ({sb.hyperbuild_percentage}%) are below {threshold_pct}%"
+                reason = f"Debarred: Both Academic Lectures ({acad_pct}%) and HyperBuild ({hb_pct}%) are below {threshold_pct}%"
             elif acad_debarred:
                 debar_cat = "academic"
-                reason = f"Debarred: Academic Lectures attendance is {sb.academic_percentage}% (minimum {threshold_pct}% required)"
+                reason = f"Debarred: Academic Lectures attendance is {acad_pct}% (minimum {threshold_pct}% required)"
             else:
                 debar_cat = "hyperbuild"
-                reason = f"Debarred: HyperBuild Activities attendance is {sb.hyperbuild_percentage}% (minimum {threshold_pct}% required)"
+                reason = f"Debarred: HyperBuild Activities attendance is {hb_pct}% (minimum {threshold_pct}% required)"
 
             if category_filter and category_filter not in ["all", ""]:
                 if category_filter == "academic" and debar_cat not in ["academic", "both"]:
@@ -1937,7 +2125,9 @@ async def get_debarment_risk_students(
                 elif category_filter == "both" and debar_cat != "both":
                     continue
 
-            shortfall = sb.academic_shortfall if acad_debarred else sb.hyperbuild_shortfall
+            shortfall = max(0, int((threshold_pct / 100.0 * acad_total - acad_att) / (1 - threshold_pct / 100.0)) + 1) if acad_debarred else (
+                max(0, int((threshold_pct / 100.0 * hb_total - hb_att) / (1 - threshold_pct / 100.0)) + 1) if hb_debarred else 0
+            )
 
             output.append(
                 DebarredStudentItemResponse(
@@ -1947,20 +2137,20 @@ async def get_debarment_risk_students(
                     roll_no=st.roll_no,
                     program_name=st.program.name if st.program else "PGDM",
                     batch_name=st.batch.name if st.batch else "Batch 2026",
-                    subject_id=sb.subject_id,
-                    subject_name=sb.subject_name,
-                    subject_code=sb.subject_code,
-                    overall_percentage=sb.percentage,
-                    attendance_percentage=sb.percentage,
-                    total_sessions=sb.total_sessions,
-                    attended_sessions=sb.attended,
+                    subject_id=sub_id,
+                    subject_name=sb["name"],
+                    subject_code=sb["code"],
+                    overall_percentage=overall_pct,
+                    attendance_percentage=overall_pct,
+                    total_sessions=total_sess,
+                    attended_sessions=total_att,
                     shortfall_sessions=shortfall,
-                    academic_percentage=sb.academic_percentage,
-                    academic_attended=sb.academic_attended,
-                    academic_total=sb.academic_total,
-                    hyperbuild_percentage=sb.hyperbuild_percentage,
-                    hyperbuild_attended=sb.hyperbuild_attended,
-                    hyperbuild_total=sb.hyperbuild_total,
+                    academic_percentage=acad_pct,
+                    academic_attended=acad_att,
+                    academic_total=acad_total,
+                    hyperbuild_percentage=hb_pct,
+                    hyperbuild_attended=hb_att,
+                    hyperbuild_total=hb_total,
                     debarred_category=debar_cat,
                     debarment_reason=reason,
                 )
@@ -1970,7 +2160,11 @@ async def get_debarment_risk_students(
     return output
 
 
-async def format_correction_response(db: AsyncSession, corr: AttendanceCorrectionRequest) -> AttendanceCorrectionResponse:
+async def format_correction_response(
+    db: AsyncSession,
+    corr: AttendanceCorrectionRequest,
+    activities_dict: Optional[Dict[UUID, Any]] = None,
+) -> AttendanceCorrectionResponse:
     student_name = corr.student.full_name if corr.student else None
     student_prn = corr.student.prn_number or corr.student.roll_no if corr.student else None
     subject_name = corr.session.subject.name if (corr.session and corr.session.subject) else None
@@ -1991,9 +2185,12 @@ async def format_correction_response(db: AsyncSession, corr: AttendanceCorrectio
             try:
                 a_uuid = UUID(str(a_id_str))
                 activity_ids_out.append(a_uuid)
+                if activities_dict is not None and a_uuid in activities_dict:
+                    activities_details_out.append(activities_dict[a_uuid])
             except Exception:
                 continue
-        if activity_ids_out:
+
+        if activities_dict is None and activity_ids_out:
             act_stmt = (
                 select(HyperbuildActivity)
                 .options(selectinload(HyperbuildActivity.subject))
@@ -2241,7 +2438,7 @@ async def get_class_attendance_register(
 
 async def get_subject_attendance_matrix(
     db: AsyncSession,
-    subject_id: UUID,
+    subject_id: Optional[UUID] = None,
     batch_id: Optional[UUID] = None,
     category: Optional[str] = None,
     current_user_id: Optional[UUID] = None,
@@ -2256,6 +2453,47 @@ async def get_subject_attendance_matrix(
     """
     roles = user_roles or []
     is_admin = any(r in ["crc_admin", "crc_coordinator", "approver", "reporting_readonly", "finance"] for r in roles)
+
+    # If no subject_id provided, find the first available active subject
+    if not subject_id:
+        if not is_admin and current_user_id:
+            fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
+            if fac_id:
+                alloc_stmt = select(SubjectBatch.subject_id).where(SubjectBatch.status == "active")
+                if fac_type == "internal":
+                    alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_internal_id == fac_id)
+                else:
+                    alloc_stmt = alloc_stmt.where(SubjectBatch.faculty_external_id == fac_id)
+                alloc_res = await db.execute(alloc_stmt)
+                subject_id = alloc_res.scalars().first()
+        if not subject_id:
+            sub_pick_stmt = select(Subject.id).where(Subject.is_deleted == False).order_by(Subject.name.asc()).limit(1)
+            sub_pick_res = await db.execute(sub_pick_stmt)
+            subject_id = sub_pick_res.scalar_one_or_none()
+
+        if not subject_id:
+            return {
+                "subject_id": None,
+                "subject_name": "No subjects available",
+                "subject_code": "",
+                "batch_id": str(batch_id) if batch_id else None,
+                "category": category or "all",
+                "total_sessions": 0,
+                "total_conducted": 0,
+                "total_scheduled": 0,
+                "total_students": 0,
+                "average_attendance_percentage": 0.0,
+                "safe_count": 0,
+                "warning_count": 0,
+                "debarred_count": 0,
+                "exam_eligible_count": 0,
+                "exam_debarred_count": 0,
+                "academic_summary": {"total_conducted": 0, "total_scheduled": 0, "average_percentage": 0.0, "safe_count": 0, "debarred_count": 0},
+                "hyperbuild_summary": {"total_conducted": 0, "total_scheduled": 0, "average_percentage": 0.0, "safe_count": 0, "debarred_count": 0},
+                "exam_summary": {"total_students": 0, "eligible_count": 0, "debarred_count": 0, "debarred_academic_only": 0, "debarred_hyperbuild_only": 0, "debarred_both": 0},
+                "sessions": [],
+                "students": [],
+            }
 
     if not is_admin and current_user_id:
         fac_id, fac_type = await get_faculty_profile_id_by_user_id(db, current_user_id)
@@ -2338,6 +2576,12 @@ async def get_subject_attendance_matrix(
         if act.session and (not batch_id or act.session.batch_id == batch_id)
         and ((act.status in ["active", "closed"]) or (act.challenge_key is not None) or len(act.verifications) > 0)
     ]
+
+    # Pre-index all activity verifications for O(1) instant lookup
+    all_act_verif_map: Dict[Tuple[UUID, UUID], Any] = {}
+    for act in conducted_hb_activities:
+        for v in act.verifications:
+            all_act_verif_map[(act.id, v.student_id)] = v
 
     # Preload parent session attendance for HyperBuild fallback
     hb_parent_session_ids = [act.session_id for act in conducted_hb_activities if act.session_id]
@@ -2539,7 +2783,7 @@ async def get_subject_attendance_matrix(
             act_req_key = (act.challenge_key is not None) or (act.status in ["active", "closed"]) or len(act.verifications) > 0
             p_st = parent_sess_att_map.get((act.session_id, st.id))
             parent_is_p = p_st in PRESENT_STATUSES
-            v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+            v_rec = all_act_verif_map.get((act.id, st.id))
             v_is_p = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
 
             if act_req_key:
@@ -2593,7 +2837,7 @@ async def get_subject_attendance_matrix(
                 act_req_key = (act.challenge_key is not None) or (act.status in ["active", "closed"]) or len(act.verifications) > 0
                 p_st = parent_sess_att_map.get((act.session_id, st.id))
                 parent_is_p = p_st in PRESENT_STATUSES
-                v_rec = next((v for v in act.verifications if v.student_id == st.id), None)
+                v_rec = all_act_verif_map.get((act.id, st.id))
                 v_is_p = v_rec is not None and v_rec.verification_status in ["verified_present", "late_submission", "present"]
 
                 if act_req_key:

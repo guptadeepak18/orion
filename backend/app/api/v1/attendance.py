@@ -151,7 +151,7 @@ async def get_class_attendance_register(
     summary="Subject-wise cross-tab attendance matrix and gradebook heatmap",
 )
 async def get_subject_attendance_matrix(
-    subject_id: UUID = Query(...),
+    subject_id: Optional[UUID] = Query(None),
     batch_id: Optional[UUID] = Query(None),
     category: Optional[str] = Query(None),
     payload=Depends(get_current_token_payload),

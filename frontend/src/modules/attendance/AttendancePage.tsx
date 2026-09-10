@@ -467,12 +467,18 @@ export const AttendancePage: React.FC = () => {
   const { data: subjectMatrixData, isPending: matrixLoading } = useQuery({
     queryKey: ['subject_attendance_matrix', selectedSubjectId, matrixCategoryFilter],
     queryFn: async () => {
-      if (!selectedSubjectId) return null;
-      const catParam = matrixCategoryFilter !== 'all' ? `&category=${matrixCategoryFilter}` : '';
-      const res = await api.get(`/attendance/subject-matrix?subject_id=${selectedSubjectId}${catParam}`);
+      const params = new URLSearchParams();
+      if (selectedSubjectId) params.append('subject_id', selectedSubjectId);
+      if (matrixCategoryFilter !== 'all') params.append('category', matrixCategoryFilter);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await api.get(`/attendance/subject-matrix${qs}`);
+      if (res.data?.data?.subject_id && !selectedSubjectId) {
+        setSelectedSubjectId(res.data.data.subject_id);
+      }
       return res.data?.data;
     },
-    enabled: activeTab === 'matrix' && !!selectedSubjectId,
+    enabled: activeTab === 'matrix',
+    staleTime: 60 * 1000,
   });
 
   const filteredMatrixStudents = useMemo(() => {
@@ -883,7 +889,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get(`/attendance/corrections${qs}`);
       return (res.data?.data || []) as any[];
     },
-    enabled: activeTab === 'corrections',
+    enabled: ['approvals', 'corrections'].includes(activeTab),
     staleTime: 30 * 1000,
   });
 
@@ -1008,6 +1014,7 @@ export const AttendancePage: React.FC = () => {
       return (res.data?.data || []) as any[];
     },
     enabled: !isStudent && activeTab === 'compliance',
+    staleTime: 60 * 1000,
   });
 
   const filteredDebarredStudents = useMemo(() => {
