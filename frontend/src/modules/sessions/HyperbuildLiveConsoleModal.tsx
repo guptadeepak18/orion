@@ -355,8 +355,8 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 overflow-y-auto animate-fadeIn" role="dialog" aria-modal="true">
-      <div className="glass-panel w-full max-w-5xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 space-y-6 my-6 max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-2 sm:p-4 overflow-y-auto animate-fadeIn" role="dialog" aria-modal="true">
+      <div className="glass-panel w-full max-w-5xl rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 space-y-4 sm:space-y-6 my-2 sm:my-6 max-h-[96vh] sm:max-h-[92vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-3">
@@ -771,47 +771,62 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                                   : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40'
                               }`}
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <p className="font-bold text-slate-900 dark:text-white line-clamp-1">{st.full_name}</p>
-                                  <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between sm:justify-start gap-2">
+                                    <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
+                                      {st.full_name}
+                                    </p>
+                                    <span className={`sm:hidden px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                                      isFinalPresent
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-rose-600 text-white shadow-xs'
+                                    }`}>
+                                      {isFinalPresent ? 'Present' : 'Absent'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5 flex-wrap">
                                     <span>{st.prn_no || st.email}</span>
                                     <span>•</span>
-                                    <span>{st.major_specialization ? `${st.major_specialization}` : 'General'}</span>
+                                    <span className="truncate max-w-[160px] sm:max-w-none">
+                                      {st.major_specialization ? `${st.major_specialization}` : 'General'}
+                                    </span>
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {/* Roll Call Pill */}
-                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                                    st.roll_call_status === 'present'
-                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                      : st.roll_call_status === 'absent'
-                                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                                  }`}>
-                                    RC: {st.roll_call_status || 'Unmarked'}
-                                  </span>
+                                <div className="flex items-center justify-between sm:justify-end gap-1.5 flex-wrap sm:flex-nowrap shrink-0 pt-1.5 sm:pt-0 border-t border-slate-200/60 dark:border-slate-800/60 sm:border-0">
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {/* Roll Call Pill */}
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                      st.roll_call_status === 'present'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : st.roll_call_status === 'absent'
+                                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}>
+                                      RC: {st.roll_call_status || 'Unmarked'}
+                                    </span>
 
-                                  {/* Key Verification Pill */}
-                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                                    st.is_verified
-                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                      : isRcAbsent
-                                      ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                  }`}>
-                                    Key: {st.is_verified ? 'Verified' : isRcAbsent ? 'Locked' : 'Missing'}
-                                  </span>
+                                    {/* Key Verification Pill */}
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                      st.is_verified
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        : isRcAbsent
+                                        ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    }`}>
+                                      Key: {st.is_verified ? 'Verified' : isRcAbsent ? 'Locked' : 'Missing'}
+                                    </span>
 
-                                  {/* Final Status Badge */}
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                    isFinalPresent
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'bg-rose-600 text-white shadow-xs'
-                                  }`}>
-                                    {isFinalPresent ? 'Present' : 'Absent'}
-                                  </span>
+                                    {/* Final Status Badge on desktop */}
+                                    <span className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                      isFinalPresent
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-rose-600 text-white shadow-xs'
+                                    }`}>
+                                      {isFinalPresent ? 'Present' : 'Absent'}
+                                    </span>
+                                  </div>
 
                                   {/* Action button */}
                                   {isFinalPresent ? (
@@ -819,7 +834,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                                       type="button"
                                       onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'absent' })}
                                       disabled={updateAttendanceMutation.isPending}
-                                      className="px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                      className="px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0"
                                       title="Override student to absent"
                                     >
                                       Mark Absent
@@ -829,7 +844,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                                       type="button"
                                       onClick={() => updateAttendanceMutation.mutate({ studentId: st.student_id, status: 'present' })}
                                       disabled={updateAttendanceMutation.isPending}
-                                      className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs shrink-0"
                                       title="Manually override and verify student present"
                                     >
                                       <Check className="h-2.5 w-2.5" />
@@ -841,16 +856,16 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
                               {/* Warning banners */}
                               {isDowngraded && (
-                                <div className="mt-2 px-2.5 py-1 rounded-xl bg-amber-100/70 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-900 text-[10px] font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                  <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
-                                  <span>Auto-Absent Downgraded: Marked Present in Roll Call, but did not enter challenge key within window.</span>
+                                <div className="mt-2 p-2 rounded-xl bg-amber-100/70 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-900 text-[10px] font-bold text-amber-900 dark:text-amber-200 flex items-start gap-1.5 leading-normal">
+                                  <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
+                                  <span className="break-words flex-1">Auto-Absent Downgraded: Marked Present in Roll Call, but did not enter challenge key within window.</span>
                                 </div>
                               )}
 
                               {isRcAbsent && (
-                                <div className="mt-2 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-[10px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                                  <Lock className="h-3 w-3 text-slate-400 shrink-0" />
-                                  <span>Roll Call Absent: Student workspace key input is locked out.</span>
+                                <div className="mt-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-[10px] font-medium text-slate-600 dark:text-slate-400 flex items-start gap-1.5 leading-normal">
+                                  <Lock className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                                  <span className="break-words flex-1">Roll Call Absent: Student workspace key input is locked out.</span>
                                 </div>
                               )}
                             </div>

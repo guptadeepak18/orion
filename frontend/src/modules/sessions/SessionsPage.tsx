@@ -1933,14 +1933,14 @@ export const SessionsPage: React.FC = () => {
                 return (
                 <div
                   key={sess.id}
-                  className={`p-4 rounded-2xl bg-white dark:bg-slate-900 border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                  className={`p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 transition-all ${
                     isHyper
                       ? 'border-amber-200 dark:border-amber-900/60 hover:border-amber-400 bg-amber-50/10 dark:bg-amber-950/10'
                       : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/40'
                   }`}
                 >
-                  <div className="flex items-start space-x-4">
-                    <div className={`p-3 rounded-xl border text-center min-w-[105px] ${
+                  <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                    <div className={`p-2.5 sm:p-3 rounded-xl border text-center shrink-0 min-w-[90px] sm:min-w-[105px] ${
                       isHyper
                         ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-400'
                         : 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
@@ -1954,9 +1954,9 @@ export const SessionsPage: React.FC = () => {
                       <p className="text-[10px] text-slate-500 font-medium">{sess.duration_minutes} mins</p>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <div className="flex items-center space-x-2 flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white text-base">
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 dark:text-white text-sm sm:text-base leading-snug break-words">
                           {isHyper
                             ? 'HyperBuild Lab Session'
                             : `${sess.subject_code ? `${sess.subject_code} · ` : ''}${sess.subject_name || 'Academic Class'}${(sess.lecture_number || sess.session_type === 'lecture') ? ` (Lecture - ${sess.lecture_number || 1})` : ''}`}
@@ -1966,18 +1966,18 @@ export const SessionsPage: React.FC = () => {
 
                       <div className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
                         {isHyper ? (
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex flex-col xs:flex-row flex-wrap items-stretch xs:items-center gap-2 w-full">
                             {sess.hyperbuild_activities && sess.hyperbuild_activities.length > 0 ? (
                               sess.hyperbuild_activities.map((act) => (
-                                <span
+                                <div
                                   key={act.id || act.activity_no}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-semibold"
+                                  className="inline-flex items-center justify-between gap-2 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-semibold"
                                 >
-                                  <span>{act.subject_name || act.subject_code || 'Subject'} - Activity {act.activity_no}</span>
-                                  <span className="font-mono text-[11px] text-amber-700 dark:text-amber-400 font-normal">
+                                  <span className="truncate">{act.subject_name || act.subject_code || 'Subject'} - Activity {act.activity_no}</span>
+                                  <span className="font-mono text-[11px] text-amber-700 dark:text-amber-400 font-normal shrink-0">
                                     ({act.start_time?.slice(0, 5)} - {act.end_time?.slice(0, 5)})
                                   </span>
-                                </span>
+                                </div>
                               ))
                             ) : (
                               <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800 text-[11px]">
@@ -2001,7 +2001,7 @@ export const SessionsPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs text-slate-500">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 text-xs text-slate-500">
                         {(sess.program_name || sess.batch_name || (sess.batch_names && sess.batch_names.length > 0)) && (
                           <>
                             <span className="font-semibold text-slate-800 dark:text-slate-200">
@@ -2033,12 +2033,13 @@ export const SessionsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2 self-end md:self-center">
+                  {/* Responsive Action Buttons Toolbar */}
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/80 md:border-t-0 md:pt-0 w-full md:w-auto justify-start sm:justify-end">
                     {sess.session_type === 'hyperbuild' && (
                       isStudent ? (
                         <button
                           onClick={() => setStudentHyperbuildSession(sess)}
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-extrabold rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-sm transition-all cursor-pointer"
                         >
                           <Zap className="h-3.5 w-3.5" />
                           <span>HyperBuild Workspace</span>
@@ -2046,7 +2047,7 @@ export const SessionsPage: React.FC = () => {
                       ) : (
                         <button
                           onClick={() => setHyperbuildConsoleSession(sess)}
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition-colors cursor-pointer"
                           title="Open HyperBuild Live Classroom Command Center"
                         >
                           <Zap className="h-3.5 w-3.5" />
@@ -2057,7 +2058,7 @@ export const SessionsPage: React.FC = () => {
                     {canScheduleSessions && (
                       <button
                         onClick={() => handleOpenVarianceModal(sess)}
-                        className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors cursor-pointer"
                         title="Record Variance (Substitute / Swap / Cancel / Revert)"
                       >
                         <ArrowLeftRight className="h-3.5 w-3.5" />
@@ -2067,7 +2068,7 @@ export const SessionsPage: React.FC = () => {
                     {canScheduleSessions && (
                       <button
                         onClick={() => handleOpenEditClass(sess)}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                       >
                         <Edit3 className="h-3.5 w-3.5 text-cyan-500" />
                         <span>Edit Class</span>
@@ -2076,7 +2077,7 @@ export const SessionsPage: React.FC = () => {
                     {isAdmin && (
                       <button
                         onClick={() => handleDeleteSession(sess)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 transition-colors cursor-pointer"
                         title="Delete Class (Admin Only)"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -2086,7 +2087,7 @@ export const SessionsPage: React.FC = () => {
                     {canMarkSession(sess) && (
                       <button
                         onClick={() => handleOpenAttendance(sess)}
-                        className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors cursor-pointer"
                       >
                         <ClipboardList className="h-3.5 w-3.5" />
                         <span>Mark Attendance</span>
