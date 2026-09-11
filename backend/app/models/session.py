@@ -63,9 +63,11 @@ class Session(Base, TimestampMixin, SoftDeleteMixin):
     program_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("programs.id", ondelete="RESTRICT"), nullable=False
     )
+    program_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     batch_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("batches.id", ondelete="RESTRICT"), nullable=False
     )
+    batch_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     semester_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("semesters.id", ondelete="RESTRICT"), nullable=False
     )

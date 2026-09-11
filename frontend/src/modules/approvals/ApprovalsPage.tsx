@@ -57,7 +57,7 @@ export const ApprovalsPage: React.FC = () => {
       </div>
 
       {/* SLA Status Banner */}
-      <div className="p-4 rounded-2xl glass-card border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-950/20 flex items-center justify-between">
+      <div className="p-4 rounded-2xl glass-card border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
             <Bot className="h-5 w-5" />

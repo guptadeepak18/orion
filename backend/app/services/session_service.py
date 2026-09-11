@@ -18,7 +18,7 @@ from app.models.session import (
     HyperbuildActivity,
     HyperbuildActivityVerification,
 )
-from app.models.academic import Subject, Topic, Batch
+from app.models.academic import Subject, Topic, Batch, Program
 from app.models.student import Student
 from app.models.faculty import FacultyInternal, FacultyExternal
 from app.schemas.session import (
@@ -352,10 +352,20 @@ async def notify_session_students(
                 else f"Class Scheduled [{class_type_label}]: {subj_name} on {session_date_str} at {time_str} (Venue: {session.venue or 'Campus Classroom'})"
             )
 
-        # Query all active students in the batch
+        # Query all active students in the session's batches
+        all_target_bids = []
+        if session.batch_ids and isinstance(session.batch_ids, list):
+            for b in session.batch_ids:
+                try:
+                    all_target_bids.append(UUID(str(b)))
+                except Exception:
+                    pass
+        if not all_target_bids and session.batch_id:
+            all_target_bids = [session.batch_id]
+
         st_stmt = (
             select(Student)
-            .where(Student.batch_id == session.batch_id, Student.status == "active", Student.is_deleted == False)
+            .where(Student.batch_id.in_(all_target_bids), Student.status == "active", Student.is_deleted == False)
         )
         st_res = await db.execute(st_stmt)
         all_students = list(st_res.scalars().all())
@@ -486,6 +496,23 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
 
     session_data = s_in.model_dump()
     activities_in = session_data.pop("activities", None)
+
+    # Process multi-batch and multi-program arrays for direct JSONB persistence
+    raw_bids = session_data.pop("batch_ids", None) or []
+    b_ids = [str(b) for b in raw_bids if b]
+    if session_data.get("batch_id") and str(session_data["batch_id"]) not in b_ids:
+        b_ids.insert(0, str(session_data["batch_id"]))
+    elif b_ids and not session_data.get("batch_id"):
+        session_data["batch_id"] = UUID(b_ids[0])
+    session_data["batch_ids"] = b_ids
+
+    raw_pids = session_data.pop("program_ids", None) or []
+    p_ids = [str(p) for p in raw_pids if p]
+    if session_data.get("program_id") and str(session_data["program_id"]) not in p_ids:
+        p_ids.insert(0, str(session_data["program_id"]))
+    elif p_ids and not session_data.get("program_id"):
+        session_data["program_id"] = UUID(p_ids[0])
+    session_data["program_ids"] = p_ids
 
     if session_data.get("subject_id") and session_data.get("batch_id") and session_data.get("session_type") != "hyperbuild":
         if not session_data.get("lecture_number"):
@@ -657,6 +684,27 @@ async def update_session(db: AsyncSession, session_id: UUID, s_in: SessionUpdate
     old_venue = session.venue
 
     update_data = s_in.model_dump(exclude_unset=True)
+
+    # Handle multi-batch and multi-program updates directly
+    if "batch_ids" in update_data:
+        raw_bids = update_data.pop("batch_ids")
+        if raw_bids:
+            b_list = [str(b) for b in raw_bids if b]
+            session.batch_ids = b_list
+            if b_list and (not session.batch_id or str(session.batch_id) not in b_list):
+                session.batch_id = UUID(b_list[0])
+        else:
+            session.batch_ids = [str(session.batch_id)] if session.batch_id else []
+
+    if "program_ids" in update_data:
+        raw_pids = update_data.pop("program_ids")
+        if raw_pids:
+            p_list = [str(p) for p in raw_pids if p]
+            session.program_ids = p_list
+            if p_list and (not session.program_id or str(session.program_id) not in p_list):
+                session.program_id = UUID(p_list[0])
+        else:
+            session.program_ids = [str(session.program_id)] if session.program_id else []
 
     # If date/time/venue/faculty changes, re-validate with Sentinel
     check_date = update_data.get("session_date", session.session_date)
@@ -890,6 +938,51 @@ async def format_single_session_response(db: AsyncSession, session_id: UUID) -> 
         raise ValueError("Session not found")
 
     r = SessionResponse.model_validate(s)
+
+    # Enrich multiple batch_ids and program_ids
+    raw_bids = s.batch_ids if (s.batch_ids and isinstance(s.batch_ids, list)) else ([str(s.batch_id)] if s.batch_id else [])
+    raw_pids = s.program_ids if (s.program_ids and isinstance(s.program_ids, list)) else ([str(s.program_id)] if s.program_id else [])
+
+    parsed_bids = []
+    for b in raw_bids:
+        try:
+            parsed_bids.append(UUID(str(b)))
+        except Exception:
+            pass
+    r.batch_ids = parsed_bids or ([s.batch_id] if s.batch_id else None)
+
+    parsed_pids = []
+    for p in raw_pids:
+        try:
+            parsed_pids.append(UUID(str(p)))
+        except Exception:
+            pass
+    r.program_ids = parsed_pids or ([s.program_id] if s.program_id else None)
+
+    if r.batch_ids:
+        b_res = await db.execute(select(Batch.name).where(Batch.id.in_(r.batch_ids)))
+        b_names = [name for (name,) in b_res.all()]
+        r.batch_names = b_names
+        if b_names:
+            r.batch_name = ", ".join(b_names)
+        elif s.batch:
+            r.batch_name = s.batch.name
+    elif s.batch:
+        r.batch_name = s.batch.name
+        r.batch_names = [s.batch.name]
+
+    if r.program_ids:
+        p_res = await db.execute(select(Program.name).where(Program.id.in_(r.program_ids)))
+        p_names = [name for (name,) in p_res.all()]
+        r.program_names = p_names
+        if p_names:
+            r.program_name = ", ".join(p_names)
+        elif s.program:
+            r.program_name = s.program.name
+    elif s.program:
+        r.program_name = s.program.name
+        r.program_names = [s.program.name]
+
     if s.subject:
         r.subject_name = s.subject.name
         r.subject_code = s.subject.code
@@ -906,10 +999,6 @@ async def format_single_session_response(db: AsyncSession, session_id: UUID) -> 
         r.original_faculty_name = s.original_faculty_internal.full_name or s.original_faculty_internal.email.split("@")[0]
     elif s.original_faculty_type == "external" and s.original_faculty_external:
         r.original_faculty_name = s.original_faculty_external.name
-    if s.program:
-        r.program_name = s.program.name
-    if s.batch:
-        r.batch_name = s.batch.name
     if s.session_type == "hyperbuild" and getattr(s, "hyperbuild_activities", None):
         r.hyperbuild_activities = [
             {
@@ -973,7 +1062,12 @@ async def list_sessions(
         .where(Session.is_deleted == False)
     )
     if batch_id:
-        stmt = stmt.where(Session.batch_id == batch_id)
+        stmt = stmt.where(
+            or_(
+                Session.batch_id == batch_id,
+                Session.batch_ids.contains([str(batch_id)]),
+            )
+        )
     if session_date:
         stmt = stmt.where(Session.session_date == session_date)
     if status:
@@ -996,10 +1090,53 @@ async def list_sessions(
     res = await db.execute(stmt)
     sessions = list(res.unique().scalars().all())
 
+    all_b_res = await db.execute(select(Batch.id, Batch.name))
+    all_b_map = {row[0]: row[1] for row in all_b_res.all()}
+
+    all_p_res = await db.execute(select(Program.id, Program.name))
+    all_p_map = {row[0]: row[1] for row in all_p_res.all()}
+
     results: List[SessionResponse] = []
     running_counts: dict = {}
     for s in sessions:
         r = SessionResponse.model_validate(s)
+
+        raw_bids = s.batch_ids if (s.batch_ids and isinstance(s.batch_ids, list)) else ([str(s.batch_id)] if s.batch_id else [])
+        raw_pids = s.program_ids if (s.program_ids and isinstance(s.program_ids, list)) else ([str(s.program_id)] if s.program_id else [])
+
+        parsed_bids = []
+        b_names = []
+        for b in raw_bids:
+            try:
+                buuid = UUID(str(b))
+                parsed_bids.append(buuid)
+                if buuid in all_b_map:
+                    b_names.append(all_b_map[buuid])
+            except Exception:
+                pass
+        r.batch_ids = parsed_bids or ([s.batch_id] if s.batch_id else None)
+        r.batch_names = b_names or ([s.batch.name] if s.batch else None)
+        if b_names:
+            r.batch_name = ", ".join(b_names)
+        elif s.batch:
+            r.batch_name = s.batch.name
+
+        parsed_pids = []
+        p_names = []
+        for p in raw_pids:
+            try:
+                puuid = UUID(str(p))
+                parsed_pids.append(puuid)
+                if puuid in all_p_map:
+                    p_names.append(all_p_map[puuid])
+            except Exception:
+                pass
+        r.program_ids = parsed_pids or ([s.program_id] if s.program_id else None)
+        r.program_names = p_names or ([s.program.name] if s.program else None)
+        if p_names:
+            r.program_name = ", ".join(p_names)
+        elif s.program:
+            r.program_name = s.program.name
         if s.subject_id and s.session_type != "hyperbuild":
             key = (s.batch_id, s.subject_id)
             if s.lecture_number:
@@ -1024,10 +1161,6 @@ async def list_sessions(
             r.original_faculty_name = s.original_faculty_internal.full_name or s.original_faculty_internal.email.split("@")[0]
         elif s.original_faculty_type == "external" and s.original_faculty_external:
             r.original_faculty_name = s.original_faculty_external.name
-        if s.program:
-            r.program_name = s.program.name
-        if s.batch:
-            r.batch_name = s.batch.name
         if s.session_type == "hyperbuild" and s.hyperbuild_activities:
             r.hyperbuild_activities = [
                 {
@@ -1588,11 +1721,28 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
     if not session:
         raise ValueError("Session not found")
 
-    # Fetch all students belonging to the batch
+    # Determine all target batch IDs for this session
+    all_b_ids = []
+    if session.batch_ids and isinstance(session.batch_ids, list):
+        for b in session.batch_ids:
+            try:
+                all_b_ids.append(UUID(str(b)))
+            except Exception:
+                pass
+    if not all_b_ids and session.batch_id:
+        all_b_ids = [session.batch_id]
+
+    batch_map = {}
+    if all_b_ids:
+        b_res = await db.execute(select(Batch.id, Batch.name).where(Batch.id.in_(all_b_ids)))
+        for b_id, b_name in b_res.all():
+            batch_map[b_id] = b_name
+
+    # Fetch all students belonging to all target batches
     students_stmt = (
         select(Student)
-        .where(Student.batch_id == session.batch_id, Student.is_deleted == False)
-        .order_by(Student.roll_no, Student.prn_number, Student.full_name)
+        .where(Student.batch_id.in_(all_b_ids), Student.is_deleted == False)
+        .order_by(Student.batch_id, Student.roll_no, Student.prn_number, Student.full_name)
     )
     st_res = await db.execute(students_stmt)
     all_students = list(st_res.scalars().all())
@@ -1628,6 +1778,8 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
             spec_parts.append(f"Minor: {st.specialization_minor}")
         spec_text = " • ".join(spec_parts) if spec_parts else None
 
+        b_name = batch_map.get(st.batch_id)
+
         student_records.append(
             StudentAttendanceRecordResponse(
                 id=existing.id if existing else None,
@@ -1635,6 +1787,8 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
                 student_id=st.id,
                 student_name=st.full_name or f"{st.first_name} {st.last_name or ''}".strip(),
                 student_prn=st.prn_number or st.roll_no or "",
+                batch_id=st.batch_id,
+                batch_name=b_name,
                 status=current_status,
                 remarks=existing.remarks if existing else None,
                 session_date=session.session_date,
@@ -1646,10 +1800,39 @@ async def get_session_attendance_sheet(db: AsyncSession, session_id: UUID) -> Se
             )
         )
 
+    batch_names_list = [batch_map.get(bid, "") for bid in all_b_ids if batch_map.get(bid)]
+    combined_batch_name = ", ".join(batch_names_list) if batch_names_list else (session.batch.name if session.batch else None)
+
+    # Determine all target program IDs for this session
+    all_p_ids = []
+    if session.program_ids and isinstance(session.program_ids, list):
+        for p in session.program_ids:
+            try:
+                all_p_ids.append(UUID(str(p)))
+            except Exception:
+                pass
+    if not all_p_ids and session.program_id:
+        all_p_ids = [session.program_id]
+
+    program_map = {}
+    if all_p_ids:
+        p_res = await db.execute(select(Program.id, Program.name).where(Program.id.in_(all_p_ids)))
+        for p_id, p_name in p_res.all():
+            program_map[p_id] = p_name
+
+    prog_names_list = [program_map.get(pid, "") for pid in all_p_ids if program_map.get(pid)]
+    combined_prog_name = ", ".join(prog_names_list) if prog_names_list else (session.program.name if session.program else None)
+
     return SessionAttendanceSheetResponse(
         session_id=session.id,
         batch_id=session.batch_id,
-        batch_name=session.batch.name if session.batch else None,
+        batch_ids=all_b_ids,
+        batch_name=combined_batch_name,
+        batch_names=batch_names_list,
+        program_id=session.program_id,
+        program_ids=all_p_ids,
+        program_name=combined_prog_name,
+        program_names=prog_names_list,
         subject_name=session.subject.name if session.subject else ("HyperBuild Session" if session.session_type == "hyperbuild" else "Class Session"),
         subject_code=session.subject.code if session.subject else ("HB" if session.session_type == "hyperbuild" else "SUB"),
         course_category=session.subject.course_category if session.subject else "core",

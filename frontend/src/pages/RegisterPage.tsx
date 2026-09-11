@@ -95,6 +95,8 @@ interface FormData {
   ug_score: string;
   specialization_major: string;
   specialization_minor: string;
+  term_type: 'trimester' | 'semester';
+  term_number: number;
 }
 
 export const RegisterPage: React.FC = () => {
@@ -133,6 +135,8 @@ export const RegisterPage: React.FC = () => {
     ug_score: '',
     specialization_major: 'Marketing',
     specialization_minor: 'None / Not Decided',
+    term_type: 'trimester',
+    term_number: 1,
   });
 
   // Fetch programs defined in the backend
@@ -223,11 +227,16 @@ export const RegisterPage: React.FC = () => {
     const selectedCode = e.target.value;
     const prog = programs.find((p) => p.code === selectedCode);
     const newName = prog ? prog.name : selectedCode;
+    const upper = selectedCode.toUpperCase();
+    const isSem = upper === 'BBA' || upper === 'HMCT';
+    const defaultTermType = isSem ? 'semester' : 'trimester';
 
     setForm((prev) => ({
       ...prev,
       program_code: selectedCode,
       program_name: newName,
+      term_type: defaultTermType,
+      term_number: 1,
       // If switching to PGDM, clean non-digits and slice to 14
       prn_number:
         selectedCode === 'PGDM'
@@ -343,6 +352,8 @@ export const RegisterPage: React.FC = () => {
         confirm_password: form.confirmPassword,
         program_code: form.program_code,
         program_name: form.program_name,
+        term_type: form.term_type,
+        term_number: Number(form.term_number) || 1,
         prn_number: form.prn_number,
         first_name: form.first_name,
         last_name: form.last_name || null,
@@ -434,7 +445,7 @@ export const RegisterPage: React.FC = () => {
         </div>
 
         {/* Card */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl p-4 sm:p-8">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
             {step === 1
               ? 'Create Your Account'
@@ -747,7 +758,7 @@ export const RegisterPage: React.FC = () => {
             {/* ──────── STEP 2: PERSONAL DETAILS ──────── */}
             {step === 2 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>
                       First Name <span className="text-rose-500">*</span>
@@ -770,7 +781,7 @@ export const RegisterPage: React.FC = () => {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>Gender</label>
                     <select
@@ -848,7 +859,7 @@ export const RegisterPage: React.FC = () => {
             {/* ──────── STEP 3: ACADEMIC DETAILS ──────── */}
             {step === 3 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>
                       Emergency Contact Name <span className="text-rose-500">*</span>
@@ -896,7 +907,7 @@ export const RegisterPage: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>
                       UG Degree <span className="text-rose-500">*</span>
@@ -940,7 +951,7 @@ export const RegisterPage: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>
                       Major Specialization <span className="text-rose-500">*</span>
@@ -966,6 +977,52 @@ export const RegisterPage: React.FC = () => {
                       {SPECIALIZATIONS.map((s) => (
                         <option key={s}>{s}</option>
                       ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Academic Pattern (Trimester vs Semester) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>
+                      Academic Pattern <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      className={inputCls}
+                      value={form.term_type}
+                      onChange={(e) => {
+                        const val = e.target.value as 'trimester' | 'semester';
+                        setForm((prev) => ({
+                          ...prev,
+                          term_type: val,
+                          term_number: 1,
+                        }));
+                      }}
+                    >
+                      <option value="trimester">Trimester Pattern (PGDM / GMBA)</option>
+                      <option value="semester">Semester Pattern (BBA / HMCT)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      {form.term_type === 'semester' ? 'Current Semester' : 'Current Trimester'} <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      className={inputCls}
+                      value={form.term_number}
+                      onChange={(e) => set('term_number' as any, e.target.value)}
+                    >
+                      {form.term_type === 'semester'
+                        ? [1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                            <option key={num} value={num}>
+                              Semester {num}
+                            </option>
+                          ))
+                        : [1, 2, 3, 4, 5, 6].map((num) => (
+                            <option key={num} value={num}>
+                              Trimester {num}
+                            </option>
+                          ))}
                     </select>
                   </div>
                 </div>

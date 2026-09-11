@@ -299,6 +299,22 @@ async def approve_registration(
     # Assign student role
     db.add(UserRole(user_id=user.id, role_id=student_role.id))
 
+    # Determine term_type and term_number (BBA/HMCT run on semester, PGDM/GMBA run on trimester)
+    resolved_term_type = (profile_data.term_type if (profile_data and getattr(profile_data, "term_type", None)) else None)
+    if not resolved_term_type:
+        p_code = (reg.program_code or "").upper()
+        p_name = (reg.program_name or "").upper()
+        if "BBA" in p_code or "HMCT" in p_code or "BBA" in p_name or "HMCT" in p_name:
+            resolved_term_type = "semester"
+        else:
+            resolved_term_type = "trimester"
+
+    resolved_term_number = 1
+    if profile_data and getattr(profile_data, "term_number", None):
+        resolved_term_number = profile_data.term_number
+    elif profile_data and getattr(profile_data, "trimester", None):
+        resolved_term_number = profile_data.trimester
+
     # Create Student record
     student = Student(
         user_id=user.id,
@@ -322,7 +338,10 @@ async def approve_registration(
         ug_score=reg.ug_score or 0.0,
         program_id=selected_program_id,
         batch_id=selected_batch_id,
-        trimester=profile_data.trimester if (profile_data and profile_data.trimester) else 1,
+        # Academic Term Pattern (Trimester vs Semester)
+        term_type=resolved_term_type,
+        term_number=resolved_term_number,
+        trimester=resolved_term_number,
         roll_no=(profile_data.roll_no or "") if profile_data else "",
         enrollment_no=(profile_data.enrollment_no or "") if profile_data else "",
         specialization_major=(profile_data.specialization_major if (profile_data and profile_data.specialization_major) else (reg.specialization_major or "")),

@@ -100,7 +100,7 @@ export const VerifyEmailPage: React.FC = () => {
       <div className="w-full max-w-md z-10">
         <div className="flex justify-center mb-6"><Logo size="md" /></div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-8 text-center">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl p-5 sm:p-8 text-center">
           {/* Mail icon */}
           <div className="flex justify-center mb-5">
             <div className="w-16 h-16 rounded-2xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center">
@@ -158,7 +158,7 @@ export const VerifyEmailPage: React.FC = () => {
           )}
 
           {/* OTP boxes */}
-          <div className="flex items-center justify-center gap-2 mb-6">
+          <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-6">
             {digits.map((d, i) => (
               <input key={i}
                 ref={el => { inputRefs.current[i] = el; }}
@@ -167,7 +167,7 @@ export const VerifyEmailPage: React.FC = () => {
                 onChange={e => handleDigitChange(i, e.target.value)}
                 onKeyDown={e => handleKeyDown(i, e)}
                 onPaste={i === 0 ? handlePaste : undefined}
-                className={`w-11 h-14 text-center text-xl font-bold rounded-xl border-2 transition-all outline-none
+                className={`w-9 h-12 sm:w-11 sm:h-14 text-center text-lg sm:text-xl font-bold rounded-lg sm:rounded-xl border-2 transition-all outline-none
                   bg-slate-50 dark:bg-slate-800
                   text-slate-900 dark:text-white
                   ${d ? 'border-cyan-500 dark:border-cyan-500' : 'border-slate-300 dark:border-slate-700'}

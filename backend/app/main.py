@@ -20,19 +20,6 @@ from app.schemas.common import ErrorEnvelope, ErrorDetails
 logger = logging.getLogger("app.validation_debug")
 
 
-async def _neon_keepalive_loop():
-    """Lightweight background heartbeat ping every 3 minutes to prevent Neon serverless auto-suspension during daytime operations."""
-    while True:
-        try:
-            await asyncio.sleep(180)  # 3 minutes
-            async with AsyncSessionLocal() as session:
-                await session.execute(text("SELECT 1"))
-        except asyncio.CancelledError:
-            break
-        except Exception:
-            pass
-
-
 async def _event_auto_complete_loop():
     """Background task running every 60 seconds to auto-complete expired academic events."""
     from app.services.academic_event_service import auto_complete_expired_events
@@ -64,12 +51,9 @@ async def _background_startup_tasks():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    keepalive_task = None
     event_loop_task = None
     startup_task = None
     try:
-        # Start keepalive heartbeat task to keep connection warm
-        keepalive_task = asyncio.create_task(_neon_keepalive_loop())
         # Start background event auto-completion task
         event_loop_task = asyncio.create_task(_event_auto_complete_loop())
         # Run DB seed & sync in background so HTTP server opens immediately
@@ -79,8 +63,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    if keepalive_task:
-        keepalive_task.cancel()
     if event_loop_task:
         event_loop_task.cancel()
 
@@ -120,9 +102,19 @@ async def sanitize_empty_query_params(request: Request, call_next):
 
 from fastapi.encoders import jsonable_encoder
 
+def _get_cors_headers(request: Request) -> dict:
+    """Explicitly mirrors request origin for CORS headers to prevent browser masking 500s as Network Error."""
+    origin = request.headers.get("origin") or "*"
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "*",
+        "Access-Control-Allow-Headers": "*",
+    }
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # Log the raw body so we can see exactly what was sent
     try:
         body = await request.body()
         print(f"[VALIDATION ERROR] {request.method} {request.url.path} body={body.decode('utf-8', errors='replace')}", flush=True)
@@ -132,11 +124,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=422,
         content={"detail": jsonable_encoder(exc.errors())},
+        headers=_get_cors_headers(request),
     )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    print(f"[GLOBAL EXCEPTION] {request.method} {request.url.path}: {exc}", flush=True)
     return JSONResponse(
         status_code=500,
         content=ErrorEnvelope(
@@ -145,6 +139,7 @@ async def global_exception_handler(request: Request, exc: Exception):
                 message=str(exc) if settings.ENVIRONMENT == "local" else "An unexpected error occurred",
             )
         ).model_dump(),
+        headers=_get_cors_headers(request),
     )
 
 from app.api.v1.websocket import router as ws_router
@@ -170,6 +165,12 @@ STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "stat
 if not os.path.exists(STATIC_DIR):
     STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
 
+INDEX_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 if os.path.exists(STATIC_DIR):
     assets_dir = os.path.join(STATIC_DIR, "assets")
     if os.path.exists(assets_dir):
@@ -180,7 +181,7 @@ if os.path.exists(STATIC_DIR):
     async def serve_root():
         index_file = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index_file):
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers=INDEX_NO_CACHE_HEADERS)
         return JSONResponse(status_code=200, content={"status": "online", "app": settings.PROJECT_NAME})
 
     @app.get("/{full_path:path}", include_in_schema=False)
@@ -189,6 +190,16 @@ if os.path.exists(STATIC_DIR):
         # Allow API, docs, openapi requests to fall through or return 404
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
+
+        # CRITICAL: Missing assets MUST return 404 and NEVER fall back to index.html!
+        # If an old chunk like assets/Foo-xxxx.js is requested after a new build, serving index.html
+        # causes a fatal SyntaxError: Unexpected token '<' and crashes the React app to a blank screen!
+        if full_path.startswith("assets/") or full_path.endswith(".js") or full_path.endswith(".css"):
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Static asset not found"},
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+            )
 
         # Check if direct static file requested (e.g. /manifest.json, /logo-light.png, /favicon.ico)
         target_file = os.path.join(STATIC_DIR, full_path)
@@ -199,7 +210,7 @@ if os.path.exists(STATIC_DIR):
         # Serve index.html for all client-side routes (/dashboard, /login, /academic, etc.)
         index_file = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index_file):
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers=INDEX_NO_CACHE_HEADERS)
         return JSONResponse(status_code=200, content={"status": "online", "app": settings.PROJECT_NAME})
 else:
     @app.get("/", tags=["Health"])

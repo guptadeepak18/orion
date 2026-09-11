@@ -46,9 +46,9 @@ export const FeedbackPage: React.FC = () => {
 
       {/* Status Banner (Staff & Faculty Only) */}
       {!isStudent && (
-        <div className="p-4 rounded-2xl glass-card border border-cyan-200 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex items-center justify-between">
+        <div className="p-4 rounded-2xl glass-card border border-cyan-200 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
-            <div className="h-10 w-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+            <div className="h-10 w-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shrink-0">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
@@ -58,7 +58,9 @@ export const FeedbackPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <StatusBadge status="active" label="Active" />
+          <div className="self-start sm:self-auto shrink-0">
+            <StatusBadge status="active" label="Active" />
+          </div>
         </div>
       )}
 

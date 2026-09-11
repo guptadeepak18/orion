@@ -322,12 +322,12 @@ export const StudentProfilePage: React.FC = () => {
       />
 
       {/* Top Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-700 p-8 text-white shadow-xl">
-        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-          <div className="flex items-center space-x-5">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-700 p-4 sm:p-8 text-white shadow-xl">
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
+          <div className="flex items-center gap-4 sm:gap-5 min-w-0 flex-1">
             {/* Interactive Avatar Container */}
-            <div className="relative group/avatar">
-              <div className="h-20 w-20 rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-3xl font-black shadow-lg">
+            <div className="relative group/avatar shrink-0">
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg">
                 {currentAvatarUrl ? (
                   <img
                     src={currentAvatarUrl}
@@ -357,14 +357,14 @@ export const StudentProfilePage: React.FC = () => {
               </button>
             </div>
 
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight">{currentFullName}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{currentFullName}</h1>
                 {currentAvatarUrl && (
                   <button
                     type="button"
                     onClick={handleRemoveAvatar}
-                    className="text-xs px-2 py-0.5 rounded-lg bg-white/15 hover:bg-white/25 text-white/90 transition-colors flex items-center gap-1 cursor-pointer"
+                    className="text-xs px-2 py-0.5 rounded-lg bg-white/15 hover:bg-white/25 text-white/90 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
                     title="Remove custom photo"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -372,12 +372,12 @@ export const StudentProfilePage: React.FC = () => {
                   </button>
                 )}
                 {isStudentRole && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-100 border border-emerald-300/30">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 shrink-0">
                     Active Student
                   </span>
                 )}
               </div>
-              <p className="text-cyan-100 text-sm flex items-center gap-2 mt-1.5 flex-wrap">
+              <p className="text-cyan-100 text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 mt-1.5 flex-wrap">
                 {isStudentRole ? (
                   <>
                     <span>PRN: <strong className="text-white font-mono">{student?.prn_number || 'N/A'}</strong></span>
@@ -401,12 +401,12 @@ export const StudentProfilePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center flex-wrap gap-2 sm:gap-3 w-full sm:w-auto mt-2 sm:mt-0 shrink-0">
             <button
               type="button"
               onClick={() => avatarFileRef.current?.click()}
               disabled={uploadingAvatar}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer"
             >
               <Upload className="h-4 w-4" />
               <span>{uploadingAvatar ? 'Uploading...' : 'Upload Photo'}</span>
@@ -416,7 +416,7 @@ export const StudentProfilePage: React.FC = () => {
               <button
                 type="button"
                 onClick={startEdit}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 text-white font-semibold text-sm transition-all shadow-lg cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 text-white font-semibold text-xs sm:text-sm transition-all shadow-lg cursor-pointer"
               >
                 <Edit2 className="h-4 w-4" /> Edit Profile
               </button>
@@ -424,7 +424,7 @@ export const StudentProfilePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/50 hover:bg-slate-900/70 text-white font-semibold text-sm transition-all cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-slate-900/50 hover:bg-slate-900/70 text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" /> Cancel
               </button>
@@ -451,10 +451,10 @@ export const StudentProfilePage: React.FC = () => {
       {isStudentRole && student && (
         <div className="space-y-6">
           {/* 1. Academic & Institutional Enrollment Details (Read-only) */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2.5">
-                <div className="h-8 w-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                <div className="h-8 w-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
                   <GraduationCap className="h-4 w-4" />
                 </div>
                 <div>
@@ -466,7 +466,7 @@ export const StudentProfilePage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 self-start sm:self-auto shrink-0">
                 <Lock className="h-3 w-3" /> Managed by Admin
               </span>
             </div>
@@ -507,8 +507,22 @@ export const StudentProfilePage: React.FC = () => {
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Current Term</span>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">Trimester {student.trimester || 1}</p>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {student.term_type === 'semester' ||
+                  (!student.term_type &&
+                    (student.program_name?.toUpperCase().includes('BBA') ||
+                      student.program_name?.toUpperCase().includes('HMCT')))
+                    ? 'Current Semester'
+                    : 'Current Trimester'}
+                </span>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                  {student.term_type === 'semester' ||
+                  (!student.term_type &&
+                    (student.program_name?.toUpperCase().includes('BBA') ||
+                      student.program_name?.toUpperCase().includes('HMCT')))
+                    ? `Semester ${student.term_number || student.trimester || 1}`
+                    : `Trimester ${student.term_number || student.trimester || 1}`}
+                </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1">
@@ -524,10 +538,10 @@ export const StudentProfilePage: React.FC = () => {
           </div>
 
           {/* 2. Academic Performance & Attendance Metrics (Read-only) */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2.5">
-                <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
                   <Award className="h-4 w-4" />
                 </div>
                 <div>
@@ -539,7 +553,7 @@ export const StudentProfilePage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 self-start sm:self-auto shrink-0">
                 <ShieldCheck className="h-3 w-3 text-emerald-500" /> Auto-Calculated
               </span>
             </div>
@@ -619,9 +633,9 @@ export const StudentProfilePage: React.FC = () => {
           {/* 3. Undergraduate & Family Background (Read-only / Verified) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Undergraduate Background */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
               <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div className="h-7 w-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                <div className="h-7 w-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
                   <BookOpen className="h-3.5 w-3.5" />
                 </div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Undergraduate Background</h3>
@@ -646,9 +660,9 @@ export const StudentProfilePage: React.FC = () => {
             </div>
 
             {/* Family & Personal Information */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
               <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div className="h-7 w-7 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                <div className="h-7 w-7 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold shrink-0">
                   <Users className="h-3.5 w-3.5" />
                 </div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Family Information</h3>
@@ -675,10 +689,10 @@ export const StudentProfilePage: React.FC = () => {
 
       {/* 4. Personal Contact & Emergency Information (EDITABLE) */}
       <form onSubmit={handleSave} className="space-y-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
             <div className="flex items-center space-x-2.5">
-              <div className="h-8 w-8 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center font-bold">
+              <div className="h-8 w-8 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center font-bold shrink-0">
                 <User className="h-4 w-4" />
               </div>
               <div>
@@ -690,7 +704,7 @@ export const StudentProfilePage: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
               <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
                 isEditing
                   ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/30'
@@ -953,10 +967,10 @@ export const StudentProfilePage: React.FC = () => {
       </form>
 
       {/* 5. Security & Password Management Section */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
-            <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+            <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
               <KeyRound className="h-4 w-4" />
             </div>
             <div>
@@ -986,7 +1000,7 @@ export const StudentProfilePage: React.FC = () => {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4 text-emerald-500" />
+            <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
             <span>Two-factor email verification is enforced for all password updates.</span>
           </div>
           <span className="font-mono text-[11px] text-slate-400">
@@ -998,7 +1012,7 @@ export const StudentProfilePage: React.FC = () => {
       {/* Change Password Modal */}
       {isPasswordModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl max-w-md w-full p-5 sm:p-8 space-y-6 shadow-2xl">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">

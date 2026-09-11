@@ -128,11 +128,11 @@ export const ReportsPage: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex items-center gap-4 sm:gap-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto touch-scroll no-scrollbar max-w-full">
         {canSeeRemuneration && (
           <button
             onClick={() => setReportType('remuneration')}
-            className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
+            className={`pb-3 text-sm font-semibold border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap transition-colors ${
               reportType === 'remuneration' ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -143,7 +143,7 @@ export const ReportsPage: React.FC = () => {
         {canSeeVenue && (
           <button
             onClick={() => setReportType('venue')}
-            className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
+            className={`pb-3 text-sm font-semibold border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap transition-colors ${
               reportType === 'venue' ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -153,7 +153,7 @@ export const ReportsPage: React.FC = () => {
         )}
         <button
           onClick={() => setReportType('syllabus')}
-          className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
+          className={`pb-3 text-sm font-semibold border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap transition-colors ${
             reportType === 'syllabus' ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
@@ -163,7 +163,7 @@ export const ReportsPage: React.FC = () => {
         {canSeeAudit && (
           <button
             onClick={() => setReportType('audit')}
-            className={`pb-3 text-sm font-semibold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
+            className={`pb-3 text-sm font-semibold border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap transition-colors ${
               reportType === 'audit' ? 'border-cyan-500 text-cyan-700 dark:border-cyan-400 dark:text-cyan-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >

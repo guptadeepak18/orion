@@ -5,7 +5,7 @@ from app.api.v1 import (
     calendar, feedback, copilot, reports, system, search, notifications, audit, dashboard,
     students, student_registrations, activities, lms, case_studies, attendance, ai_intelligence, academic_operations,
     email_templates, hyperbuild, academic_events, websocket, storage,
-    gradebook
+    gradebook, ideathons
 )
 
 api_router = APIRouter()
@@ -27,6 +27,7 @@ api_router.include_router(students.router)
 api_router.include_router(student_registrations.router)
 api_router.include_router(sessions.router)
 api_router.include_router(hyperbuild.router, prefix="/hyperbuild", tags=["HyperBuild"])
+api_router.include_router(ideathons.router)
 api_router.include_router(attendance.router)
 api_router.include_router(ai_intelligence.router)
 

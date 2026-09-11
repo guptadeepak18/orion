@@ -15,15 +15,13 @@ on:
     branches:
       - main
     paths:
-      - 'frontend/android/**'
-      - 'frontend/capacitor.config.ts'
+      - 'frontend/**'
       - '.github/workflows/build-android-apk.yml'
   pull_request:
     branches:
       - main
     paths:
-      - 'frontend/android/**'
-      - 'frontend/capacitor.config.ts'
+      - 'frontend/**'
       - '.github/workflows/build-android-apk.yml'
 
 jobs:

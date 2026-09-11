@@ -20,7 +20,7 @@ export function DataTable<T>({
   emptyMessage = 'No data available',
 }: DataTableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/30 shadow-sm transition-colors duration-200">
+    <div className="overflow-x-auto touch-scroll rounded-2xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/30 shadow-sm transition-colors duration-200">
       <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800/80">
         <thead className="bg-slate-50 dark:bg-slate-900/80">
           <tr>
@@ -28,7 +28,7 @@ export function DataTable<T>({
               <th
                 key={idx}
                 scope="col"
-                className={`px-6 py-3.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider ${
+                className={`px-3.5 sm:px-6 py-3 sm:py-3.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider ${
                   col.className || ''
                 }`}
               >
@@ -42,7 +42,7 @@ export function DataTable<T>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400 italic"
+                className="px-4 sm:px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400 italic"
               >
                 {emptyMessage}
               </td>
@@ -54,7 +54,7 @@ export function DataTable<T>({
                 className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors duration-150"
               >
                 {columns.map((col, idx) => (
-                  <td key={idx} className={`px-6 py-4 whitespace-nowrap ${col.className || ''}`}>
+                  <td key={idx} className={`px-3.5 sm:px-6 py-3 sm:py-4 whitespace-nowrap ${col.className || ''}`}>
                     {typeof col.accessor === 'function'
                       ? col.accessor(row)
                       : (row[col.accessor] as unknown as React.ReactNode)}

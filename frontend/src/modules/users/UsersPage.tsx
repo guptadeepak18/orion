@@ -420,14 +420,14 @@ export const UsersPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-start sm:justify-end">
             {/* Filter by Role */}
-            <div className="flex items-center gap-1.5">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" />
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
+              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-2 text-slate-700 dark:text-slate-300 focus:outline-none"
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-2 text-slate-700 dark:text-slate-300 focus:outline-none w-full sm:w-auto max-w-full sm:max-w-[200px] truncate"
               >
                 <option value="all">All System Roles</option>
                 {rolesData.map((r) => (
@@ -442,7 +442,7 @@ export const UsersPage: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-2 text-slate-700 dark:text-slate-300 focus:outline-none"
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-2 text-slate-700 dark:text-slate-300 focus:outline-none w-full sm:w-auto"
             >
               <option value="all">All Statuses</option>
               <option value="active">Active Only</option>
@@ -452,15 +452,15 @@ export const UsersPage: React.FC = () => {
             {/* Directory View Toggle */}
             <button
               onClick={() => setIncludeAll(!includeAll)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors w-full sm:w-auto justify-center ${
                 includeAll
                   ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
                   : 'bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
               }`}
               title="Toggle to include Student & Faculty accounts"
             >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              {includeAll ? 'Showing All Accounts (Inc. Students)' : 'Excl. Students & Faculty'}
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+              <span>{includeAll ? 'Showing All Accounts (Inc. Students)' : 'Excl. Students & Faculty'}</span>
             </button>
           </div>
         </div>
@@ -482,8 +482,8 @@ export const UsersPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto touch-scroll">
+            <table className="w-full text-left border-collapse min-w-[700px]">
               <thead>
                 <tr className="bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   <th className="py-3.5 px-4">User Details</th>

@@ -31,10 +31,10 @@ export const GradebookPage: React.FC = () => {
         </div>
 
         {/* Clean Segmented Control Tabs */}
-        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl inline-flex items-center space-x-1 border border-slate-200 dark:border-slate-700 self-start sm:self-auto">
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200 dark:border-slate-700 self-start sm:self-auto overflow-x-auto touch-scroll no-scrollbar max-w-full">
           <button
             onClick={() => setActiveTab('admin')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
               activeTab === 'admin'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -44,7 +44,7 @@ export const GradebookPage: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('student_preview')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
               activeTab === 'student_preview'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'

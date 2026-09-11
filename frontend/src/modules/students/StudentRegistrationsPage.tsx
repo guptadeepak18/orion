@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 
 interface Registration {
   id: string;
@@ -85,11 +86,23 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
   const [actionError, setActionError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
+  // Lock mobile scrolling and handle Android back button
+  useModalScrollLock({
+    isOpen: Boolean(selectedReg || approvingReg || rejectingReg),
+    onClose: () => {
+      setSelectedReg(null);
+      setApprovingReg(null);
+      setRejectingReg(null);
+    },
+  });
+
   // Approval Form State
   const [approvalForm, setApprovalForm] = useState({
     program_id: '',
     batch_id: '',
     division_id: '',
+    term_type: 'trimester' as 'trimester' | 'semester',
+    term_number: 1,
     trimester: 1,
     roll_no: '',
     enrollment_no: '',
@@ -138,6 +151,9 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
     // Default to PGDM
     const pgdmProg = programs.find((p) => p.code === 'PGDM' || p.name.toUpperCase().includes('PGDM')) || programs[0];
     const defaultProgramId = pgdmProg?.id || '';
+    const pCode = (pgdmProg?.code || '').toUpperCase();
+    const isSem = pCode === 'BBA' || pCode === 'HMCT';
+    const defaultTermType: 'trimester' | 'semester' = isSem ? 'semester' : 'trimester';
 
     // Filter batches for PGDM, find 26-28
     const relevantBatches = batches.filter((b) => !defaultProgramId || b.program_id === defaultProgramId);
@@ -153,6 +169,8 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       program_id: defaultProgramId,
       batch_id: defaultBatch?.id || '',
       division_id: relevantDivisions[0]?.id || '',
+      term_type: defaultTermType,
+      term_number: 1,
       trimester: 1,
       roll_no: '',
       enrollment_no: '',
@@ -169,12 +187,19 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
     const defaultBatch =
       relevantBatches.find((b) => b.name.includes('26-28') || b.name.includes('2026-2028')) || relevantBatches[0];
     const relevantDivisions = divisions.filter((d) => d.program_id === progId);
+    const selectedProg = programs.find((p) => p.id === progId);
+    const pCode = (selectedProg?.code || '').toUpperCase();
+    const isSem = pCode === 'BBA' || pCode === 'HMCT';
+    const newTermType: 'trimester' | 'semester' = isSem ? 'semester' : 'trimester';
 
     setApprovalForm((prev) => ({
       ...prev,
       program_id: progId,
       batch_id: defaultBatch?.id || '',
       division_id: relevantDivisions[0]?.id || '',
+      term_type: newTermType,
+      term_number: 1,
+      trimester: 1,
     }));
   };
 
@@ -333,7 +358,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
   );
 
   return (
-    <div className={embedded ? 'space-y-6' : 'p-6 max-w-7xl mx-auto space-y-6'}>
+    <div className="space-y-6">
       {/* Top Header */}
       {!embedded && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -405,7 +430,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         {/* Status Filter Tabs */}
-        <div className="flex flex-wrap items-center gap-1 w-full sm:w-auto p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
+        <div className="flex items-center overflow-x-auto touch-scroll no-scrollbar gap-1 w-full sm:w-auto p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
           {[
             { id: 'pending_review', label: 'Pending Review' },
             { id: 'approved', label: 'Approved' },
@@ -416,7 +441,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
             <button
               key={tab.id}
               onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
                 statusFilter === tab.id
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -595,75 +620,80 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
 
       {/* Details Modal */}
       {selectedReg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedReg.full_name}</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Registration Application Details</p>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <div className="min-w-0 pr-3">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white truncate">{selectedReg.full_name}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Registration Application Details</p>
               </div>
               <button
                 onClick={() => setSelectedReg(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">PRN Number</p>
-                <p className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedReg.prn_number || 'N/A'}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Official Email</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">{selectedReg.email}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Mobile Number</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">{selectedReg.mobile_number}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Personal Email</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">{selectedReg.email_personal || 'N/A'}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Gender & Blood Group</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  {selectedReg.gender || 'N/A'} • {selectedReg.blood_group || 'N/A'}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Parents</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  Father: {selectedReg.father_name || 'N/A'} | Mother: {selectedReg.mother_name || 'N/A'}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 col-span-2">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Specialization Choices</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  Major: <strong className="text-cyan-600 dark:text-cyan-400">{selectedReg.specialization_major || 'Not Selected'}</strong>
-                  {selectedReg.specialization_minor && (
-                    <span className="text-slate-600 dark:text-slate-300"> | Minor: {selectedReg.specialization_minor}</span>
-                  )}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 col-span-2">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Emergency Contact</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  {selectedReg.emergency_contact_name} ({selectedReg.emergency_contact_relation}) —{' '}
-                  {selectedReg.emergency_contact_number}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 col-span-2">
-                <p className="text-xs text-slate-400 uppercase font-semibold">UG Background</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  {selectedReg.ug_degree} — Score: {selectedReg.ug_score} ({selectedReg.ug_score_type?.toUpperCase()})
-                </p>
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 touch-scroll">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">PRN Number</p>
+                  <p className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedReg.prn_number || 'N/A'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Official Email</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5 break-all">{selectedReg.email}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Mobile Number</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">{selectedReg.mobile_number}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Personal Email</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5 break-all">{selectedReg.email_personal || 'N/A'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Gender & Blood Group</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                    {selectedReg.gender || 'N/A'} • {selectedReg.blood_group || 'N/A'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Parents</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                    Father: {selectedReg.father_name || 'N/A'} | Mother: {selectedReg.mother_name || 'N/A'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 sm:col-span-2">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Specialization Choices</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                    Major: <strong className="text-cyan-600 dark:text-cyan-400">{selectedReg.specialization_major || 'Not Selected'}</strong>
+                    {selectedReg.specialization_minor && (
+                      <span className="text-slate-600 dark:text-slate-300"> | Minor: {selectedReg.specialization_minor}</span>
+                    )}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 sm:col-span-2">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">Emergency Contact</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                    {selectedReg.emergency_contact_name} ({selectedReg.emergency_contact_relation}) —{' '}
+                    {selectedReg.emergency_contact_number}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 sm:col-span-2">
+                  <p className="text-xs text-slate-400 uppercase font-semibold">UG Background</p>
+                  <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                    {selectedReg.ug_degree} — Score: {selectedReg.ug_score} ({selectedReg.ug_score_type?.toUpperCase()})
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
+            {/* Sticky Footer */}
+            <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex flex-wrap items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedReg(null)}
@@ -736,208 +766,248 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
 
       {/* Approve & Complete Student Profile Modal */}
       {approvingReg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl max-h-[92vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                  <GraduationCap className="h-6 w-6" />
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3 min-w-0 pr-3">
+                <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                  <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Approve Registration & Assign Academic Profile
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white truncate">
+                    Approve & Assign Academic Profile
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Assign Program, Batch, and academic parameters for <strong>{approvingReg.full_name}</strong>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    For <strong className="text-slate-700 dark:text-slate-300">{approvingReg.full_name}</strong>
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setApprovingReg(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Student Quick Info Strip */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div>
-                <span className="text-slate-400">PRN: </span>
-                <strong className="text-slate-900 dark:text-white">{approvingReg.prn_number || 'N/A'}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400">Email: </span>
-                <span className="font-mono text-cyan-600 dark:text-cyan-400">{approvingReg.email}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Chosen Major: </span>
-                <strong className="text-cyan-600 dark:text-cyan-400">
-                  {approvingReg.specialization_major || 'Marketing'}
-                  {approvingReg.specialization_minor ? ` / ${approvingReg.specialization_minor}` : ''}
-                </strong>
-              </div>
-            </div>
-
-            {/* Academic Profile Form */}
+            {/* Form */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 approveMutation.mutate({ regId: approvingReg.id, data: approvalForm });
               }}
-              className="space-y-4"
+              className="flex flex-col flex-1 min-h-0 overflow-hidden"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Program */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Program <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={approvalForm.program_id}
-                    onChange={(e) => handleProgramChange(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="" disabled>Select Program</option>
-                    {programs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.code})
-                      </option>
-                    ))}
-                  </select>
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 touch-scroll">
+                {/* Student Quick Info Strip */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400">PRN: </span>
+                    <strong className="text-slate-900 dark:text-white">{approvingReg.prn_number || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Email: </span>
+                    <span className="font-mono text-cyan-600 dark:text-cyan-400">{approvingReg.email}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Chosen Major: </span>
+                    <strong className="text-cyan-600 dark:text-cyan-400">
+                      {approvingReg.specialization_major || 'Marketing'}
+                      {approvingReg.specialization_minor ? ` / ${approvingReg.specialization_minor}` : ''}
+                    </strong>
+                  </div>
                 </div>
 
-                {/* Batch */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Batch <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={approvalForm.batch_id}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, batch_id: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="" disabled>Select Batch</option>
-                    {availableBatches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Academic Profile Form */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Program */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Program <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={approvalForm.program_id}
+                      onChange={(e) => handleProgramChange(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="" disabled>Select Program</option>
+                      {programs.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Division / Section */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Division / Section
-                  </label>
-                  <select
-                    value={approvalForm.division_id}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, division_id: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="">No Division Assigned (Unassigned)</option>
-                    {availableDivisions.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* Batch */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Batch <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={approvalForm.batch_id}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, batch_id: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="" disabled>Select Batch</option>
+                      {availableBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Trimester */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Trimester / Term
-                  </label>
-                  <select
-                    value={approvalForm.trimester}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, trimester: parseInt(e.target.value, 10) || 1 }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    {[1, 2, 3, 4, 5, 6].map((num) => (
-                      <option key={num} value={num}>
-                        Trimester {num}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* Division / Section */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Division / Section
+                    </label>
+                    <select
+                      value={approvalForm.division_id}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, division_id: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">No Division Assigned (Unassigned)</option>
+                      {availableDivisions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Roll Number */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Roll Number (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 26PGDM042"
-                    value={approvalForm.roll_no}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, roll_no: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
+                  {/* Academic Term Pattern */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Academic Pattern <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={approvalForm.term_type}
+                      onChange={(e) => {
+                        const val = e.target.value as 'trimester' | 'semester';
+                        setApprovalForm((f) => ({
+                          ...f,
+                          term_type: val,
+                          term_number: 1,
+                          trimester: 1,
+                        }));
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="trimester">Trimester Pattern (PGDM / GMBA)</option>
+                      <option value="semester">Semester Pattern (BBA / HMCT)</option>
+                    </select>
+                  </div>
 
-                {/* Enrollment Number */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Enrollment Number (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. EN2026042"
-                    value={approvalForm.enrollment_no}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, enrollment_no: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
+                  {/* Term Number */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      {approvalForm.term_type === 'semester' ? 'Semester Number' : 'Trimester Number'} <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={approvalForm.term_number}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        setApprovalForm((f) => ({
+                          ...f,
+                          term_number: val,
+                          trimester: val,
+                        }));
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      {approvalForm.term_type === 'semester'
+                        ? [1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                            <option key={num} value={num}>
+                              Semester {num}
+                            </option>
+                          ))
+                        : [1, 2, 3, 4, 5, 6].map((num) => (
+                            <option key={num} value={num}>
+                              Trimester {num}
+                            </option>
+                          ))}
+                    </select>
+                  </div>
 
-                {/* Major Specialization */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Major Specialization
-                  </label>
-                  <select
-                    value={approvalForm.specialization_major}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, specialization_major: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    {SPECIALIZATIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* Roll Number */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Roll Number (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 26PGDM042"
+                      value={approvalForm.roll_no}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, roll_no: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
 
-                {/* Minor Specialization */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Minor Specialization (Optional)
-                  </label>
-                  <select
-                    value={approvalForm.specialization_minor}
-                    onChange={(e) => setApprovalForm((f) => ({ ...f, specialization_minor: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="">None / Not Decided</option>
-                    {SPECIALIZATIONS.filter((s) => s !== approvalForm.specialization_major).map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Enrollment Number */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Enrollment Number (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. EN2026042"
+                      value={approvalForm.enrollment_no}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, enrollment_no: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+
+                  {/* Major Specialization */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Major Specialization
+                    </label>
+                    <select
+                      value={approvalForm.specialization_major}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, specialization_major: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      {SPECIALIZATIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Minor Specialization */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Minor Specialization (Optional)
+                    </label>
+                    <select
+                      value={approvalForm.specialization_minor}
+                      onChange={(e) => setApprovalForm((f) => ({ ...f, specialization_minor: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">None / Not Decided</option>
+                      {SPECIALIZATIONS.filter((s) => s !== approvalForm.specialization_major).map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              {/* Sticky Actions Footer */}
+              <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setApprovingReg(null)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -957,29 +1027,42 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
 
       {/* Reject Modal */}
       {rejectingReg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reject Registration</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Please state a reason for rejecting <strong>{rejectingReg.full_name}</strong>'s application. This reason will be visible to the student when they log in.
-            </p>
-            <textarea
-              className="w-full h-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-rose-500"
-              placeholder="Reason for rejection..."
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-            />
-            <div className="flex justify-end gap-3 pt-2">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full sm:max-w-md rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reject Registration</h3>
               <button
                 onClick={() => setRejectingReg(null)}
-                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 sm:p-6 space-y-4 touch-scroll">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Please state a reason for rejecting <strong className="text-slate-900 dark:text-white">{rejectingReg.full_name}</strong>'s application. This reason will be visible to the student when they log in.
+              </p>
+              <textarea
+                className="w-full h-28 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-rose-500 resize-none"
+                placeholder="Reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+              />
+            </div>
+            {/* Footer */}
+            <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex justify-end gap-3 shrink-0">
+              <button
+                onClick={() => setRejectingReg(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={() => rejectMutation.mutate({ regId: rejectingReg.id, reason: rejectionReason })}
                 disabled={rejectMutation.isPending || !rejectionReason.trim()}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-500/20"
               >
                 {rejectMutation.isPending ? 'Rejecting...' : 'Confirm Rejection'}
               </button>

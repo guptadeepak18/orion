@@ -41,6 +41,8 @@ class SessionCreate(BaseModel):
     timetable_id: Optional[UUID] = None
     program_id: UUID
     batch_id: UUID
+    batch_ids: Optional[List[UUID]] = None
+    program_ids: Optional[List[UUID]] = None
     semester_id: UUID
     subject_id: Optional[UUID] = None
     topic_id: Optional[UUID] = None
@@ -62,12 +64,28 @@ class SessionCreate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def clean_uuids(cls, data):
-        return _clean_uuid_fields(data)
+        cleaned = _clean_uuid_fields(data)
+        if isinstance(cleaned, dict):
+            for id_list_key in ("batch_ids", "program_ids"):
+                if id_list_key in cleaned and isinstance(cleaned[id_list_key], list):
+                    res_list = []
+                    for item in cleaned[id_list_key]:
+                        if isinstance(item, UUID):
+                            res_list.append(item)
+                        elif isinstance(item, str) and item.strip():
+                            try:
+                                res_list.append(UUID(item.strip()))
+                            except Exception:
+                                pass
+                    cleaned[id_list_key] = res_list or None
+        return cleaned
 
 
 class SessionUpdate(BaseModel):
     program_id: Optional[UUID] = None
+    program_ids: Optional[List[UUID]] = None
     batch_id: Optional[UUID] = None
+    batch_ids: Optional[List[UUID]] = None
     semester_id: Optional[UUID] = None
     subject_id: Optional[UUID] = None
     topic_id: Optional[UUID] = None
@@ -89,14 +107,32 @@ class SessionUpdate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def clean_uuids(cls, data):
-        return _clean_uuid_fields(data)
+        cleaned = _clean_uuid_fields(data)
+        if isinstance(cleaned, dict):
+            for id_list_key in ("batch_ids", "program_ids"):
+                if id_list_key in cleaned and isinstance(cleaned[id_list_key], list):
+                    res_list = []
+                    for item in cleaned[id_list_key]:
+                        if isinstance(item, UUID):
+                            res_list.append(item)
+                        elif isinstance(item, str) and item.strip():
+                            try:
+                                res_list.append(UUID(item.strip()))
+                            except Exception:
+                                pass
+                    cleaned[id_list_key] = res_list or None
+        return cleaned
 
 
 class SessionResponse(BaseModel):
     id: UUID
     timetable_id: Optional[UUID] = None
     program_id: UUID
+    program_ids: Optional[List[UUID]] = None
+    program_names: Optional[List[str]] = None
     batch_id: UUID
+    batch_ids: Optional[List[UUID]] = None
+    batch_names: Optional[List[str]] = None
     semester_id: UUID
     subject_id: Optional[UUID] = None
     topic_id: Optional[UUID] = None
@@ -274,6 +310,8 @@ class StudentAttendanceRecordResponse(BaseModel):
     student_id: UUID
     student_name: str
     student_prn: str
+    batch_id: Optional[UUID] = None
+    batch_name: Optional[str] = None
     status: Optional[str] = None
     remarks: Optional[str] = None
     session_date: Optional[date] = None
@@ -289,7 +327,13 @@ class StudentAttendanceRecordResponse(BaseModel):
 class SessionAttendanceSheetResponse(BaseModel):
     session_id: UUID
     batch_id: UUID
+    batch_ids: Optional[List[UUID]] = None
     batch_name: Optional[str] = None
+    batch_names: Optional[List[str]] = None
+    program_id: Optional[UUID] = None
+    program_ids: Optional[List[UUID]] = None
+    program_name: Optional[str] = None
+    program_names: Optional[List[str]] = None
     subject_name: Optional[str] = None
     subject_code: Optional[str] = None
     course_category: Optional[str] = "core"

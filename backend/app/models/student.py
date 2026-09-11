@@ -50,7 +50,9 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("batches.id", ondelete="SET NULL"), nullable=True
     )
 
-    # 16. Trimester
+    # 16. Academic Term (Trimester vs Semester)
+    term_type: Mapped[str] = mapped_column(String(20), default="trimester", nullable=False)  # 'trimester' or 'semester'
+    term_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     trimester: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # 17 & 18. Undergraduate Background

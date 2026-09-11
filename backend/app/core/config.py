@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     
     JWT_SECRET_KEY: str = "crc_one_super_secret_jwt_key_2026_change_in_prod"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     LLM_PROVIDER: str = "groq"

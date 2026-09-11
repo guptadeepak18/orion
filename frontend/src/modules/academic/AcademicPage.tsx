@@ -15,11 +15,12 @@ import {
   Search,
   Download,
 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, extractApiErrorMessage } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { DataTable, Column } from '../../components/DataTable';
 import { useRoleAccess } from '../../lib/useRoleAccess';
 import { StudentExportModal } from '../../components/StudentExportModal';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 
 interface Program {
   id: string;
@@ -224,7 +225,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create program');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to create program'));
     },
   });
 
@@ -238,7 +239,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update program');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to update program'));
     },
   });
 
@@ -250,7 +251,7 @@ export const AcademicPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['programs'] });
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to delete program');
+      alert(extractApiErrorMessage(err, 'Failed to delete program'));
     },
   });
 
@@ -265,7 +266,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create batch');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to create batch'));
     },
   });
 
@@ -279,7 +280,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update batch');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to update batch'));
     },
   });
 
@@ -291,7 +292,7 @@ export const AcademicPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['batches'] });
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to delete batch');
+      alert(extractApiErrorMessage(err, 'Failed to delete batch'));
     },
   });
 
@@ -306,7 +307,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to create division');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to create division'));
     },
   });
 
@@ -320,7 +321,7 @@ export const AcademicPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update division');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to update division'));
     },
   });
 
@@ -332,7 +333,7 @@ export const AcademicPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['divisions'] });
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to delete division');
+      alert(extractApiErrorMessage(err, 'Failed to delete division'));
     },
   });
 
@@ -350,7 +351,7 @@ export const AcademicPage: React.FC = () => {
       setTargetBatchId('');
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to reassign student batch');
+      alert(extractApiErrorMessage(err, 'Failed to reassign student batch'));
     },
   });
 
@@ -370,7 +371,7 @@ export const AcademicPage: React.FC = () => {
       setSelectedStudentIds(new Set());
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to assign students');
+      alert(extractApiErrorMessage(err, 'Failed to assign students'));
     },
   });
 
@@ -389,7 +390,7 @@ export const AcademicPage: React.FC = () => {
       setSelectedDivStudentIds(new Set());
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to update division students');
+      alert(extractApiErrorMessage(err, 'Failed to update division students'));
     },
   });
 
@@ -563,6 +564,24 @@ export const AcademicPage: React.FC = () => {
     }
   }, [urlModal, urlId, urlBatchId, urlDivId, urlStudentId, urlModalTab, programsData, batchesData, divisionsData]);
 
+  // Lock scroll & handle Android back button
+  useModalScrollLock({
+    isOpen: Boolean(modalType || selectedBatchForStudents || selectedDivisionForStudents || reassigningStudent),
+    onClose: () => {
+      if (reassigningStudent) closeReassignModal();
+      else if (selectedDivisionForStudents) closeDivisionStudentsModal();
+      else if (selectedBatchForStudents) closeBatchStudentsModal();
+      else if (modalType) closeModal();
+    },
+  });
+
+  // Auto-populate programIdInput when programsData loads
+  useEffect(() => {
+    if ((modalType === 'createBatch' || modalType === 'createDivision') && !programIdInput && programsData && programsData.length > 0) {
+      setProgramIdInput(programsData[0].id);
+    }
+  }, [modalType, programIdInput, programsData]);
+
   const handleConfirmReassign = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reassigningStudent || !targetBatchId) return;
@@ -594,42 +613,46 @@ export const AcademicPage: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
     if (modalType === 'createProgram') {
-      createProgramMutation.mutate({ name: nameInput, code: codeInput, description: descInput });
+      createProgramMutation.mutate({ name: nameInput.trim(), code: codeInput.trim(), description: descInput.trim() });
     } else if (modalType === 'editProgram' && selectedId) {
       updateProgramMutation.mutate({
         id: selectedId,
-        payload: { name: nameInput, code: codeInput, description: descInput },
+        payload: { name: nameInput.trim(), code: codeInput.trim(), description: descInput.trim() },
       });
     } else if (modalType === 'createBatch') {
+      const selectedProgId = programIdInput || (programsData && programsData.length > 0 ? programsData[0].id : undefined);
       createBatchMutation.mutate({
-        program_id: programIdInput || undefined,
-        name: nameInput,
-        code: codeInput,
+        program_id: selectedProgId,
+        name: nameInput.trim(),
+        code: codeInput.trim(),
       });
     } else if (modalType === 'editBatch' && selectedId) {
+      const selectedProgId = programIdInput || (programsData && programsData.length > 0 ? programsData[0].id : undefined);
       updateBatchMutation.mutate({
         id: selectedId,
         payload: {
-          program_id: programIdInput || undefined,
-          name: nameInput,
-          code: codeInput,
+          program_id: selectedProgId,
+          name: nameInput.trim(),
+          code: codeInput.trim(),
         },
       });
     } else if (modalType === 'createDivision') {
+      const selectedProgId = programIdInput || (programsData && programsData.length > 0 ? programsData[0].id : '');
       createDivisionMutation.mutate({
-        program_id: programIdInput,
-        name: nameInput,
-        code: codeInput,
-        description: descInput,
+        program_id: selectedProgId,
+        name: nameInput.trim(),
+        code: codeInput.trim(),
+        description: descInput.trim(),
       });
     } else if (modalType === 'editDivision' && selectedId) {
+      const selectedProgId = programIdInput || (programsData && programsData.length > 0 ? programsData[0].id : undefined);
       updateDivisionMutation.mutate({
         id: selectedId,
         payload: {
-          program_id: programIdInput || undefined,
-          name: nameInput,
-          code: codeInput,
-          description: descInput,
+          program_id: selectedProgId,
+          name: nameInput.trim(),
+          code: codeInput.trim(),
+          description: descInput.trim(),
         },
       });
     }
@@ -831,10 +854,10 @@ export const AcademicPage: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 overflow-x-auto touch-scroll no-scrollbar">
         <button
           onClick={() => handleTabChange('programs')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
+          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 whitespace-nowrap shrink-0 transition-colors ${
             activeTab === 'programs'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -845,7 +868,7 @@ export const AcademicPage: React.FC = () => {
         </button>
         <button
           onClick={() => handleTabChange('batches')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
+          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 whitespace-nowrap shrink-0 transition-colors ${
             activeTab === 'batches'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -856,7 +879,7 @@ export const AcademicPage: React.FC = () => {
         </button>
         <button
           onClick={() => handleTabChange('divisions')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 transition-colors ${
+          className={`pb-3 text-sm font-medium border-b-2 flex items-center space-x-2 whitespace-nowrap shrink-0 transition-colors ${
             activeTab === 'divisions'
               ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 font-semibold'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -915,80 +938,82 @@ export const AcademicPage: React.FC = () => {
 
       {/* Batch Students Enrollment Modal */}
       {selectedBatchForStudents && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-4xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Students in {selectedBatchForStudents.name} ({selectedBatchForStudents.code})
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Manage enrolled students and assign unallocated students to this batch.
-                </p>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-4xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header with Title, Actions & Tabs */}
+            <div className="sticky top-0 z-20 px-5 pt-4 pb-0 sm:px-6 sm:pt-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shrink-0">
+              <div className="flex items-center justify-between pb-3">
+                <div className="min-w-0 pr-3">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                    Students in {selectedBatchForStudents.name} ({selectedBatchForStudents.code})
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    Manage enrolled students and assign unallocated students to this batch.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    onClick={() =>
+                      setExportTarget({
+                        title: `Batch: ${selectedBatchForStudents.name}`,
+                        subtitle: `Batch Code: ${selectedBatchForStudents.code}`,
+                        students: batchStudentsData || [],
+                        filenamePrefix: `Batch_${selectedBatchForStudents.name}_Students`,
+                      })
+                    }
+                    disabled={!batchStudentsData || batchStudentsData.length === 0}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                    title="Export student list to Excel (.xlsx)"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Export XLSX</span>
+                  </button>
+                  <button
+                    onClick={() => closeBatchStudentsModal()}
+                    className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() =>
-                    setExportTarget({
-                      title: `Batch: ${selectedBatchForStudents.name}`,
-                      subtitle: `Batch Code: ${selectedBatchForStudents.code}`,
-                      students: batchStudentsData || [],
-                      filenamePrefix: `Batch_${selectedBatchForStudents.name}_Students`,
-                    })
-                  }
-                  disabled={!batchStudentsData || batchStudentsData.length === 0}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
-                  title="Export student list to Excel (.xlsx)"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Export XLSX</span>
-                </button>
-                <button
-                  onClick={() => closeBatchStudentsModal()}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
 
-            {/* Tab navigation within Modal */}
-            <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
-              <button
-                onClick={() => {
-                  setBatchModalTab('enrolled');
-                  updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'enrolled' });
-                }}
-                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
-                  batchModalTab === 'enrolled'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Users className="h-4 w-4" />
-                <span>Enrolled Students ({batchStudentsData?.length || 0})</span>
-              </button>
-              <button
-                onClick={() => {
-                  setBatchModalTab('unassigned');
-                  updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'unassigned' });
-                }}
-                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
-                  batchModalTab === 'unassigned'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <UserPlus className="h-4 w-4" />
-                <span>
-                  Enroll Remaining Students (
-                  {(allStudentsData || []).filter((s) => !s.batch_id).length})
-                </span>
-              </button>
+              {/* Tab navigation within Sticky Header */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    setBatchModalTab('enrolled');
+                    updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'enrolled' });
+                  }}
+                  className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                    batchModalTab === 'enrolled'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  <span>Enrolled ({batchStudentsData?.length || 0})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setBatchModalTab('unassigned');
+                    updateUrlModal('batchStudents', { batchId: selectedBatchForStudents.id, modalTab: 'unassigned' });
+                  }}
+                  className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                    batchModalTab === 'unassigned'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>
+                    Enroll Remaining ({(allStudentsData || []).filter((s) => !s.batch_id).length})
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 touch-scroll">
               {batchModalTab === 'enrolled' ? (
                 batchStudentsLoading ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
@@ -1006,8 +1031,8 @@ export const AcademicPage: React.FC = () => {
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {batchStudentsData?.map((s) => (
-                      <div key={s.id} className="py-3 flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
+                      <div key={s.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center space-x-3 min-w-0">
                           <div className="h-9 w-9 rounded-full bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-700 dark:text-cyan-300 font-bold text-xs">
                             {s.full_name.charAt(0)}
                           </div>
@@ -1141,7 +1166,7 @@ export const AcademicPage: React.FC = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-3">
+            <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end space-x-3 shrink-0">
               <button
                 onClick={() => setSelectedBatchForStudents(null)}
                 className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -1157,7 +1182,7 @@ export const AcademicPage: React.FC = () => {
                 >
                   {bulkAssignStudentsMutation.isPending
                     ? 'Enrolling...'
-                    : `Enroll ${selectedStudentIds.size} Selected Student(s)`}
+                    : `Enroll ${selectedStudentIds.size} Selected`}
                 </button>
               )}
             </div>
@@ -1167,80 +1192,83 @@ export const AcademicPage: React.FC = () => {
 
       {/* Division Students Modal */}
       {selectedDivisionForStudents && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-4xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Students in Division {selectedDivisionForStudents.name} ({selectedDivisionForStudents.code})
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Parent Program: <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedDivisionForStudents.program_name}</span>
-                </p>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-4xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header with Title, Actions & Tabs */}
+            <div className="sticky top-0 z-20 px-5 pt-4 pb-0 sm:px-6 sm:pt-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shrink-0">
+              <div className="flex items-center justify-between pb-3">
+                <div className="min-w-0 pr-3">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                    Students in Division {selectedDivisionForStudents.name} ({selectedDivisionForStudents.code})
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    Parent Program: <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedDivisionForStudents.program_name}</span>
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    onClick={() =>
+                      setExportTarget({
+                        title: `Division: ${selectedDivisionForStudents.name}`,
+                        subtitle: `Program: ${selectedDivisionForStudents.program_name || 'Academic Program'}`,
+                        students: divStudentsData || [],
+                        filenamePrefix: `Division_${selectedDivisionForStudents.name}_Students`,
+                      })
+                    }
+                    disabled={!divStudentsData || divStudentsData.length === 0}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                    title="Export student list to Excel (.xlsx)"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Export XLSX</span>
+                  </button>
+                  <button
+                    onClick={() => closeDivisionStudentsModal()}
+                    className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() =>
-                    setExportTarget({
-                      title: `Division: ${selectedDivisionForStudents.name}`,
-                      subtitle: `Program: ${selectedDivisionForStudents.program_name || 'Academic Program'}`,
-                      students: divStudentsData || [],
-                      filenamePrefix: `Division_${selectedDivisionForStudents.name}_Students`,
-                    })
-                  }
-                  disabled={!divStudentsData || divStudentsData.length === 0}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
-                  title="Export student list to Excel (.xlsx)"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Export XLSX</span>
-                </button>
-                <button
-                  onClick={() => closeDivisionStudentsModal()}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
 
-            {/* Tab navigation within Modal */}
-            <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-800 mt-4">
-              <button
-                onClick={() => {
-                  setDivModalTab('enrolled');
-                  updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'enrolled' });
-                }}
-                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
-                  divModalTab === 'enrolled'
-                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Users className="h-4 w-4" />
-                <span>Assigned Students ({divStudentsData?.length || 0})</span>
-              </button>
-              <button
-                onClick={() => {
-                  setDivModalTab('unassigned');
-                  updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'unassigned' });
-                }}
-                className={`pb-2.5 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
-                  divModalTab === 'unassigned'
-                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <UserPlus className="h-4 w-4" />
-                <span>
-                  Assign Remaining Program Students (
-                  {(programStudentsData || []).filter((s) => !divStudentsData?.some((ds) => ds.id === s.id)).length})
-                </span>
-              </button>
+              {/* Tab navigation within Sticky Header */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    setDivModalTab('enrolled');
+                    updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'enrolled' });
+                  }}
+                  className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                    divModalTab === 'enrolled'
+                      ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  <span>Assigned ({divStudentsData?.length || 0})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setDivModalTab('unassigned');
+                    updateUrlModal('divisionStudents', { divId: selectedDivisionForStudents.id, modalTab: 'unassigned' });
+                  }}
+                  className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors ${
+                    divModalTab === 'unassigned'
+                      ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>
+                    Assign Remaining (
+                    {(programStudentsData || []).filter((s) => !divStudentsData?.some((ds) => ds.id === s.id)).length})
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 touch-scroll">
               {divModalTab === 'enrolled' ? (
                 divStudentsLoading ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
@@ -1258,8 +1286,8 @@ export const AcademicPage: React.FC = () => {
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {divStudentsData?.map((s) => (
-                      <div key={s.id} className="py-3 flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
+                      <div key={s.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center space-x-3 min-w-0">
                           <div className="h-9 w-9 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-xs">
                             {s.full_name.charAt(0)}
                           </div>
@@ -1398,7 +1426,7 @@ export const AcademicPage: React.FC = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-3">
+            <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end space-x-3 shrink-0">
               <button
                 onClick={() => setSelectedDivisionForStudents(null)}
                 className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -1414,7 +1442,7 @@ export const AcademicPage: React.FC = () => {
                 >
                   {assignDivisionStudentsMutation.isPending
                     ? 'Assigning...'
-                    : `Assign ${selectedDivStudentIds.size} Student(s) to Division`}
+                    : `Assign ${selectedDivStudentIds.size} Student(s)`}
                 </button>
               )}
             </div>
@@ -1424,36 +1452,47 @@ export const AcademicPage: React.FC = () => {
 
       {/* Reassign Batch Confirmation Modal */}
       {reassigningStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-md rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-              Reassign Student Batch
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-              Select an active batch to transfer <span className="font-bold text-slate-900 dark:text-slate-100">{reassigningStudent.full_name}</span> (PRN: {reassigningStudent.prn_number}).
-            </p>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full sm:max-w-md rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Reassign Student Batch
+              </h3>
+              <button
+                onClick={() => closeReassignModal()}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            <form onSubmit={handleConfirmReassign} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Target Batch
-                </label>
-                <select
-                  value={targetBatchId}
-                  onChange={(e) => setTargetBatchId(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                >
-                  {(batchesData || [])
-                    .filter((b) => b.id !== selectedBatchForStudents?.id)
-                    .map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name || b.code}
-                      </option>
-                    ))}
-                </select>
+            <form onSubmit={handleConfirmReassign} className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 touch-scroll">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Select an active batch to transfer <span className="font-bold text-slate-900 dark:text-slate-100">{reassigningStudent.full_name}</span> (PRN: {reassigningStudent.prn_number}).
+                </p>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    Target Batch
+                  </label>
+                  <select
+                    value={targetBatchId}
+                    onChange={(e) => setTargetBatchId(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                  >
+                    {(batchesData || [])
+                      .filter((b) => b.id !== selectedBatchForStudents?.id)
+                      .map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name || b.code}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end space-x-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => closeReassignModal()}
@@ -1476,95 +1515,104 @@ export const AcademicPage: React.FC = () => {
 
       {/* Unified Dynamic Modal */}
       {modalType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-lg rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-              {modalType === 'createProgram' && 'Create Academic Program'}
-              {modalType === 'editProgram' && 'Edit Academic Program'}
-              {modalType === 'createBatch' && 'Create Batch'}
-              {modalType === 'editBatch' && 'Edit Batch'}
-              {modalType === 'createDivision' && 'Create Division'}
-              {modalType === 'editDivision' && 'Edit Division'}
-            </h3>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full max-h-[92dvh] sm:max-h-[90dvh] sm:max-w-lg rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                {modalType === 'createProgram' && 'Create Academic Program'}
+                {modalType === 'editProgram' && 'Edit Academic Program'}
+                {modalType === 'createBatch' && 'Create Batch'}
+                {modalType === 'editBatch' && 'Edit Batch'}
+                {modalType === 'createDivision' && 'Create Division'}
+                {modalType === 'editDivision' && 'Edit Division'}
+              </h3>
+              <button
+                onClick={() => closeModal()}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            {errorMsg && (
-              <div className="p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs font-semibold">
-                {errorMsg}
-              </div>
-            )}
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 touch-scroll">
+                {errorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs font-semibold">
+                    {errorMsg}
+                  </div>
+                )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Program selection for Batches & Divisions */}
-              {(modalType === 'createBatch' || modalType === 'editBatch' || modalType === 'createDivision' || modalType === 'editDivision') && programsData && programsData.length > 0 && (
+                {/* Program selection for Batches & Divisions */}
+                {(modalType === 'createBatch' || modalType === 'editBatch' || modalType === 'createDivision' || modalType === 'editDivision') && programsData && programsData.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                      Parent Academic Program
+                    </label>
+                    <select
+                      value={programIdInput || (programsData && programsData.length > 0 ? programsData[0].id : '')}
+                      onChange={(e) => setProgramIdInput(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                    >
+                      {programsData.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} — {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Name Input */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    Parent Academic Program
+                    {modalType.includes('Division')
+                      ? 'Division Name'
+                      : modalType.includes('Batch')
+                      ? 'Batch Name'
+                      : 'Program Name'}
                   </label>
-                  <select
-                    value={programIdInput}
-                    onChange={(e) => setProgramIdInput(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
-                  >
-                    {programsData.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} — {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Name Input */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  {modalType.includes('Division')
-                    ? 'Division Name'
-                    : modalType.includes('Batch')
-                    ? 'Batch Name'
-                    : 'Program Name'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter name..."
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              {/* Code Input */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Code
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. DIV-A or BATCH-2026"
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              {/* Description for Program or Division */}
-              {(modalType === 'createProgram' || modalType === 'editProgram' || modalType === 'createDivision' || modalType === 'editDivision') && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    placeholder="Overview and description..."
-                    value={descInput}
-                    onChange={(e) => setDescInput(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 h-20"
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter name..."
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
-              )}
 
+                {/* Code Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. DIV-A or BATCH-2026"
+                    value={codeInput}
+                    onChange={(e) => setCodeInput(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                {/* Description for Program or Division */}
+                {(modalType === 'createProgram' || modalType === 'editProgram' || modalType === 'createDivision' || modalType === 'editDivision') && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      placeholder="Overview and description..."
+                      value={descInput}
+                      onChange={(e) => setDescInput(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 h-20"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end space-x-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => closeModal()}

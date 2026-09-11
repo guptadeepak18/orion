@@ -19,6 +19,16 @@ from app.models.lms import (
     AssessmentSubmission, ActivitySubmission
 )
 from app.models.gradebook import StudentSubjectGrade
+from app.models.ideathon import (
+    Ideathon,
+    IdeathonTeam,
+    IdeathonTeamMember,
+    IdeathonSubmission,
+    IdeathonEvaluation,
+    HyperbuildIncubatedProject,
+    HyperbuildProjectMilestone,
+    IdeathonCertificate,
+)
 
 __all__ = [
     "Base",
@@ -55,5 +65,13 @@ __all__ = [
     "Notification",
     "AuditLog",
     "AIAgentRun",
+    "Ideathon",
+    "IdeathonTeam",
+    "IdeathonTeamMember",
+    "IdeathonSubmission",
+    "IdeathonEvaluation",
+    "HyperbuildIncubatedProject",
+    "HyperbuildProjectMilestone",
+    "IdeathonCertificate",
 ]
 

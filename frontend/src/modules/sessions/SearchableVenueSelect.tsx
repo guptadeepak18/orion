@@ -90,8 +90,8 @@ export const SearchableVenueSelect: React.FC<SearchableVenueSelectProps> = ({
       {/* Main trigger button */}
       <div
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`w-full px-3 py-2 rounded-xl text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 flex items-center justify-between cursor-pointer transition-all duration-150 hover:border-slate-300 dark:hover:border-slate-600 focus-within:ring-2 focus-within:ring-cyan-500/40 focus-within:border-cyan-500 ${
-          isOpen ? 'ring-2 ring-cyan-500/40 border-cyan-500 dark:border-cyan-400' : ''
+        className={`w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 flex items-center justify-between cursor-pointer transition-colors hover:border-slate-400 dark:hover:border-slate-600 focus-within:border-slate-500 ${
+          isOpen ? 'border-slate-500 dark:border-slate-400' : ''
         }`}
       >
         <div className="flex items-center space-x-2 truncate">
@@ -115,7 +115,7 @@ export const SearchableVenueSelect: React.FC<SearchableVenueSelectProps> = ({
           )}
           <ChevronDown
             className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-              isOpen ? 'rotate-180 text-cyan-500' : ''
+              isOpen ? 'rotate-180 text-slate-600 dark:text-slate-300' : ''
             }`}
           />
         </div>
@@ -123,7 +123,7 @@ export const SearchableVenueSelect: React.FC<SearchableVenueSelectProps> = ({
 
       {/* Dropdown Menu Popup */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden animate-fadeIn">
+        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden">
           {/* Search filter input */}
           <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
             <div className="relative">
@@ -146,7 +146,7 @@ export const SearchableVenueSelect: React.FC<SearchableVenueSelectProps> = ({
                     setIsOpen(false);
                   }
                 }}
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-slate-500"
               />
             </div>
           </div>
@@ -174,17 +174,17 @@ export const SearchableVenueSelect: React.FC<SearchableVenueSelectProps> = ({
                     key={venueName}
                     type="button"
                     onClick={() => handleSelect(venueName)}
-                    className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors text-left cursor-pointer ${
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition-colors text-left cursor-pointer ${
                       isSelected
-                        ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 font-bold'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                     }`}
                   >
                     <div className="flex items-center space-x-2">
-                      <MapPin className={`h-3.5 w-3.5 ${isSelected ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} />
+                      <MapPin className={`h-3.5 w-3.5 ${isSelected ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`} />
                       <span>{venueName}</span>
                     </div>
-                    {isSelected && <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />}
+                    {isSelected && <Check className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />}
                   </button>
                 );
               })

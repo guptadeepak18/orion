@@ -956,7 +956,7 @@ export const FacultyPage: React.FC = () => {
               {/* SECTION 1: PERSONAL & CONTACT */}
               {formSection === 'personal' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Employee ID <span className="text-rose-500">*</span>
@@ -985,7 +985,7 @@ export const FacultyPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Official Email <span className="text-rose-500">*</span>
@@ -1013,7 +1013,7 @@ export const FacultyPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Department
@@ -1053,7 +1053,7 @@ export const FacultyPage: React.FC = () => {
               {/* SECTION 2: ACADEMIC & RESEARCH */}
               {formSection === 'academic' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Highest Qualification
@@ -1194,7 +1194,7 @@ export const FacultyPage: React.FC = () => {
               {/* SECTION 1: PERSONAL & ORG */}
               {formSection === 'personal' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Full Name <span className="text-rose-500">*</span>
@@ -1222,7 +1222,7 @@ export const FacultyPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Email Address <span className="text-rose-500">*</span>
@@ -1255,7 +1255,7 @@ export const FacultyPage: React.FC = () => {
               {/* SECTION 2: ACADEMIC & EXPERTISE */}
               {formSection === 'academic' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         Highest Qualification
@@ -1305,7 +1305,7 @@ export const FacultyPage: React.FC = () => {
                     <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
                       <Briefcase className="h-4 w-4 text-cyan-500" /> Commercial Engagement & Rate
                     </h4>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Rate Type</label>
                         <select
@@ -1329,7 +1329,7 @@ export const FacultyPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase mb-1">Agreement Start Date</label>
                         <input
@@ -1368,7 +1368,7 @@ export const FacultyPage: React.FC = () => {
                       </label>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Permanent Account Number (PAN) *</label>
                         <input
@@ -1442,7 +1442,7 @@ export const FacultyPage: React.FC = () => {
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <User className="h-4 w-4 text-indigo-500" /> Personal & Contact Info
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Employee ID:</span> {viewInternal.employee_id}</p>
                   <p><span className="font-semibold text-slate-500">Email:</span> {viewInternal.email}</p>
                   <p><span className="font-semibold text-slate-500">Phone:</span> {viewInternal.phone || '—'}</p>
@@ -1455,7 +1455,7 @@ export const FacultyPage: React.FC = () => {
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <GraduationCap className="h-4 w-4 text-indigo-500" /> Academic & Research Profile
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Qualification:</span> {viewInternal.highest_qualification || '—'}</p>
                   <p><span className="font-semibold text-slate-500">Experience:</span> {viewInternal.experience_years ? `${viewInternal.experience_years} Years` : '—'}</p>
                   <p><span className="font-semibold text-slate-500">Specialization:</span> {viewInternal.specialization || '—'}</p>
@@ -1522,7 +1522,7 @@ export const FacultyPage: React.FC = () => {
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <User className="h-4 w-4 text-cyan-500" /> Personal & Contact Info
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Email:</span> {viewExternal.email}</p>
                   <p><span className="font-semibold text-slate-500">Phone:</span> {viewExternal.phone || '—'}</p>
                   <p><span className="font-semibold text-slate-500">Gender:</span> {viewExternal.gender || '—'}</p>
@@ -1534,7 +1534,7 @@ export const FacultyPage: React.FC = () => {
                 <h4 className="font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
                   <CreditCard className="h-4 w-4 text-emerald-500" /> Financial & Rate Vault
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Standard Rate:</span> ₹{viewExternal.standard_rate.toLocaleString()} / {viewExternal.standard_rate_type.replace('_', ' ')}</p>
                   <p><span className="font-semibold text-slate-500">GST Status:</span> <span className={`font-semibold ${viewExternal.is_gst_applicable ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>{viewExternal.is_gst_applicable ? `GST Registered (${viewExternal.gst_rate_percent ?? 18}%)` : 'GST Exempt / Non-GST'}</span></p>
                 </div>

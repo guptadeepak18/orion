@@ -214,8 +214,9 @@ async def list_subjects(
         from app.services.attendance_service import get_faculty_profile_id_by_user_id
         fac_id, resolved_type = await get_faculty_profile_id_by_user_id(db, user_id)
         if not fac_id:
-            return ResponseEnvelope(data=[])
-        fac_type = resolved_type or "internal"
+            fac_id = None
+        else:
+            fac_type = resolved_type or "internal"
 
     subjects = await academic_service.list_subjects(
         db,

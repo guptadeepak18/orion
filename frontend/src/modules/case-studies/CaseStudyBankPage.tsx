@@ -657,11 +657,11 @@ export const CaseStudyBankPage: React.FC = () => {
   return (
     <div className="space-y-6 animate-fadeIn pb-20">
       {/* Header Banner (Clean Light Background) */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm relative">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 p-4 sm:p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm relative">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 shrink-0">
                 <Briefcase className="h-3.5 w-3.5" /> Institutional Repository
               </span>
               <span className="text-xs text-slate-500 font-medium">Lexicon MILE Management Studies</span>
@@ -677,7 +677,7 @@ export const CaseStudyBankPage: React.FC = () => {
           {isFacultyOrAdmin && (
             <button
               onClick={() => openCreateModal()}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md shadow-indigo-500/20 transition-all hover:scale-105 shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md shadow-indigo-500/20 transition-all hover:scale-105 shrink-0 cursor-pointer self-start sm:self-auto"
             >
               <Plus className="h-4 w-4" /> Add Case Study
             </button>
@@ -686,10 +686,10 @@ export const CaseStudyBankPage: React.FC = () => {
       </div>
 
       {/* Metrics Row (Meaningful Academic Repository Metrics) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Metric 1: Total Case Studies */}
         <Card className="p-4 flex items-center gap-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+          <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 shrink-0">
             <Briefcase className="h-5 w-5" />
           </div>
           <div>
@@ -700,7 +700,7 @@ export const CaseStudyBankPage: React.FC = () => {
 
         {/* Metric 2: Publisher Sources */}
         <Card className="p-4 flex items-center gap-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="p-3 rounded-2xl bg-cyan-50 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400">
+          <div className="p-3 rounded-2xl bg-cyan-50 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400 shrink-0">
             <Building2 className="h-5 w-5" />
           </div>
           <div>
@@ -713,7 +713,7 @@ export const CaseStudyBankPage: React.FC = () => {
 
         {/* Metric 3: Disciplines & Domains */}
         <Card className="p-4 flex items-center gap-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400">
+          <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 shrink-0">
             <Layers className="h-5 w-5" />
           </div>
           <div>
@@ -726,7 +726,7 @@ export const CaseStudyBankPage: React.FC = () => {
 
         {/* Metric 4: Authors & Contributors */}
         <Card className="p-4 flex items-center gap-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+          <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 shrink-0">
             <GraduationCap className="h-5 w-5" />
           </div>
           <div>
@@ -739,7 +739,7 @@ export const CaseStudyBankPage: React.FC = () => {
       </div>
 
       {/* Multi-Dimensional Filter & Search Toolbar */}
-      <div className="space-y-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="space-y-4 p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
         {/* Row 1: Primary Search Bar, Sort & View Mode Toggle */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Search Box with generous width */}

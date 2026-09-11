@@ -440,19 +440,19 @@ export const LMSPage: React.FC = () => {
         <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03]"
           style={{ backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
 
-        <div className="relative z-10 px-6 py-6 sm:px-8 sm:py-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="relative z-10 p-4 sm:p-6 md:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
           {/* Left: Title */}
           <div className="space-y-3 max-w-2xl">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
                 <GraduationCap className="h-3.5 w-3.5" />
                 {isStudent ? 'Learning Portal' : 'LMS Hub'}
               </span>
-              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
                 Active · 2025–26
               </span>
               {isStudent && avgAttendance !== null && (
-                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shrink-0 ${
                   avgAttendance >= 75 
                     ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                     : avgAttendance >= 60
@@ -477,16 +477,16 @@ export const LMSPage: React.FC = () => {
 
 
       {/* ── Search + Controls Bar ────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
         {/* Search */}
-        <div className="relative flex-1 min-w-[240px]">
+        <div className="relative flex-1 min-w-[200px]">
           <label htmlFor="lms-search" className="sr-only">Search courses</label>
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           <input
             id="lms-search"
             type="search"
             placeholder="Search courses, codes, programs… (⌘K)"
-            className="w-full pl-10 pr-12 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400 transition-all shadow-sm"
+            className="w-full pl-10 pr-12 py-2.5 sm:py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400 transition-all shadow-sm"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             autoComplete="off"
@@ -505,7 +505,7 @@ export const LMSPage: React.FC = () => {
         {/* Filter toggle */}
         <button
           onClick={() => setShowFilters(v => !v)}
-          className={`inline-flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-bold transition-all shadow-sm cursor-pointer ${showFilters ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600'}`}
+          className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer ${showFilters ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600'}`}
         >
           <Filter className="h-4 w-4" />
           Filters
@@ -513,7 +513,7 @@ export const LMSPage: React.FC = () => {
         </button>
 
         {/* Sort Dropdown */}
-        <div className="relative hidden sm:block">
+        <div className="relative">
           <select
             value={`${sortBy}-${sortOrder}`}
             onChange={(e) => {
@@ -521,7 +521,7 @@ export const LMSPage: React.FC = () => {
               setSortBy(newSortBy as typeof sortBy);
               setSortOrder(newSortOrder as typeof sortOrder);
             }}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-3 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none shadow-sm"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 sm:px-3 py-2.5 sm:py-3 pr-8 sm:pr-10 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none shadow-sm"
             aria-label="Sort courses"
           >
             <option value="name-asc">Name A-Z</option>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,11 +15,58 @@ import {
   Layers,
   GraduationCap,
   UserCheck,
-  AlertCircle
+  AlertCircle,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { useRoleAccess } from '../../lib/useRoleAccess';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
+
+class AllocationErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('FacultyAllocation Tab Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 rounded-3xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-center space-y-4">
+          <div className="h-12 w-12 rounded-2xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 mx-auto flex items-center justify-center">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-rose-900 dark:text-rose-200">
+              Unable to display allocation list
+            </h3>
+            <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 max-w-md mx-auto">
+              A temporary rendering issue occurred. Click the button below to refresh allocation data.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              window.location.reload();
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition-colors shadow-sm"
+          >
+            <RotateCcw className="h-4 w-4" /> Reload Allocations
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface FacultyAllocation {
   id: string;
@@ -93,7 +141,7 @@ interface ExternalFaculty {
   is_active: boolean;
 }
 
-export const FacultySubjectAllocationTab: React.FC = () => {
+const FacultySubjectAllocationTabContent: React.FC = () => {
   const queryClient = useQueryClient();
   const { canManageCurriculum } = useRoleAccess();
 
@@ -110,7 +158,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
 
   // Modal Form Inputs
   const [subjectIdInput, setSubjectIdInput] = useState('');
-  const [batchIdInput, setBatchIdInput] = useState('');
+  const [batchIdsInput, setBatchIdsInput] = useState<string[]>([]); // multi-batch
   const [facTypeInput, setFacTypeInput] = useState<'internal' | 'external'>('internal');
   const [facInternalIdInput, setFacInternalIdInput] = useState('');
   const [facExternalIdInput, setFacExternalIdInput] = useState('');
@@ -169,6 +217,17 @@ export const FacultySubjectAllocationTab: React.FC = () => {
       return res.data.data.filter((f: ExternalFaculty) => f.is_active);
     },
   });
+
+  // Auto-initialize dropdowns when data loads while modal is open (or opens before data arrives)
+  useEffect(() => {
+    if (isModalOpen && !editingAllocation) {
+      if (!subjectIdInput && subjects.length > 0) setSubjectIdInput(subjects[0].id);
+      if (batchIdsInput.length === 0 && batches.length > 0) setBatchIdsInput([batches[0].id]);
+      if (!facInternalIdInput && internalFaculty.length > 0) setFacInternalIdInput(internalFaculty[0].id);
+      if (!facExternalIdInput && externalFaculty.length > 0) setFacExternalIdInput(externalFaculty[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isModalOpen, subjects, batches, internalFaculty, externalFaculty]);
 
   // Mutations
   const createAllocationMutation = useMutation({
@@ -238,7 +297,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
   const openCreateModal = (syncUrl = true) => {
     setEditingAllocation(null);
     setSubjectIdInput(subjects.length > 0 ? subjects[0].id : '');
-    setBatchIdInput(batches.length > 0 ? batches[0].id : '');
+    setBatchIdsInput(batches.length > 0 ? [batches[0].id] : []);
     setFacTypeInput('internal');
     setFacInternalIdInput(internalFaculty.length > 0 ? internalFaculty[0].id : '');
     setFacExternalIdInput(externalFaculty.length > 0 ? externalFaculty[0].id : '');
@@ -256,7 +315,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
   const openEditModal = (alloc: FacultyAllocation, syncUrl = true) => {
     setEditingAllocation(alloc);
     setSubjectIdInput(alloc.subject_id);
-    setBatchIdInput(alloc.batch_id);
+    setBatchIdsInput([alloc.batch_id]); // editing is always single-batch
     setFacTypeInput(alloc.faculty_type || 'internal');
     setFacInternalIdInput(alloc.faculty_internal_id || (internalFaculty.length > 0 ? internalFaculty[0].id : ''));
     setFacExternalIdInput(alloc.faculty_external_id || (externalFaculty.length > 0 ? externalFaculty[0].id : ''));
@@ -277,6 +336,9 @@ export const FacultySubjectAllocationTab: React.FC = () => {
     setEditingAllocation(null);
     setModalError(null);
   };
+
+  // Lock scroll on background viewport and main scroll container
+  useModalScrollLock({ isOpen: isModalOpen, onClose: closeModal });
 
   // Synchronize modal state with URL query parameters
   const urlModal = searchParams.get('modal');
@@ -306,14 +368,13 @@ export const FacultySubjectAllocationTab: React.FC = () => {
       setModalError('Please select a valid subject.');
       return;
     }
-    if (!batchIdInput) {
-      setModalError('Please select a program batch.');
+    if (batchIdsInput.length === 0) {
+      setModalError('Please select at least one program batch.');
       return;
     }
 
-    const payload = {
+    const basePayload = {
       subject_id: subjectIdInput,
-      batch_id: batchIdInput,
       faculty_type: facTypeInput,
       faculty_internal_id: facTypeInput === 'internal' && facInternalIdInput ? facInternalIdInput : null,
       faculty_external_id: facTypeInput === 'external' && facExternalIdInput ? facExternalIdInput : null,
@@ -326,20 +387,26 @@ export const FacultySubjectAllocationTab: React.FC = () => {
     };
 
     if (editingAllocation) {
-      updateAllocationMutation.mutate({ id: editingAllocation.id, payload });
+      // Editing: always single-batch, use batchIdsInput[0]
+      updateAllocationMutation.mutate({ id: editingAllocation.id, payload: { ...basePayload, batch_id: batchIdsInput[0] } });
     } else {
-      createAllocationMutation.mutate(payload);
+      // Creating: fire one mutation per selected batch
+      batchIdsInput.forEach((bid) => {
+        createAllocationMutation.mutate({ ...basePayload, batch_id: bid });
+      });
     }
   };
 
-  // Filtered Allocations
-  const filteredAllocations = allocations.filter((alloc) => {
+  // Filtered Allocations (defensive against any null / undefined values from backend)
+  const filteredAllocations = (allocations || []).filter((alloc) => {
+    if (!alloc) return false;
+    const term = (searchTerm || '').toLowerCase();
     const matchesSearch =
-      alloc.subject_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      alloc.subject_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (alloc.faculty_name && alloc.faculty_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      alloc.batch_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (alloc.program_name && alloc.program_name.toLowerCase().includes(searchTerm.toLowerCase()));
+      (alloc.subject_name || '').toLowerCase().includes(term) ||
+      (alloc.subject_code || '').toLowerCase().includes(term) ||
+      ((alloc.faculty_name || '').toLowerCase().includes(term)) ||
+      (alloc.batch_name || '').toLowerCase().includes(term) ||
+      ((alloc.program_name || '').toLowerCase().includes(term));
 
     const matchesProgram = selectedProgramFilter === 'ALL' || alloc.program_id === selectedProgramFilter;
     const matchesBatch = selectedBatchFilter === 'ALL' || alloc.batch_id === selectedBatchFilter;
@@ -350,10 +417,10 @@ export const FacultySubjectAllocationTab: React.FC = () => {
   });
 
   // Calculate Summary Statistics
-  const uniqueSubjectsCount = new Set(allocations.map((a) => a.subject_id)).size;
-  const uniqueBatchesCount = new Set(allocations.map((a) => a.batch_id)).size;
+  const uniqueSubjectsCount = new Set((allocations || []).map((a) => a?.subject_id).filter(Boolean)).size;
+  const uniqueBatchesCount = new Set((allocations || []).map((a) => a?.batch_id).filter(Boolean)).size;
   const assignedFacultyCount = new Set(
-    allocations.filter((a) => a.faculty_name).map((a) => a.faculty_internal_id || a.faculty_external_id || a.faculty_name)
+    (allocations || []).filter((a) => a?.faculty_name).map((a) => a.faculty_internal_id || a.faculty_external_id || a.faculty_name)
   ).size;
 
   return (
@@ -499,7 +566,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs font-black px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
-                      {alloc.subject_code}
+                      {alloc.subject_code || '—'}
                     </span>
                     {alloc.course_code && (
                       <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
@@ -507,13 +574,13 @@ export const FacultySubjectAllocationTab: React.FC = () => {
                       </span>
                     )}
                     <span className="text-xs font-black text-slate-900 dark:text-white">
-                      {alloc.subject_name}
+                      {alloc.subject_name || 'Subject'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                     <span className="capitalize">{alloc.course_category || 'Core'} Course</span>
                     <span>•</span>
-                    <span>{alloc.credits} Credits</span>
+                    <span>{alloc.credits ?? 3} Credits</span>
                     <span>•</span>
                     <span>{alloc.total_hours || 30} Hours</span>
                   </div>
@@ -525,7 +592,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                 }`}>
-                  {alloc.status}
+                  {alloc.status || 'active'}
                 </span>
               </div>
 
@@ -548,7 +615,7 @@ export const FacultySubjectAllocationTab: React.FC = () => {
                 {alloc.faculty_name ? (
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                      {alloc.faculty_name.charAt(0)}
+                      {(alloc.faculty_name || 'F').trim().charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
@@ -622,8 +689,13 @@ export const FacultySubjectAllocationTab: React.FC = () => {
       )}
 
       {/* CREATE / EDIT ALLOCATION MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      {isModalOpen && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
@@ -676,21 +748,73 @@ export const FacultySubjectAllocationTab: React.FC = () => {
               {/* Field 2: Batch Selection */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                  Target Batch & Program <span className="text-rose-500">*</span>
+                  Target Batch{!editingAllocation && 'es'} & Program <span className="text-rose-500">*</span>
+                  {!editingAllocation && (
+                    <span className="ml-2 text-[10px] font-normal text-indigo-500 normal-case">
+                      Select one or more batches
+                    </span>
+                  )}
                 </label>
-                <select
-                  required
-                  value={batchIdInput}
-                  onChange={(e) => setBatchIdInput(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="" disabled>Select Batch</option>
-                  {batches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.code})
-                    </option>
-                  ))}
-                </select>
+                {editingAllocation ? (
+                  // Edit mode: single batch dropdown (batch is fixed for existing allocations)
+                  <select
+                    required
+                    value={batchIdsInput[0] || ''}
+                    onChange={(e) => setBatchIdsInput([e.target.value])}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="" disabled>Select Batch</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  // Create mode: multi-select checklist
+                  <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                    {batches.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-slate-400">Loading batches…</div>
+                    ) : (
+                      batches.map((b) => {
+                        const checked = batchIdsInput.includes(b.id);
+                        return (
+                          <label
+                            key={b.id}
+                            className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
+                              checked
+                                ? 'bg-indigo-50 dark:bg-indigo-950/40'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setBatchIdsInput(prev =>
+                                  checked ? prev.filter(id => id !== b.id) : [...prev, b.id]
+                                );
+                              }}
+                              className="h-3.5 w-3.5 rounded accent-indigo-600 cursor-pointer"
+                            />
+                            <span className={`text-xs font-semibold ${checked ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                              {b.name}
+                              <span className="ml-1.5 font-mono text-[10px] opacity-60">({b.code})</span>
+                            </span>
+                            {checked && (
+                              <span className="ml-auto text-[10px] font-bold text-indigo-500">✓ Selected</span>
+                            )}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+                {!editingAllocation && batchIdsInput.length > 1 && (
+                  <p className="mt-1.5 text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                    Will create {batchIdsInput.length} allocations (one per selected batch)
+                  </p>
+                )}
               </div>
 
               {/* Field 3: Faculty Type & Faculty Member */}
@@ -875,13 +999,24 @@ export const FacultySubjectAllocationTab: React.FC = () => {
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-md shadow-indigo-500/20 disabled:opacity-50 flex items-center gap-2"
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  {editingAllocation ? 'Save Allocation Changes' : 'Confirm Allocation'}
+                  {editingAllocation
+                    ? 'Save Allocation Changes'
+                    : batchIdsInput.length > 1
+                      ? `Confirm ${batchIdsInput.length} Allocations`
+                      : 'Confirm Allocation'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 };
+
+export const FacultySubjectAllocationTab: React.FC = () => (
+  <AllocationErrorBoundary>
+    <FacultySubjectAllocationTabContent />
+  </AllocationErrorBoundary>
+);

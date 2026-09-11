@@ -34,6 +34,7 @@ import {
   PanelLeftOpen,
   Camera,
   ExternalLink,
+  Trophy,
 } from 'lucide-react';
 import { useAuthStore } from '../lib/store';
 import { StatusBadge } from './StatusBadge';
@@ -260,6 +261,29 @@ const navCategories: NavCategory[] = [
           'approver',
           'reporting_readonly',
           'student',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'competitions',
+    label: 'Competitions & Innovation',
+    items: [
+      {
+        label: 'Ideathon & Incubation Hub',
+        path: '/ideathons',
+        icon: Trophy,
+        badge: 'HyperBuild',
+        badgeColor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+        roles: [
+          'crc_admin',
+          'crc_coordinator',
+          'faculty_internal',
+          'faculty_external',
+          'student',
+          'approver',
+          'finance',
+          'reporting_readonly',
         ],
       },
     ],
@@ -779,14 +803,14 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950">
+      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-950">
         {/* Top Header */}
         <header className="h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-30 shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* Desktop Sidebar Toggle Button */}
             <button
               onClick={toggleSidebarMinimize}
-              className="hidden md:flex p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="hidden md:flex p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
               title={isMinimized ? 'Expand Sidebar' : 'Minimize Sidebar'}
             >
               {isMinimized ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
@@ -795,26 +819,26 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             {/* Mobile Menu Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white md:hidden hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white md:hidden hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
             >
               <Menu className="h-5 w-5" />
             </button>
 
             {/* Breadcrumb / Institutional Identifier */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-extrabold text-slate-800 dark:text-slate-200 hidden sm:inline">
+            <div className="flex items-center gap-2 text-xs min-w-0">
+              <span className="font-extrabold text-slate-800 dark:text-slate-200 hidden sm:inline shrink-0">
                 Lexicon MILE
               </span>
-              <span className="text-slate-400 hidden sm:inline">/</span>
-              <span className="font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
-                <Compass className="h-3.5 w-3.5" />
-                {activePageTitle}
+              <span className="text-slate-400 hidden sm:inline shrink-0">/</span>
+              <span className="font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-none">
+                <Compass className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{activePageTitle}</span>
               </span>
             </div>
           </div>
 
           {/* Top Right Header Controls */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
             <ThemeSwitcher />
 
             {/* User Profile Dropdown Pill */}
@@ -972,7 +996,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
         </header>
 
         {/* Page Container */}
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1 page-enter">{children || <Outlet />}</div>
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1 min-w-0">{children || <Outlet />}</div>
 
         {/* Operational Copilot Drawer */}
         {(userRoles.includes('crc_admin') || userRoles.includes('crc_coordinator')) && (

@@ -36,8 +36,10 @@ class StudentCreate(BaseModel):
     batch_id: Optional[UUID] = None
     division_ids: Optional[List[UUID]] = None
 
-    # 16. Trimester
-    trimester: int = Field(1, ge=1, le=6, description="Trimester number (1, 2, 3, 4, 5, 6)")
+    # 16. Academic Term (Trimester vs Semester)
+    term_type: Literal["trimester", "semester"] = Field("trimester", description="Academic term pattern (trimester or semester)")
+    term_number: int = Field(1, ge=1, le=8, description="Term number (1-6 for trimester, 1-8 for semester)")
+    trimester: int = Field(1, ge=1, le=8, description="Trimester number for backwards compatibility")
 
     # 17 & 18. Undergraduate Background
     ug_degree: str = Field(..., min_length=1, description="Undergraduate Degree (e.g. B.Tech, B.Com, BBA)")
@@ -77,7 +79,9 @@ class StudentUpdate(BaseModel):
     program_id: Optional[UUID] = None
     batch_id: Optional[UUID] = None
     division_ids: Optional[List[UUID]] = None
-    trimester: Optional[int] = Field(None, ge=1, le=6)
+    term_type: Optional[Literal["trimester", "semester"]] = None
+    term_number: Optional[int] = Field(None, ge=1, le=8)
+    trimester: Optional[int] = Field(None, ge=1, le=8)
     ug_degree: Optional[str] = None
     ug_score_type: Optional[Literal["percentage", "cgpa"]] = None
     ug_score: Optional[float] = None
@@ -130,7 +134,9 @@ class StudentResponse(BaseModel):
     division_ids: List[UUID] = []
     division_names: List[str] = []
 
-    # 16. Trimester
+    # 16. Academic Term (Trimester vs Semester)
+    term_type: str = "trimester"
+    term_number: int = 1
     trimester: int = 1
 
     # 17 & 18. Undergraduate Background

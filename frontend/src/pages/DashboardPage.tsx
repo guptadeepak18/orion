@@ -18,6 +18,7 @@ import {
   FileText,
   GraduationCap,
   BookOpen,
+  Trophy,
   Building2,
   Quote,
   Sparkles,
@@ -247,6 +248,20 @@ export const DashboardPage: React.FC = () => {
     }
     return 'User';
   };
+
+  // ── Active Competitions & Innovation Hub (View-Only for Faculty, Staff & All Users) ──
+  const { data: dashboardIdeathons = [] } = useQuery<any[]>({
+    queryKey: ['dashboard_ideathons'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/ideathons');
+        return res.data?.data || [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60000,
+  });
 
   // ── Role-Specific Summary Queries ─────────────────────────────────────────
   const { data: studentSummary, isLoading: studentSummaryLoading } = useQuery<StudentDashboardSummary>({
@@ -566,7 +581,7 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* ── TOP BANNER: WELCOME & REAL-TIME DIGITAL CLOCK ─────────────────── */}
-      <div className="glass-panel rounded-3xl p-6 md:p-8 border border-slate-200/90 dark:border-slate-800/80 relative overflow-hidden transition-all duration-300 shadow-sm bg-gradient-to-r from-slate-50/80 via-indigo-50/30 to-cyan-50/50 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-slate-950/90 space-y-4">
+      <div className="glass-panel rounded-3xl p-4 sm:p-6 md:p-8 border border-slate-200/90 dark:border-slate-800/80 relative overflow-hidden transition-all duration-300 shadow-sm bg-gradient-to-r from-slate-50/80 via-indigo-50/30 to-cyan-50/50 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-slate-950/90 space-y-4">
         <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-cyan-500/10 via-indigo-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
         {/* Top Section: Greeting & Live Clock */}
@@ -575,7 +590,7 @@ export const DashboardPage: React.FC = () => {
             <h1 className="text-2xl md:text-3.5xl font-extrabold tracking-tight text-slate-900 dark:text-white">
               {getGreeting()}, <span className="gradient-text">{getDisplayName()}</span>
             </h1>
-            <p className="text-slate-600 dark:text-slate-400 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+            <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm font-medium break-words">
               {isStudent && (
                 <>
                   Academic Student Portal •{' '}
@@ -642,7 +657,7 @@ export const DashboardPage: React.FC = () => {
                 </span>
                 <p className="text-xs sm:text-sm italic font-medium text-slate-700 dark:text-slate-300">
                   &ldquo;{thoughtData.thought}&rdquo;
-                  <span className="not-italic font-bold text-slate-900 dark:text-slate-100 ml-1.5 whitespace-nowrap">
+                  <span className="not-italic font-bold text-slate-900 dark:text-slate-100 ml-1.5">
                     — {thoughtData.author}
                   </span>
                 </p>
@@ -1797,6 +1812,103 @@ export const DashboardPage: React.FC = () => {
               </div>
             </Card>
           )}
+
+          {/* Active Competitions & Innovation Hub (View-Only for Faculties, Staff & All Accounts) */}
+          <Card
+            title="Active Competitions & Innovation Hub"
+            subtitle="Live student ideathons, hackathons & venture challenges"
+            action={
+              <Link
+                to="/ideathons"
+                className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center space-x-1"
+              >
+                <span>View All Hub</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            }
+          >
+            {dashboardIdeathons.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 text-center text-xs text-slate-500 dark:text-slate-400">
+                <Trophy className="h-6 w-6 mx-auto mb-1.5 text-amber-500 opacity-60" />
+                <p>No active competitions running at the moment.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {dashboardIdeathons.slice(0, 4).map((c: any) => {
+                  const isClosed = c.registration_end_at ? new Date() > new Date(c.registration_end_at) : false;
+                  const regDeadlineStr = c.registration_end_at
+                    ? new Date(c.registration_end_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      })
+                    : 'Open';
+
+                  return (
+                    <div
+                      key={c.id}
+                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+                            {c.status?.replace('_', ' ') || 'ACTIVE'}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {c.total_teams || 0} ventures registered
+                          </span>
+                        </div>
+
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">
+                          {c.title}
+                        </h4>
+
+                        <p className="text-[11px] text-cyan-600 dark:text-cyan-400 font-semibold line-clamp-1">
+                          Theme: {c.theme}
+                        </p>
+
+                        {/* Registration Deadline with Date and Time */}
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span>
+                            Cutoff:{' '}
+                            <strong className={isClosed ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}>
+                              {regDeadlineStr}
+                            </strong>
+                            {isClosed && <span className="text-rose-500 text-[10px] font-bold ml-1">(Closed)</span>}
+                          </span>
+                        </div>
+
+                        {/* Assigned Lead Faculty */}
+                        {c.lead_faculty && (
+                          <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 pt-0.5">
+                            <GraduationCap className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>
+                              Lead:{' '}
+                              <strong className="text-slate-700 dark:text-slate-300">
+                                {c.lead_faculty.full_name}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* View Only Action Link */}
+                      <Link
+                        to={`/ideathons/${c.id}`}
+                        className="inline-flex items-center justify-between w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 hover:border-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors shadow-2xs"
+                      >
+                        <span>View Details (View-Only)</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* Right 1 Column: Meaningful Contextual Insights */}

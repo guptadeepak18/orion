@@ -595,7 +595,7 @@ export const AdminGradebookDashboard: React.FC<AdminGradebookDashboardProps> = (
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     Letter Grade Breakdown
                   </h4>
-                  <div className="grid grid-cols-4 gap-2 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                     {Object.entries(subjectAnalytics.grade_breakdown || subjectAnalytics.grade_distribution || {}).map(([grd, count]: [string, any]) => (
                       <div key={grd} className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
                         <span className="font-mono font-bold text-xs text-slate-900 dark:text-white block">{grd}</span>

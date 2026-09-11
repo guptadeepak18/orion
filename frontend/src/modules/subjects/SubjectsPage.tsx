@@ -32,8 +32,10 @@ import {
   Users,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { createPortal } from 'react-dom';
 import { Card } from '../../components/Card';
 import { useRoleAccess } from '../../lib/useRoleAccess';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 import { HyperbuildActivitiesModal } from './HyperbuildActivitiesModal';
 import { UnitContentFormatter } from './UnitContentFormatter';
 import { FacultySubjectAllocationTab } from './FacultySubjectAllocationTab';
@@ -634,6 +636,9 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
     setSyllabusSubTab('overview');
   };
 
+  // Lock scroll on background viewport and main scroll container
+  useModalScrollLock({ isOpen: Boolean(modalType), onClose: closeModal });
+
   const openCreateSubject = (syncUrl = true) => {
     closeModal(false);
     setModalType('createSubject');
@@ -949,10 +954,10 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
     <div className="space-y-6">
       {/* Primary Navigation Tabs: Subjects Catalog vs Faculty Allocation */}
       {canManageCurriculum && (
-        <div className="flex items-center space-x-2 border-b-2 border-slate-200 dark:border-slate-800 pb-3">
+        <div className="flex items-center gap-2 border-b-2 border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto touch-scroll no-scrollbar max-w-full">
           <button
             onClick={() => handleSectionTabChange('subjects')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer shrink-0 whitespace-nowrap ${
               activeSection === 'subjects'
                 ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -962,7 +967,7 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
           </button>
           <button
             onClick={() => handleSectionTabChange('allocations')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer shrink-0 whitespace-nowrap ${
               activeSection === 'allocations'
                 ? 'bg-indigo-600 dark:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -999,10 +1004,10 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
           </div>
 
           {/* Filter Tabs: Active vs Archived */}
-          <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto touch-scroll no-scrollbar max-w-full">
             <button
               onClick={() => setViewTab('active')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                 viewTab === 'active'
                   ? 'bg-cyan-600 dark:bg-cyan-500 text-white shadow-md'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1012,7 +1017,7 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
             </button>
             <button
               onClick={() => setViewTab('archived')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                 viewTab === 'archived'
                   ? 'bg-amber-600 dark:bg-amber-500 text-white shadow-md'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1043,7 +1048,7 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
         ) : (
           subjectsData.map((subject) => {
             return (
-              <Card key={subject.id} className="p-6 transition-all duration-200 hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4">
+              <Card key={subject.id} className="p-4 sm:p-6 transition-all duration-200 hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl space-y-4">
                 {/* 1. Header Row: Codes, Title, and Category Badges */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-2.5 flex-wrap min-w-0">
@@ -1247,8 +1252,13 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
   )}
 
       {/* Create / Edit Subject Basic Modal */}
-      {(modalType === 'createSubject' || modalType === 'editSubject') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      {(modalType === 'createSubject' || modalType === 'editSubject') && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -1275,78 +1285,90 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
                     <input
                       type="text"
                       required
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 font-semibold"
-                      placeholder="e.g. Legal Aspects of Business"
+                      placeholder="e.g. Corporate Finance & Valuations"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
                       value={nameInput}
                       onChange={(e) => setNameInput(e.target.value)}
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                      Subject Code <span className="text-rose-500">*</span>
+                      Institutional Subject Code <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 font-semibold font-mono"
-                      placeholder="e.g. LAB"
+                      placeholder="e.g. SUB-FIN-201"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
                       value={codeInput}
                       onChange={(e) => setCodeInput(e.target.value)}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                      Course Catalog Code
+                      Course Code <span className="text-slate-400 font-normal">(Curriculum)</span>
                     </label>
                     <input
                       type="text"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 font-mono"
-                      placeholder="e.g. 1GNC02 / PGDM-501"
+                      placeholder="e.g. FIN-101"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
                       value={courseCodeInput}
                       onChange={(e) => setCourseCodeInput(e.target.value)}
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">Official course code in syllabus & catalog</p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                      Instructional Hours (Total Hours)
+                      Course Category <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-slate-800/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setCourseCategoryInput('core')}
+                        className={`py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          courseCategoryInput === 'core'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Core
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCourseCategoryInput('elective')}
+                        className={`py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          courseCategoryInput === 'elective'
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Elective
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Target Hours
                     </label>
                     <input
                       type="number"
                       min="1"
-                      max="300"
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
-                      placeholder="e.g. 30"
                       value={totalHoursInput}
                       onChange={(e) => setTotalHoursInput(parseInt(e.target.value) || 0)}
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">Total planned instructional delivery hours</p>
                   </div>
                 </div>
 
-                {/* Course Category (Core vs Elective) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                      Course Type <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white font-medium focus:outline-none focus:border-cyan-500 cursor-pointer"
-                      value={courseCategoryInput}
-                      onChange={(e) => setCourseCategoryInput(e.target.value as 'core' | 'elective')}
-                    >
-                      <option value="core">Core Course</option>
-                      <option value="elective">Elective</option>
-                    </select>
-                    <p className="text-[11px] text-slate-400 mt-1">Mandatory core course or student elective</p>
-                  </div>
-
+                {/* Elective Domain Options */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60">
                   {courseCategoryInput === 'elective' ? (
-                    <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border-2 border-purple-400 dark:border-purple-500 ring-4 ring-purple-400/20 shadow-md">
+                    <div>
                       <label className="block text-xs font-black text-purple-900 dark:text-purple-300 uppercase tracking-wider mb-1 flex items-center justify-between">
                         <span>Specialization Domain <span className="text-rose-500">*</span></span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
@@ -1423,12 +1445,13 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* SEPARATE DEDICATED WINDOW 1: 9-SECTION STRUCTURED SYLLABUS BUILDER MODAL */}
-      {modalType === 'syllabusModal' && selectedSubject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      {modalType === 'syllabusModal' && selectedSubject && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
           <div
             role="dialog"
             aria-modal="true"
@@ -2481,12 +2504,18 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* SEPARATE DEDICATED WINDOW 2: Session Plan Modal */}
-      {modalType === 'sessionPlanModal' && selectedSubject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      {modalType === 'sessionPlanModal' && selectedSubject && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div>
@@ -2615,11 +2644,12 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* IN-APP SESSION PLAN DOCUMENT PREVIEW MODAL */}
-      {isSessionPlanPreviewOpen && selectedSubject && (
+      {isSessionPlanPreviewOpen && selectedSubject && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-5xl w-full p-6 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
             {/* Header */}
@@ -2711,7 +2741,8 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
               })()}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* SEPARATE DEDICATED WINDOW 3: HyperBuild AI Activities Manager & Controlled Release System */}
@@ -2856,8 +2887,13 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
       )}
 
       {/* SEPARATE DEDICATED WINDOW 3: Session Completion Report Modal */}
-      {modalType === 'report' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      {modalType === 'report' && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div>
@@ -2916,7 +2952,8 @@ export const SubjectsPage: React.FC<SubjectsPageProps> = ({ initialTab }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

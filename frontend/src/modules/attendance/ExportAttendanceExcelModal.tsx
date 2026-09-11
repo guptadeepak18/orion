@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 import * as XLSX from 'xlsx';
 
 export interface ExportFieldOption {
@@ -146,6 +147,8 @@ export const ExportAttendanceExcelModal: React.FC<ExportAttendanceExcelModalProp
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  useModalScrollLock({ isOpen, onClose });
+
   if (!isOpen) return null;
 
   const toggleField = (key: string) => {
@@ -266,36 +269,36 @@ export const ExportAttendanceExcelModal: React.FC<ExportAttendanceExcelModalProp
   });
 
   return (
-    <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden max-h-[92vh]">
+    <div className="fixed inset-0 z-80 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md overscroll-contain">
+      <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-emerald-600 text-white font-black shadow-md shadow-emerald-500/20">
+        <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0 pr-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-600 text-white font-black shadow-md shadow-emerald-500/20 shrink-0">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
+            <div className="min-w-0">
+              <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2 truncate">
                 Export Attendance to Excel
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
                   .XLSX Format
                 </span>
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                 Choose exactly which student, class, and attendance fields to include in your spreadsheet.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-5 touch-scroll">
           {/* Filename & Scope Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -468,7 +471,7 @@ export const ExportAttendanceExcelModal: React.FC<ExportAttendanceExcelModalProp
         </div>
 
         {/* Modal Footer */}
-        <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 flex items-center justify-between">
+        <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500 font-bold">
             <span className="text-indigo-600 dark:text-indigo-400">{selectedKeys.length}</span> of {ALL_EXPORT_FIELDS.length} columns selected
           </div>

@@ -105,11 +105,11 @@ export const LoginPage: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-6 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-8 items-center">
         {/* Left Platform Overview Column */}
         <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
           {/* Headline */}
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
             Your central hub for{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 dark:from-cyan-400 dark:via-blue-400 dark:to-indigo-400">
               classes, attendance & learning.
@@ -117,7 +117,7 @@ export const LoginPage: React.FC = () => {
           </h1>
 
           {/* Subtitle */}
-          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+          <p className="text-sm sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
             Welcome to Orion — the unified portal for students and faculty. Access your daily schedules, monitor real-time attendance compliance, review subject materials, and access industry case studies.
           </p>
 
@@ -183,7 +183,7 @@ export const LoginPage: React.FC = () => {
 
         {/* Right Authentication Card (Dedicated Sign In) */}
         <div className="lg:col-span-5 w-full max-w-md mx-auto">
-          <div className="relative rounded-3xl p-7 sm:p-9 bg-white/85 dark:bg-slate-900/85 backdrop-blur-2xl border border-slate-200/90 dark:border-slate-800/90 shadow-2xl shadow-cyan-500/5 transition-all duration-200">
+          <div className="relative rounded-2xl sm:rounded-3xl p-5 sm:p-9 bg-white/85 dark:bg-slate-900/85 backdrop-blur-2xl border border-slate-200/90 dark:border-slate-800/90 shadow-2xl shadow-cyan-500/5 transition-all duration-200">
             {/* Ambient Card Glow */}
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-cyan-500/10 dark:bg-cyan-500/15 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-indigo-500/10 dark:bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />

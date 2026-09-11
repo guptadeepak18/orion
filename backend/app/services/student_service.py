@@ -118,6 +118,12 @@ async def create_student(db: AsyncSession, s_in: StudentCreate) -> Student:
     if not data.get("enrollment_no"):
         data["enrollment_no"] = data.get("prn_number", "")
 
+    # Synchronize term_number and trimester
+    if data.get("term_number"):
+        data["trimester"] = data["term_number"]
+    elif data.get("trimester"):
+        data["term_number"] = data["trimester"]
+
     student = Student(**data)
     db.add(student)
     await db.flush()
@@ -266,6 +272,14 @@ async def update_student(db: AsyncSession, student_id: UUID, s_in: StudentUpdate
     for field, value in update_dict.items():
         setattr(student, field, value)
 
+    # Sync term_number and trimester
+    if "term_number" in update_dict and update_dict["term_number"] is not None:
+        student.trimester = update_dict["term_number"]
+        student.term_number = update_dict["term_number"]
+    elif "trimester" in update_dict and update_dict["trimester"] is not None:
+        student.term_number = update_dict["trimester"]
+        student.trimester = update_dict["trimester"]
+
     # Sync computed full name and fields
     first = (student.first_name or "").strip()
     last = (student.last_name or "").strip()
@@ -323,6 +337,18 @@ def to_student_response(student: Student) -> StudentResponse:
     if hasattr(student, "divisions") and student.divisions:
         resp.division_ids = [d.id for d in student.divisions if not d.is_deleted]
         resp.division_names = [d.name for d in student.divisions if not d.is_deleted]
+
+    # Term system fallback
+    if not getattr(resp, "term_type", None):
+        p_name = (student.program.name if student.program else "").upper()
+        p_code = (student.program.code if student.program else "").upper()
+        if "BBA" in p_name or "HMCT" in p_name or "BBA" in p_code or "HMCT" in p_code:
+            resp.term_type = "semester"
+        else:
+            resp.term_type = "trimester"
+    if not getattr(resp, "term_number", None):
+        resp.term_number = getattr(student, "trimester", 1) or 1
+
     return resp
 
 

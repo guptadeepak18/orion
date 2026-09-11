@@ -17,10 +17,14 @@ for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&s
         db_url = db_url.replace(ssl_param, "")
         connect_args["ssl"] = "require"
 
-# For asyncpg + PgBouncer / cloud poolers, disable prepared statement cache and add command timeout
+# For asyncpg + cloud PostgreSQL, disable prepared statement cache, set command timeout, and prevent lingering transactions
 if "asyncpg" in db_url:
     connect_args["statement_cache_size"] = 0
-    connect_args["command_timeout"] = 60
+    connect_args["command_timeout"] = 30
+    connect_args["server_settings"] = {
+        "idle_in_transaction_session_timeout": "10000",  # 10s timeout to release hung connections
+        "statement_timeout": "30000",                     # 30s statement timeout
+    }
 
 # Handle SQLite for testing if needed
 if db_url.startswith("sqlite"):
@@ -32,15 +36,16 @@ if db_url.startswith("sqlite"):
         connect_args=connect_args,
     )
 else:
-    # Optimized connection pool for cloud PostgreSQL (Aiven Developer-1 cap: 20 connections)
+    # Optimized connection pool for cloud PostgreSQL (Aiven Developer-1 cap: 20 max connections total across all services)
+    # Aiven background workers use 10-12 connections. 2 Cloud Run instances with max 4 connections each stay well within the cap.
     engine = create_async_engine(
         db_url,
         echo=False,
         future=True,
-        pool_size=5,
-        max_overflow=2,
-        pool_timeout=15.0,
-        pool_recycle=300,
+        pool_size=3,
+        max_overflow=1,
+        pool_timeout=10.0,
+        pool_recycle=60,
         pool_pre_ping=True,
         connect_args=connect_args,
     )

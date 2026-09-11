@@ -81,7 +81,7 @@ export const CalendarPage: React.FC = () => {
             {events.map((event) => (
               <div
                 key={event.id}
-                className="p-4 rounded-xl glass-card border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 flex items-center justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm"
+                className="p-4 rounded-xl glass-card border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm"
               >
                 <div className="flex items-center space-x-4">
                   <div className="h-12 w-12 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex flex-col items-center justify-center text-cyan-700 dark:text-cyan-400">

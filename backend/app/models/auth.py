@@ -51,5 +51,5 @@ class User(Base, TimestampMixin):
     password_reset_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     roles: Mapped[List["Role"]] = relationship(
-        "Role", secondary="user_roles", back_populates="users", lazy="joined"
+        "Role", secondary="user_roles", back_populates="users", lazy="selectin"
     )

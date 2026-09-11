@@ -112,7 +112,12 @@ async def get_allocated_sessions_for_user(
     if subject_id:
         query = query.where(Session.subject_id == subject_id)
     if batch_id:
-        query = query.where(Session.batch_id == batch_id)
+        query = query.where(
+            or_(
+                Session.batch_id == batch_id,
+                Session.batch_ids.contains([str(batch_id)]),
+            )
+        )
 
     if category == "hyperbuild":
         query = query.where(or_(Session.session_type == "hyperbuild", Session.venue.ilike("%hyperbuild%")))
@@ -155,6 +160,9 @@ async def get_allocated_sessions_for_user(
     res = await db.execute(query)
     sessions = res.scalars().all()
 
+    all_b_res = await db.execute(select(Batch.id, Batch.name))
+    all_b_map = {row[0]: row[1] for row in all_b_res.all()}
+
     # Preload attendance stats for these sessions
     session_ids = [s.id for s in sessions]
     att_stats: Dict[UUID, Dict[str, Any]] = {}
@@ -188,6 +196,17 @@ async def get_allocated_sessions_for_user(
 
         is_hb = s.session_type == "hyperbuild" or (s.venue and "hyperbuild" in s.venue.lower())
 
+        raw_bids = s.batch_ids if (s.batch_ids and isinstance(s.batch_ids, list)) else ([str(s.batch_id)] if s.batch_id else [])
+        b_names = []
+        for b in raw_bids:
+            try:
+                buuid = UUID(str(b))
+                if buuid in all_b_map:
+                    b_names.append(all_b_map[buuid])
+            except Exception:
+                pass
+        combined_batch_name = ", ".join(b_names) if b_names else (s.batch.name if s.batch else None)
+
         output.append({
             "id": s.id,
             "session_date": s.session_date,
@@ -198,7 +217,9 @@ async def get_allocated_sessions_for_user(
             "category_label": "HyperBuild Session" if is_hb else "Academic Lecture",
             "program_name": s.program.name if s.program else None,
             "batch_id": s.batch_id,
-            "batch_name": s.batch.name if s.batch else None,
+            "batch_ids": raw_bids,
+            "batch_name": combined_batch_name,
+            "batch_names": b_names,
             "subject_id": s.subject_id,
             "subject_name": s.subject.name if s.subject else ("HyperBuild Session" if is_hb else "Class Session"),
             "subject_code": s.subject.code if s.subject else ("HB" if is_hb else "SUB"),
@@ -352,8 +373,18 @@ async def mark_and_lock_session_attendance(
 
     await db.commit()
 
-    # Recalculate automatic attendance percentage for all students in this batch
-    await recalculate_batch_student_attendance(db, session.batch_id)
+    # Recalculate automatic attendance percentage for all students across member batches
+    all_bids = [session.batch_id] if session.batch_id else []
+    if session.batch_ids and isinstance(session.batch_ids, list):
+        for bid in session.batch_ids:
+            try:
+                uid = bid if isinstance(bid, uuid.UUID) else uuid.UUID(str(bid))
+                if uid not in all_bids:
+                    all_bids.append(uid)
+            except Exception:
+                pass
+    for bid in all_bids:
+        await recalculate_batch_student_attendance(db, bid)
 
     # Trigger student_daily_attendance_absent notifications for absent students
     try:

@@ -25,14 +25,9 @@ async def create_faculty_internal(db: AsyncSession, f_in: FacultyInternalCreate)
 
 
 async def list_faculty_internal(db: AsyncSession) -> List[FacultyInternal]:
-    cached = memory_cache.get("faculty:internal")
-    if cached is not None:
-        return cached
     stmt = select(FacultyInternal).where(FacultyInternal.is_deleted == False).order_by(FacultyInternal.employee_id)
     res = await db.execute(stmt)
-    result = list(res.scalars().all())
-    memory_cache.set("faculty:internal", result, ttl_seconds=60)
-    return result
+    return list(res.scalars().all())
 
 
 async def get_faculty_internal(db: AsyncSession, faculty_id: UUID) -> Optional[FacultyInternal]:
@@ -88,14 +83,9 @@ async def create_faculty_external(db: AsyncSession, f_in: FacultyExternalCreate)
 
 
 async def list_faculty_external(db: AsyncSession) -> List[FacultyExternal]:
-    cached = memory_cache.get("faculty:external")
-    if cached is not None:
-        return cached
     stmt = select(FacultyExternal).where(FacultyExternal.is_deleted == False).order_by(FacultyExternal.name)
     res = await db.execute(stmt)
-    result = list(res.scalars().all())
-    memory_cache.set("faculty:external", result, ttl_seconds=60)
-    return result
+    return list(res.scalars().all())
 
 
 async def get_faculty_external(db: AsyncSession, faculty_id: UUID) -> Optional[FacultyExternal]:

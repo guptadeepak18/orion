@@ -38,14 +38,9 @@ async def get_program(db: AsyncSession, program_id: UUID) -> Optional[Program]:
 
 
 async def list_programs(db: AsyncSession) -> List[Program]:
-    cached = memory_cache.get("academic:programs")
-    if cached is not None:
-        return cached
     stmt = select(Program).order_by(Program.name)
     res = await db.execute(stmt)
-    result = list(res.scalars().all())
-    memory_cache.set("academic:programs", result, ttl_seconds=60)
-    return result
+    return list(res.scalars().all())
 
 
 async def update_program(db: AsyncSession, program_id: UUID, p_in: ProgramUpdate) -> Optional[Program]:
@@ -153,11 +148,6 @@ async def get_batch(db: AsyncSession, batch_id: UUID) -> Optional[Batch]:
 
 
 async def list_batches(db: AsyncSession, program_id: Optional[UUID] = None) -> List[Batch]:
-    cache_key = f"academic:batches:{program_id}"
-    cached = memory_cache.get(cache_key)
-    if cached is not None:
-        return cached
-
     from app.models.student import Student
     from sqlalchemy import func
 
@@ -178,7 +168,6 @@ async def list_batches(db: AsyncSession, program_id: Optional[UUID] = None) -> L
     for b in batches:
         b.student_count = counts.get(b.id, 0)
 
-    memory_cache.set(cache_key, batches, ttl_seconds=60)
     return batches
 
 
@@ -290,11 +279,6 @@ async def list_subjects(
     faculty_id: Optional[UUID] = None,
     faculty_type: Optional[str] = "internal",
 ) -> List[Subject]:
-    cache_key = f"academic:subjects:{batch_id}:{program_id}:{trimester}:{is_archived}:{faculty_id}:{faculty_type}"
-    cached = memory_cache.get(cache_key)
-    if cached is not None:
-        return cached
-
     stmt = (
         select(Subject)
         .options(
@@ -341,9 +325,7 @@ async def list_subjects(
 
     stmt = stmt.order_by(Subject.code)
     res = await db.execute(stmt)
-    results = list(res.scalars().all())
-    memory_cache.set(cache_key, results, ttl_seconds=60)
-    return results
+    return list(res.scalars().all())
 
 
 async def archive_subject(db: AsyncSession, subject_id: UUID) -> Optional[Subject]:
@@ -501,11 +483,6 @@ async def get_division(db: AsyncSession, division_id: UUID) -> Optional[Division
 
 
 async def list_divisions(db: AsyncSession, program_id: Optional[UUID] = None) -> List[Division]:
-    cache_key = f"academic:divisions:{program_id}"
-    cached = memory_cache.get(cache_key)
-    if cached is not None:
-        return cached
-
     from app.models.student import Student, StudentDivision
     from sqlalchemy import func
 
@@ -531,7 +508,6 @@ async def list_divisions(db: AsyncSession, program_id: Optional[UUID] = None) ->
     for d in divisions:
         d.student_count = counts.get(d.id, 0)
 
-    memory_cache.set(cache_key, divisions, ttl_seconds=60)
     return divisions
 
 
@@ -815,9 +791,43 @@ async def create_faculty_subject_allocation(
     await db.commit()
     await db.refresh(target)
 
+    # Invalidate subject cache to immediately reflect new allocations
+    try:
+        from app.core.cache import memory_cache
+        memory_cache.invalidate_prefix("academic:subjects")
+        memory_cache.invalidate_prefix("academic:allocations")
+    except Exception:
+        pass
+
     # Return formatted single record
     all_list = await list_faculty_subject_allocations(db, subject_id=alloc_in.subject_id, batch_id=alloc_in.batch_id)
-    result = all_list[0] if all_list else {"id": target.id, "subject_id": target.subject_id, "batch_id": target.batch_id}
+    if all_list:
+        result = all_list[0]
+    else:
+        subj = (await db.execute(select(Subject).where(Subject.id == alloc_in.subject_id))).scalar_one_or_none()
+        bch = (await db.execute(select(Batch).where(Batch.id == alloc_in.batch_id))).scalar_one_or_none()
+        result = {
+            "id": target.id,
+            "subject_id": target.subject_id,
+            "subject_name": subj.name if subj else "Subject",
+            "subject_code": subj.code if subj else "",
+            "course_code": getattr(subj, "course_code", None),
+            "course_category": getattr(subj, "course_category", "core"),
+            "credits": getattr(subj, "credits", 3),
+            "total_hours": getattr(subj, "total_hours", 30),
+            "batch_id": target.batch_id,
+            "batch_name": bch.name if bch else "Batch",
+            "batch_code": getattr(bch, "code", ""),
+            "faculty_type": target.faculty_type or "internal",
+            "faculty_internal_id": target.faculty_internal_id,
+            "faculty_external_id": target.faculty_external_id,
+            "term_type": target.term_type or "trimester",
+            "term_number": target.term_number or 1,
+            "term_label": target.term_label or f"Trimester {target.term_number or 1}",
+            "start_date": target.start_date,
+            "end_date": target.end_date,
+            "status": target.status or "active",
+        }
 
     # Dispatch faculty allocation email notification
     if all_list:
@@ -867,8 +877,42 @@ async def update_faculty_subject_allocation(
     await db.commit()
     await db.refresh(target)
 
+    # Invalidate subject cache
+    try:
+        from app.core.cache import memory_cache
+        memory_cache.invalidate_prefix("academic:subjects")
+        memory_cache.invalidate_prefix("academic:allocations")
+    except Exception:
+        pass
+
     all_list = await list_faculty_subject_allocations(db, subject_id=target.subject_id, batch_id=target.batch_id)
-    result = all_list[0] if all_list else {"id": target.id}
+    if all_list:
+        result = all_list[0]
+    else:
+        subj = (await db.execute(select(Subject).where(Subject.id == target.subject_id))).scalar_one_or_none()
+        bch = (await db.execute(select(Batch).where(Batch.id == target.batch_id))).scalar_one_or_none()
+        result = {
+            "id": target.id,
+            "subject_id": target.subject_id,
+            "subject_name": subj.name if subj else "Subject",
+            "subject_code": subj.code if subj else "",
+            "course_code": getattr(subj, "course_code", None),
+            "course_category": getattr(subj, "course_category", "core"),
+            "credits": getattr(subj, "credits", 3),
+            "total_hours": getattr(subj, "total_hours", 30),
+            "batch_id": target.batch_id,
+            "batch_name": bch.name if bch else "Batch",
+            "batch_code": getattr(bch, "code", ""),
+            "faculty_type": target.faculty_type or "internal",
+            "faculty_internal_id": target.faculty_internal_id,
+            "faculty_external_id": target.faculty_external_id,
+            "term_type": target.term_type or "trimester",
+            "term_number": target.term_number or 1,
+            "term_label": target.term_label or f"Trimester {target.term_number or 1}",
+            "start_date": target.start_date,
+            "end_date": target.end_date,
+            "status": target.status or "active",
+        }
 
     # Dispatch faculty allocation email notification if active
     if all_list and getattr(target, "status", "active") == "active":

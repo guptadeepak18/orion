@@ -141,30 +141,30 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
       )}
 
       {/* Clean Student Profile Header & Overall KPIs */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-xs space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold font-mono border border-indigo-200 dark:border-indigo-800">
+              <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold font-mono border border-indigo-200 dark:border-indigo-800 shrink-0">
                 PRN: {student.prn || 'N/A'}
               </span>
               {student.divisions?.map((div: string) => (
-                <span key={div} className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium">
+                <span key={div} className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium shrink-0">
                   Div: {div}
                 </span>
               ))}
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-medium border border-emerald-200 dark:border-emerald-800">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-medium border border-emerald-200 dark:border-emerald-800 shrink-0">
                 {student.batch}
               </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{student.name}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{student.name}</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
               {student.program} • Trimester Academic Transcript & Continuous Evaluation
             </p>
           </div>
 
           {/* Clean Quick Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-center">
               <span className="text-[10.5px] uppercase tracking-wider text-slate-400 font-bold block">CGPA (10 pt)</span>
               <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-0.5 block">
@@ -191,16 +191,16 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
         {/* Tier Distribution Badges */}
         <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-slate-400 font-semibold mr-1">Distribution:</span>
-          <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800/40">
+          <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800/40 shrink-0">
             Distinction: {kpis.tier_counts?.Distinction || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/40">
+          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/40 shrink-0">
             Merit: {kpis.tier_counts?.Merit || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800/40">
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800/40 shrink-0">
             Pass: {kpis.tier_counts?.Pass || 0}
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 font-bold border border-rose-200 dark:border-rose-800/40">
+          <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 font-bold border border-rose-200 dark:border-rose-800/40 shrink-0">
             Needs Work: {kpis.tier_counts?.['Needs Work'] || 0}
           </span>
         </div>
@@ -208,10 +208,10 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
 
       {/* View Switcher Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto touch-scroll no-scrollbar max-w-full">
           <button
             onClick={() => setViewMode('combined')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
               viewMode === 'combined'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -226,36 +226,32 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
                 setSelectedSubjectId(subjects[0].subject_id);
               }
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
               viewMode === 'subject'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <BookOpen className="w-3.5 h-3.5" /> Subject-by-Subject Drilldown
+            <BookOpen className="w-3.5 h-3.5" /> Subject Deep Dive
           </button>
         </div>
-
-        <span className="text-[11px] text-slate-400 font-medium">
-          Differentiated by CCE (Continuous), HyperBuild Practical, and Term End Examination
-        </span>
       </div>
 
-      {/* VIEW 1: COMBINED MULTI-SUBJECT MASTER TABLE */}
+      {/* View Mode 1: Combined Academic Performance Matrix */}
       {viewMode === 'combined' && (
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div>
               <h2 className="text-base font-black text-slate-900 dark:text-white">Academic Performance Matrix</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Summary of continuous evaluations, simulation labs, and summative assessments
               </p>
             </div>
-            <span className="text-xs font-bold text-slate-500">{subjects.length} Subjects Active</span>
+            <span className="text-xs font-bold text-slate-500 shrink-0">{subjects.length} Subjects Active</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto touch-scroll">
+            <table className="w-full text-left border-collapse min-w-[850px]">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/60 text-[11px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                   <th className="py-3.5 px-4">Subject & Code</th>
@@ -744,8 +740,8 @@ export const StudentGradebookView: React.FC<StudentGradebookViewProps> = ({
                                 <h6 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                                   Criterion-by-Criterion Rubric Scorecard
                                 </h6>
-                                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                                  <table className="w-full text-left text-xs border-collapse">
+                                <div className="overflow-x-auto touch-scroll rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                                  <table className="w-full text-left text-xs border-collapse min-w-[500px]">
                                     <thead>
                                       <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-[11px] font-black uppercase text-slate-500">
                                         <th className="py-2.5 px-4">Criterion</th>

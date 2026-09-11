@@ -23,12 +23,13 @@ import {
   CheckCircle2,
   Download,
 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, extractApiErrorMessage } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { DataTable, Column } from '../../components/DataTable';
 import { useRoleAccess } from '../../lib/useRoleAccess';
 import { StudentExportModal } from '../../components/StudentExportModal';
 import { StudentRegistrationsPage } from './StudentRegistrationsPage';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 
 interface Program {
   id: string;
@@ -72,6 +73,8 @@ interface Student {
   division_names?: string[];
   program_name?: string;
   batch_name?: string;
+  term_type?: string;
+  term_number?: number;
   trimester: number;
   ug_degree: string;
   ug_score_type: 'percentage' | 'cgpa';
@@ -93,6 +96,7 @@ interface Student {
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const TRIMESTERS = [1, 2, 3, 4, 5, 6];
+const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 const SPECIALIZATIONS = [
   'Marketing',
   'Finance',
@@ -178,7 +182,8 @@ export const StudentsPage: React.FC = () => {
   const [programId, setProgramId] = useState('');
   const [batchId, setBatchId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([]);
-  const [trimester, setTrimester] = useState(1);
+  const [termType, setTermType] = useState<'trimester' | 'semester'>('trimester');
+  const [termNumber, setTermNumber] = useState(1);
   const [ugDegree, setUgDegree] = useState('BBA / BMS');
   const [ugScoreType, setUgScoreType] = useState<'percentage' | 'cgpa'>('cgpa');
   const [ugScore, setUgScore] = useState<number | string>(8.0);
@@ -214,7 +219,7 @@ export const StudentsPage: React.FC = () => {
       const res = await api.get(`/academic/divisions?program_id=${programId}`);
       return res.data.data as Division[];
     },
-    enabled: !!programId,
+    enabled: Boolean(programId),
   });
 
   const { data: studentsData, isLoading } = useQuery({
@@ -243,7 +248,7 @@ export const StudentsPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.response?.data?.detail || 'Failed to create student');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to create student'));
     },
   });
 
@@ -257,19 +262,20 @@ export const StudentsPage: React.FC = () => {
       closeModal();
     },
     onError: (err: any) => {
-      setErrorMsg(err?.response?.data?.error?.message || err?.response?.data?.detail || 'Failed to update student');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to update student'));
     },
   });
 
   const deleteStudentMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/students/${id}`);
+      const res = await api.delete(`/students/${id}`);
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.error?.message || 'Failed to delete student');
+      alert(extractApiErrorMessage(err, 'Failed to delete student'));
     },
   });
 
@@ -296,7 +302,8 @@ export const StudentsPage: React.FC = () => {
     setProgramId('');
     setBatchId('');
     setSelectedDivisionIds([]);
-    setTrimester(1);
+    setTermType('trimester');
+    setTermNumber(1);
     setUgDegree('BBA / BMS');
     setUgScoreType('cgpa');
     setUgScore(8.0);
@@ -307,7 +314,12 @@ export const StudentsPage: React.FC = () => {
 
   const openCreateModal = (syncUrl = true) => {
     closeModal(false);
-    if (programs && programs.length > 0) setProgramId(programs[0].id);
+    if (programs && programs.length > 0) {
+      setProgramId(programs[0].id);
+      const isSem = programs[0].code.toUpperCase().includes('BBA') || programs[0].code.toUpperCase().includes('HMCT');
+      setTermType(isSem ? 'semester' : 'trimester');
+      setTermNumber(1);
+    }
     if (batches && batches.length > 0) setBatchId(batches[0].id);
     setShowModal(true);
     if (syncUrl) updateUrlModal('createStudent', { tab: 'personal' });
@@ -333,7 +345,14 @@ export const StudentsPage: React.FC = () => {
     setProgramId(st.program_id || (programs?.[0]?.id || ''));
     setBatchId(st.batch_id || (batches?.[0]?.id || ''));
     setSelectedDivisionIds(st.division_ids || []);
-    setTrimester(st.trimester || 1);
+
+    const progCode = st.program_name?.toUpperCase() || '';
+    const isSem = progCode.includes('BBA') || progCode.includes('HMCT');
+    const detectedType = (st.term_type || (isSem ? 'semester' : 'trimester')) as 'trimester' | 'semester';
+    const detectedNumber = st.term_number || st.trimester || 1;
+    setTermType(detectedType);
+    setTermNumber(detectedNumber);
+
     setUgDegree(st.ug_degree || 'BBA / BMS');
     setUgScoreType(st.ug_score_type || 'cgpa');
     setUgScore(st.ug_score ?? 8.0);
@@ -362,6 +381,16 @@ export const StudentsPage: React.FC = () => {
     setExportOpen(false);
     if (syncUrl) updateUrlModal(null);
   };
+
+  // Lock scrolling on mobile & handle Android back button
+  useModalScrollLock({
+    isOpen: Boolean(showModal || selectedStudentForReport || exportOpen),
+    onClose: () => {
+      if (showModal) closeModal();
+      else if (selectedStudentForReport) closeStudentProfile();
+      else if (exportOpen) closeExportModal();
+    },
+  });
 
   // Synchronize modal state with URL parameters
   const urlModal = searchParams.get('modal');
@@ -456,7 +485,9 @@ export const StudentsPage: React.FC = () => {
       program_id: programId,
       batch_id: batchId,
       division_ids: selectedDivisionIds,
-      trimester: Number(trimester),
+      term_type: termType,
+      term_number: Number(termNumber),
+      trimester: Number(termNumber),
       ug_degree: ugDegree.trim(),
       ug_score_type: ugScoreType,
       ug_score: Number(ugScore),
@@ -517,7 +548,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
-      header: 'Program & Trimester',
+      header: 'Program & Term',
       accessor: (r) => (
         <div>
           <span className="font-medium text-slate-800 dark:text-slate-200">
@@ -526,7 +557,12 @@ export const StudentsPage: React.FC = () => {
           <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             <span className="font-mono">{r.batch_name || 'Batch 2026'}</span>
             <span className="px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40 text-[10px] font-bold">
-              Trim {r.trimester || 1}
+              {r.term_type === 'semester' ||
+              (!r.term_type &&
+                (r.program_name?.toUpperCase().includes('BBA') ||
+                  r.program_name?.toUpperCase().includes('HMCT')))
+                ? `Sem ${r.term_number || r.trimester || 1}`
+                : `Trim ${r.term_number || r.trimester || 1}`}
             </span>
           </div>
           {r.division_names && r.division_names.length > 0 && (
@@ -746,11 +782,11 @@ export const StudentsPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center space-x-3 w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
             <select
               value={selectedProgramFilter}
               onChange={(e) => setSelectedProgramFilter(e.target.value)}
-              className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500"
+              className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500"
             >
               <option value="">All Programs</option>
               {programs?.map((p) => (
@@ -763,7 +799,7 @@ export const StudentsPage: React.FC = () => {
             <select
               value={selectedBatchFilter}
               onChange={(e) => setSelectedBatchFilter(e.target.value)}
-              className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500"
+              className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500"
             >
               <option value="">All Batches</option>
               {batches?.map((b) => (
@@ -792,98 +828,101 @@ export const StudentsPage: React.FC = () => {
 
       {/* Comprehensive 20-Field Create / Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="glass-panel w-full max-w-3xl rounded-3xl p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 my-8">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">
-                  {editingStudent ? 'Edit Student Information' : 'Enroll New Student Record'}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Complete all 20 required fields for institutional student directory & compliance.
-                </p>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-3xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header with Title & Navigation Tabs */}
+            <div className="sticky top-0 z-20 px-5 pt-4 pb-0 sm:px-6 sm:pt-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shrink-0">
+              <div className="flex items-center justify-between pb-3">
+                <div className="min-w-0 pr-3">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                    {editingStudent ? 'Edit Student Information' : 'Enroll New Student Record'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    Institutional student directory & compliance record.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => closeModal()}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => closeModal()}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
+
+              {/* Horizontal Scrollable Tabs */}
+              <div className="flex overflow-x-auto no-scrollbar space-x-1 sm:space-x-2 -mb-px">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('personal');
+                    updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'personal' });
+                  }}
+                  className={`pb-2.5 px-2.5 sm:px-3 text-xs font-bold border-b-2 flex items-center space-x-1.5 whitespace-nowrap transition-colors ${
+                    activeTab === 'personal'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <User className="h-3.5 w-3.5" />
+                  <span>1. Personal</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('contact');
+                    updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'contact' });
+                  }}
+                  className={`pb-2.5 px-2.5 sm:px-3 text-xs font-bold border-b-2 flex items-center space-x-1.5 whitespace-nowrap transition-colors ${
+                    activeTab === 'contact'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  <span>2. Contacts</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('academic');
+                    updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'academic' });
+                  }}
+                  className={`pb-2.5 px-2.5 sm:px-3 text-xs font-bold border-b-2 flex items-center space-x-1.5 whitespace-nowrap transition-colors ${
+                    activeTab === 'academic'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <GraduationCap className="h-3.5 w-3.5" />
+                  <span>3. Program</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('ug');
+                    updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'ug' });
+                  }}
+                  className={`pb-2.5 px-2.5 sm:px-3 text-xs font-bold border-b-2 flex items-center space-x-1.5 whitespace-nowrap transition-colors ${
+                    activeTab === 'ug'
+                      ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  <span>4. UG</span>
+                </button>
+              </div>
             </div>
 
-            {errorMsg && (
-              <div className="p-3.5 mb-6 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs font-semibold flex items-center space-x-2">
-                <ShieldAlert className="h-4 w-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            {/* Modal Navigation Tabs */}
-            <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 mb-6 space-x-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('personal');
-                  updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'personal' });
-                }}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
-                  activeTab === 'personal'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <User className="h-4 w-4" />
-                <span>1. Personal & Parents</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('contact');
-                  updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'contact' });
-                }}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
-                  activeTab === 'contact'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <Phone className="h-4 w-4" />
-                <span>2. Contacts & Emergency</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('academic');
-                  updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'academic' });
-                }}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
-                  activeTab === 'academic'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <GraduationCap className="h-4 w-4" />
-                <span>3. Program & Specializations</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('ug');
-                  updateUrlModal(editingStudent ? 'editStudent' : 'createStudent', { id: editingStudent?.id, tab: 'ug' });
-                }}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 whitespace-nowrap transition-colors ${
-                  activeTab === 'ug'
-                    ? 'border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>4. UG Background</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 touch-scroll">
+                {errorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 text-xs font-semibold flex items-center space-x-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
               {/* TAB 1: Personal & Family */}
               {activeTab === 'personal' && (
                 <div className="space-y-4 animate-in fade-in duration-200">
@@ -1106,14 +1145,28 @@ export const StudentsPage: React.FC = () => {
               {/* TAB 3: Program & Specializations */}
               {activeTab === 'academic' && (
                 <div className="space-y-4 animate-in fade-in duration-200">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                         14. Program <span className="text-rose-500">*</span>
                       </label>
                       <select
                         value={programId}
-                        onChange={(e) => setProgramId(e.target.value)}
+                        onChange={(e) => {
+                          const newProgId = e.target.value;
+                          setProgramId(newProgId);
+                          const chosenProg = programs?.find((p) => p.id === newProgId);
+                          if (chosenProg) {
+                            const u = (chosenProg.code + ' ' + chosenProg.name).toUpperCase();
+                            if (u.includes('BBA') || u.includes('HMCT')) {
+                              setTermType('semester');
+                              setTermNumber(1);
+                            } else if (u.includes('PGDM') || u.includes('GMBA')) {
+                              setTermType('trimester');
+                              setTermNumber(1);
+                            }
+                          }
+                        }}
                         className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
                       >
                         {programs?.map((p) => (
@@ -1143,18 +1196,45 @@ export const StudentsPage: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                        16. Trimester <span className="text-rose-500">*</span>
+                        16. Term Pattern <span className="text-rose-500">*</span>
                       </label>
                       <select
-                        value={trimester}
-                        onChange={(e) => setTrimester(Number(e.target.value))}
+                        value={termType}
+                        onChange={(e) => {
+                          const val = e.target.value as 'trimester' | 'semester';
+                          setTermType(val);
+                          setTermNumber(1);
+                        }}
                         className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:border-cyan-500"
                       >
-                        {TRIMESTERS.map((t) => (
-                          <option key={t} value={t}>
-                            Trimester {t}
-                          </option>
-                        ))}
+                        <option value="trimester">Trimester Pattern (PGDM / GMBA)</option>
+                        <option value="semester">Semester Pattern (BBA / HMCT)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                        17. {termType === 'semester' ? 'Semester Number' : 'Trimester Number'} <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={termNumber}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setTermNumber(val);
+                        }}
+                        className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:border-cyan-500"
+                      >
+                        {termType === 'semester'
+                          ? SEMESTERS.map((s) => (
+                              <option key={s} value={s}>
+                                Semester {s}
+                              </option>
+                            ))
+                          : TRIMESTERS.map((t) => (
+                              <option key={t} value={t}>
+                                Trimester {t}
+                              </option>
+                            ))}
                       </select>
                     </div>
                   </div>
@@ -1290,10 +1370,11 @@ export const StudentsPage: React.FC = () => {
                   </div>
                 </div>
               )}
+              </div>
 
-              {/* Modal Footer Controls */}
-              <div className="flex flex-col sm:flex-row items-center justify-between pt-5 border-t border-slate-200 dark:border-slate-800 gap-3">
-                <div className="flex space-x-2 text-xs">
+              {/* Sticky Modal Footer Controls */}
+              <div className="sticky bottom-0 z-20 px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                <div className="flex space-x-2 text-xs w-full sm:w-auto justify-between sm:justify-start">
                   {activeTab !== 'personal' && (
                     <button
                       type="button"
@@ -1304,7 +1385,7 @@ export const StudentsPage: React.FC = () => {
                       }}
                       className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
                     >
-                      ← Previous Section
+                      ← Previous
                     </button>
                   )}
                   {activeTab !== 'ug' && (
@@ -1315,27 +1396,27 @@ export const StudentsPage: React.FC = () => {
                         else if (activeTab === 'contact') setActiveTab('academic');
                         else if (activeTab === 'academic') setActiveTab('ug');
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 font-semibold hover:bg-slate-200 dark:hover:bg-slate-700"
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors ml-auto sm:ml-0"
                     >
-                      Next Section →
+                      Next →
                     </button>
                   )}
                 </div>
 
-                <div className="flex space-x-3">
+                <div className="flex items-center space-x-2 sm:space-x-3 w-full sm:w-auto justify-end">
                   <button
                     type="button"
                     onClick={() => closeModal()}
-                    className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={createStudentMutation.isPending || updateStudentMutation.isPending}
-                    className="px-5 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/20 disabled:opacity-50 transition-all"
+                    className="px-4 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/20 disabled:opacity-50 transition-all cursor-pointer"
                   >
-                    {editingStudent ? 'Update Student Record' : 'Save & Register Student'}
+                    {editingStudent ? 'Update Record' : 'Save & Register'}
                   </button>
                 </div>
               </div>
@@ -1346,12 +1427,12 @@ export const StudentsPage: React.FC = () => {
 
       {/* Comprehensive Student Profile Dossier Modal (All 20 Fields) */}
       {selectedStudentForReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="glass-panel w-full max-w-3xl rounded-3xl p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 transition-colors duration-200 space-y-6 my-8">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-5">
-              <div>
-                <div className="flex items-center space-x-2">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-3xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-start justify-between shrink-0">
+              <div className="min-w-0 pr-3">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800 font-mono">
                     PRN: {selectedStudentForReport.prn_number || selectedStudentForReport.roll_no}
                   </span>
@@ -1362,23 +1443,29 @@ export const StudentsPage: React.FC = () => {
                     {selectedStudentForReport.gender || 'Male'}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                    Trimester {selectedStudentForReport.trimester || 1}
+                    {selectedStudentForReport.term_type === 'semester' ||
+                    (!selectedStudentForReport.term_type &&
+                      (selectedStudentForReport.program_name?.toUpperCase().includes('BBA') ||
+                        selectedStudentForReport.program_name?.toUpperCase().includes('HMCT')))
+                      ? `Semester ${selectedStudentForReport.term_number || selectedStudentForReport.trimester || 1}`
+                      : `Trimester ${selectedStudentForReport.term_number || selectedStudentForReport.trimester || 1}`}
                   </span>
                 </div>
-                <h3 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-2">
+                <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white mt-2 truncate">
                   {selectedStudentForReport.full_name || `${selectedStudentForReport.first_name} ${selectedStudentForReport.last_name || ''}`.trim()}
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {selectedStudentForReport.program_name || 'PGDM Core'} • {selectedStudentForReport.batch_name || 'Batch 2026'}
-                </p>
               </div>
               <button
+                type="button"
                 onClick={() => closeStudentProfile()}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-6 touch-scroll">
 
             {/* Grid of 20 Field Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1490,7 +1577,7 @@ export const StudentsPage: React.FC = () => {
             </div>
 
             {/* Performance Indicators */}
-            <div className="grid grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-2">
               <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/50 text-center">
                 <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">Current CGPA</p>
                 <p className="text-2xl font-bold text-indigo-800 dark:text-indigo-200 mt-0.5">
@@ -1555,7 +1642,19 @@ export const StudentsPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Sticky Footer */}
+          <div className="sticky bottom-0 z-20 px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end space-x-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => closeStudentProfile()}
+              className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+            >
+              Close Dossier
+            </button>
+          </div>
         </div>
+      </div>
       )}
       {/* Student Field Export Modal */}
       {exportOpen && (

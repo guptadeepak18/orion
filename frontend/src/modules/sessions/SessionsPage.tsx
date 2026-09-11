@@ -1,5 +1,6 @@
 import { SearchableVenueSelect } from "./SearchableVenueSelect";
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,6 +15,7 @@ import { DataTable, Column } from '../../components/DataTable';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useRoleAccess } from '../../lib/useRoleAccess';
 import { useAuthStore } from '../../lib/store';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 import { HyperbuildLiveConsoleModal } from './HyperbuildLiveConsoleModal';
 import { StudentHyperbuildModal } from './StudentHyperbuildModal';
 import { AcademicEventModal, AcademicEventItem, EVENT_CATEGORIES } from './AcademicEventModal';
@@ -79,6 +81,10 @@ export interface Session {
   faculty_name?: string;
   program_name?: string;
   batch_name?: string;
+  batch_ids?: string[];
+  batch_names?: string[];
+  program_ids?: string[];
+  program_names?: string[];
   hyperbuild_activities?: Array<{
     id: string;
     activity_no: number;
@@ -100,6 +106,8 @@ interface StudentAttendanceRecord {
   student_id: string;
   student_name: string;
   student_prn: string;
+  batch_id?: string;
+  batch_name?: string;
   status: string;
   remarks?: string;
 }
@@ -108,6 +116,8 @@ interface SessionAttendanceSheet {
   session_id: string;
   batch_id: string;
   batch_name?: string;
+  batch_ids?: string[];
+  batch_names?: string[];
   subject_name?: string;
   session_date: string;
   start_time: string;
@@ -134,10 +144,10 @@ const Field: React.FC<{ label: string; required?: boolean; children: React.React
 );
 
 const inputClass =
-  'w-full px-3 py-2 rounded-xl text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 dark:focus:border-cyan-400 transition-all duration-150';
+  'w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-slate-500 dark:focus:border-slate-400 transition-colors';
 
 const selectClass =
-  'w-full px-3 py-2 rounded-xl text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 dark:focus:border-cyan-400 appearance-none cursor-pointer transition-all duration-150';
+  'w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500 dark:focus:border-slate-400 cursor-pointer transition-colors';
 
 // Date helpers
 const toLocalDateString = (d: Date): string => {
@@ -153,7 +163,9 @@ const getLocalIsoDate = (): string => {
 
 const defaultForm = {
   program_id: '',
+  program_ids: [] as string[],
   batch_id: '',
+  batch_ids: [] as string[],
   semester_id: '',
   subject_id: '',
   topic_id: '',
@@ -437,8 +449,6 @@ export const SessionsPage: React.FC = () => {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Filtered dropdowns
-  const [filteredBatches, setFilteredBatches] = useState<any[]>([]);
-  const [filteredSubjects, setFilteredSubjects] = useState<any[]>([]);
   const [filteredTopics, setFilteredTopics] = useState<any[]>([]);
 
   // ── API data ───────────────────────────────────────────────────────────────
@@ -469,7 +479,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/programs');
       return res.data.data as any[];
     },
-    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -479,7 +489,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return res.data.data as any[];
     },
-    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -489,7 +499,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/divisions');
       return res.data.data as any[];
     },
-    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -499,7 +509,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/subjects');
       return res.data.data as any[];
     },
-    enabled: (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -509,7 +519,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/internal');
       return res.data.data as any[];
     },
-    enabled: isFaculty || (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -519,7 +529,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/faculty/external');
       return res.data.data as any[];
     },
-    enabled: isFaculty || (!isStudent && viewMode === 'calendar') || showClassModal || showEventModal || !!varianceSession || viewMode === 'variance',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -529,7 +539,7 @@ export const SessionsPage: React.FC = () => {
       const res = await api.get('/academic/allocations');
       return (res.data.data || []) as any[];
     },
-    enabled: isFaculty || showClassModal || !!varianceSession,
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -608,23 +618,111 @@ export const SessionsPage: React.FC = () => {
     }
   }, []);
 
-  // Cascade filtering for form
-  useEffect(() => {
-    if (!form.program_id) { setFilteredBatches([]); return; }
-    setFilteredBatches(allBatches.filter((b: any) => b.program_id === form.program_id));
-  }, [form.program_id, allBatches]);
+  // Synchronous cascade filtering for form — always instant and never empty
+  const filteredBatches = useMemo(() => {
+    const pIds = Array.from(new Set([
+      ...(form.program_id ? [form.program_id] : []),
+      ...(form.program_ids || []),
+    ])).filter(Boolean);
+    if (pIds.length === 0) return allBatches;
+    const matched = allBatches.filter((b: any) => pIds.includes(b.program_id));
+    return matched.length > 0 ? matched : allBatches;
+  }, [allBatches, form.program_id, form.program_ids]);
 
+  const filteredSubjects = useMemo(() => {
+    if (!allSubjects || allSubjects.length === 0) return [];
+
+    const bIds = form.batch_ids && form.batch_ids.length > 0
+      ? form.batch_ids
+      : (form.batch_id ? [form.batch_id] : []);
+    const pIds = Array.from(new Set([
+      ...(form.program_id ? [form.program_id] : []),
+      ...(form.program_ids || []),
+    ])).filter(Boolean);
+
+    // 1. If batch(es) selected, find subjects allocated to those batches
+    if (bIds.length > 0) {
+      const batchMatched = allSubjects.filter((s: any) => {
+        const direct = s.batch_id && bIds.includes(s.batch_id);
+        const allocated = (s.batch_allocations || []).some((ba: any) => bIds.includes(ba.batch_id));
+        const inAllAllocs = (allAllocations || []).some(
+          (a: any) => a.subject_id === s.id && bIds.includes(a.batch_id)
+        );
+        return direct || allocated || inAllAllocs;
+      });
+      if (batchMatched.length > 0) return batchMatched;
+    }
+
+    // 2. If program(s) selected, find subjects of those programs
+    if (pIds.length > 0) {
+      const progMatched = allSubjects.filter((s: any) => {
+        const progs = s.programs || [];
+        const hasProgMatch = progs.some((p: any) => pIds.includes(p.id));
+        const directProg = s.program_id && pIds.includes(s.program_id);
+        return hasProgMatch || directProg;
+      });
+      if (progMatched.length > 0) return progMatched;
+    }
+
+    // 3. Fallback: all active subjects so dropdown is NEVER empty!
+    return allSubjects.filter((s: any) => !s.is_archived);
+  }, [allSubjects, allAllocations, form.batch_id, form.batch_ids, form.program_id, form.program_ids]);
+
+  // Sync batch's semester_id
   useEffect(() => {
-    if (!form.batch_id) { setFilteredSubjects([]); return; }
-    const batch = allBatches.find((b: any) => b.id === form.batch_id);
-    if (batch && !form.semester_id) setForm((f) => ({ ...f, semester_id: batch.semester_id }));
-    (async () => {
-      try {
-        const res = await api.get(`/academic/subjects?batch_id=${form.batch_id}`);
-        setFilteredSubjects(res.data.data);
-      } catch { setFilteredSubjects([]); }
-    })();
-  }, [form.batch_id]);
+    const bId = form.batch_id || (form.batch_ids && form.batch_ids.length > 0 ? form.batch_ids[0] : '');
+    if (bId) {
+      const batch = allBatches.find((b: any) => b.id === bId);
+      if (batch && !form.semester_id) setForm((f) => ({ ...f, semester_id: batch.semester_id }));
+    }
+  }, [form.batch_id, form.batch_ids, allBatches, form.semester_id]);
+
+  // Auto-init form defaults when modal opens or master data finishes loading
+  useEffect(() => {
+    if (showClassModal && !editingSession) {
+      if (!form.program_id && programs.length > 0) {
+        const firstP = programs[0].id;
+        const matchingBatches = allBatches.filter((b: any) => b.program_id === firstP);
+        const firstB = matchingBatches[0]?.id || allBatches[0]?.id || '';
+        setForm((prev) => {
+          if (prev.program_id) return prev;
+          return {
+            ...prev,
+            program_id: firstP,
+            program_ids: [firstP],
+            batch_id: firstB,
+            batch_ids: firstB ? [firstB] : [],
+          };
+        });
+      }
+    }
+  }, [showClassModal, programs, allBatches, editingSession, form.program_id]);
+
+  const selectedBatches = useMemo(() => {
+    const bIds = form.batch_ids && form.batch_ids.length > 0
+      ? form.batch_ids
+      : (form.batch_id ? [form.batch_id] : []);
+    return allBatches.filter((b: any) => bIds.includes(b.id));
+  }, [form.batch_id, form.batch_ids, allBatches]);
+
+  const unallocatedBatches = useMemo(() => {
+    if (!form.subject_id || selectedBatches.length <= 1) return [];
+    const subj = allSubjects.find((s: any) => s.id === form.subject_id);
+    return selectedBatches.filter((batch: any) => {
+      const inBatchAllocs = (subj?.batch_allocations || []).some((ba: any) => ba.batch_id === batch.id);
+      const isDirectBatch = subj?.batch_id === batch.id;
+      const hasAlloc = (allAllocations || []).some(
+        (a: any) => a.subject_id === form.subject_id && a.batch_id === batch.id
+      );
+      const inProg = (subj?.programs || []).some((p: any) => p.id === batch.program_id) || subj?.program_id === batch.program_id;
+      return !(inBatchAllocs || isDirectBatch || hasAlloc || inProg);
+    });
+  }, [form.subject_id, selectedBatches, allAllocations, allSubjects]);
+
+  useModalScrollLock({
+    isOpen: showClassModal,
+    onClose: () => handleCloseClassModal(),
+  });
 
   const handleSubjectChange = async (selectedSubjId: string) => {
     if (!selectedSubjId) {
@@ -832,7 +930,9 @@ export const SessionsPage: React.FC = () => {
     setForm({
       ...defaultForm,
       program_id: initialProg,
+      program_ids: initialProg ? [initialProg] : [],
       batch_id: initialBatch,
+      batch_ids: initialBatch ? [initialBatch] : [],
       session_date: selectedDate,
       session_type: 'lecture',
       lecture_number: '',
@@ -852,7 +952,9 @@ export const SessionsPage: React.FC = () => {
     setForm({
       ...defaultForm,
       program_id: initialProg,
+      program_ids: initialProg ? [initialProg] : [],
       batch_id: initialBatch,
+      batch_ids: initialBatch ? [initialBatch] : [],
       session_date: selectedDate,
       session_type: 'hyperbuild',
       start_time: '10:00',
@@ -899,9 +1001,18 @@ export const SessionsPage: React.FC = () => {
     const pId = sess.program_id || batchObj?.program_id || '';
     const semId = sess.semester_id || batchObj?.semester_id || '';
 
+    const existingProgIds = (Array.isArray(sess.program_ids) && sess.program_ids.length > 0)
+      ? sess.program_ids
+      : (pId ? [pId] : []);
+    const existingBatchIds = (Array.isArray(sess.batch_ids) && sess.batch_ids.length > 0)
+      ? sess.batch_ids
+      : (bId ? [bId] : []);
+
     setForm({
       program_id: pId,
+      program_ids: existingProgIds,
       batch_id: bId,
+      batch_ids: existingBatchIds,
       semester_id: semId,
       subject_id: sess.subject_id || '',
       topic_id: sess.topic_id || '',
@@ -919,13 +1030,6 @@ export const SessionsPage: React.FC = () => {
       lecture_number: sess.lecture_number !== undefined && sess.lecture_number !== null ? sess.lecture_number : '',
     });
 
-    if (sess.batch_id) {
-      api.get(`/academic/subjects?batch_id=${sess.batch_id}`)
-        .then((res) => {
-          if (res.data?.data) setFilteredSubjects(res.data.data);
-        })
-        .catch(() => {});
-    }
 
     if (sess.session_type === 'hyperbuild') {
       const initialActs = (sess.hyperbuild_activities as any[]) || [];
@@ -996,8 +1100,17 @@ export const SessionsPage: React.FC = () => {
         ? v.trim()
         : null;
 
-    const batchObj = allBatches.find((b: any) => b.id === (form.batch_id || editingSession?.batch_id));
-    const resolvedProgramId = toUUID(form.program_id) || toUUID(batchObj?.program_id) || toUUID(editingSession?.program_id);
+    const targetBatchIds = Array.from(new Set([
+      ...(form.batch_id ? [form.batch_id] : []),
+      ...(form.batch_ids || []),
+    ])).filter(Boolean);
+    const targetProgramIds = Array.from(new Set([
+      ...(form.program_id ? [form.program_id] : []),
+      ...(form.program_ids || []),
+    ])).filter(Boolean);
+    const primaryBatchId = form.batch_id || targetBatchIds[0] || editingSession?.batch_id;
+    const batchObj = allBatches.find((b: any) => b.id === primaryBatchId);
+    const resolvedProgramId = toUUID(form.program_id) || toUUID(targetProgramIds[0]) || toUUID(batchObj?.program_id) || toUUID(editingSession?.program_id);
     const resolvedSemesterId = toUUID(batchObj?.semester_id) || toUUID(form.semester_id) || toUUID(editingSession?.semester_id);
 
     // Validate faculty selection
@@ -1011,7 +1124,7 @@ export const SessionsPage: React.FC = () => {
     }
 
     if (isHyperBuild) {
-      if (!resolvedProgramId || !form.batch_id || !form.session_date || !form.start_time || !form.end_time || !form.venue) {
+      if (!resolvedProgramId || targetBatchIds.length === 0 || !form.session_date || !form.start_time || !form.end_time || !form.venue) {
         setCreateError('Please fill in all required fields.');
         return;
       }
@@ -1040,16 +1153,29 @@ export const SessionsPage: React.FC = () => {
         }
       }
     } else {
-      if (!form.program_id || !form.batch_id || !form.subject_id ||
+      if (targetProgramIds.length === 0 || targetBatchIds.length === 0 || !form.subject_id ||
         !form.session_date || !form.start_time || !form.end_time || !form.venue) {
         setCreateError('Please fill in all required fields.');
+        return;
+      }
+
+      // Check that subject is allocated to all selected programs and batches
+      if (unallocatedBatches.length > 0) {
+        const subj = filteredSubjects.find((s: any) => s.id === form.subject_id);
+        setCreateError(
+          `Subject allocation should be done to that program first: '${
+            subj?.name || 'Selected subject'
+          }' is not allocated to ${unallocatedBatches.map((b: any) => b.name).join(', ')}. Please allocate the subject in Academic Management first.`
+        );
         return;
       }
     }
 
     const payload: any = {
       program_id: resolvedProgramId,
-      batch_id: toUUID(form.batch_id) || toUUID(editingSession?.batch_id),
+      batch_id: toUUID(primaryBatchId),
+      batch_ids: targetBatchIds.map((id: string) => toUUID(id)).filter(Boolean),
+      program_ids: targetProgramIds.map((id: string) => toUUID(id)).filter(Boolean),
       semester_id: resolvedSemesterId,
       subject_id: isHyperBuild ? null : toUUID(form.subject_id),
       topic_id: isHyperBuild ? null : toUUID(form.topic_id),
@@ -1447,6 +1573,11 @@ export const SessionsPage: React.FC = () => {
               : `${r.subject_code ? `${r.subject_code} · ` : ''}${r.subject_name || 'Academic Class'}${(r.lecture_number || r.session_type === 'lecture') ? ` (Lecture - ${r.lecture_number || 1})` : ''}`}
           </p>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {(r.program_name || r.batch_name || (r.batch_names && r.batch_names.length > 0)) && (
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                {r.program_name ? `${r.program_name} — ` : ''}{r.batch_name || r.batch_names?.join(', ')} ·
+              </span>
+            )}
             <span className="text-slate-500 dark:text-slate-400 font-medium">
               {formatSessionType(r.session_type, r.hyperbuild_activity_no)}
             </span>
@@ -1620,11 +1751,11 @@ export const SessionsPage: React.FC = () => {
       </div>
 
       {/* View Mode Switcher Header */}
-      <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-4">
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 flex-wrap gap-1">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-4">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto touch-scroll no-scrollbar max-w-full gap-1">
           <button
             onClick={() => handleViewModeChange('daily')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
               viewMode === 'daily'
                 ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -1635,7 +1766,7 @@ export const SessionsPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleViewModeChange('weekly')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
               viewMode === 'weekly'
                 ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -1646,7 +1777,7 @@ export const SessionsPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleViewModeChange('list')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
               viewMode === 'list'
                 ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -1657,7 +1788,7 @@ export const SessionsPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleViewModeChange('calendar')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
               viewMode === 'calendar'
                 ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -1669,7 +1800,7 @@ export const SessionsPage: React.FC = () => {
           {!isStudent && (
             <button
               onClick={() => handleViewModeChange('variance')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
                 viewMode === 'variance'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
                   : 'text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40'
@@ -1871,6 +2002,14 @@ export const SessionsPage: React.FC = () => {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs text-slate-500">
+                        {(sess.program_name || sess.batch_name || (sess.batch_names && sess.batch_names.length > 0)) && (
+                          <>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {sess.program_name ? `${sess.program_name} — ` : ''}{sess.batch_name || sess.batch_names?.join(', ')}
+                            </span>
+                            <span>•</span>
+                          </>
+                        )}
                         <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300">
                           <Users className="h-3.5 w-3.5 text-indigo-500" />
                           <span>{sess.faculty_name || (sess.faculty_type === 'internal' ? 'Internal Faculty' : 'Visiting Expert')}</span>
@@ -2028,6 +2167,11 @@ export const SessionsPage: React.FC = () => {
                                 ? 'HyperBuild Lab Session'
                                 : `${s.subject_code ? `${s.subject_code} · ` : ''}${s.subject_name || 'Academic Class'}${(s.lecture_number || s.session_type === 'lecture') ? ` (Lecture - ${s.lecture_number || 1})` : ''}`}
                             </p>
+                            {(s.program_name || s.batch_name || (s.batch_names && s.batch_names.length > 0)) && (
+                              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                                {s.program_name ? `${s.program_name} — ` : ''}{s.batch_name || s.batch_names?.join(', ')}
+                              </p>
+                            )}
                           </div>
 
                           {/* Faculty */}
@@ -2655,22 +2799,22 @@ export const SessionsPage: React.FC = () => {
       )}
 
       {/* ── MODAL: SCHEDULE / EDIT CLASS ──────────────────────────────────── */}
-      {showClassModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="schedule-class-title">
-          <div className="glass-panel w-full max-w-2xl rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 my-8 max-h-[90vh] overflow-y-auto">
+      {showClassModal && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="schedule-class-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseClassModal();
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center space-x-2">
-                {form.session_type === 'hyperbuild' ? (
-                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
-                    <Zap className="h-5 w-5 fill-amber-500 text-amber-500" />
-                  </div>
-                ) : (
-                  <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-500">
-                    <BookOpen className="h-5 w-5 text-cyan-500" />
-                  </div>
-                )}
+              <div className="flex items-center space-x-2.5">
+                <BookOpen className="h-5 w-5 text-slate-700 dark:text-slate-300" />
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
                     {form.session_type === 'hyperbuild'
                       ? (editingSession ? 'Edit HyperBuild Lab' : 'Schedule HyperBuild Lab')
                       : (editingSession ? 'Edit Academic Class' : 'Schedule Academic Class')}
@@ -2683,7 +2827,8 @@ export const SessionsPage: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setShowClassModal(false)}
+                type="button"
+                onClick={() => handleCloseClassModal()}
                 className="p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
               >
                 <X className="h-5 w-5" />
@@ -2755,7 +2900,20 @@ export const SessionsPage: React.FC = () => {
                 <Field label="Program" required>
                   <select
                     value={form.program_id}
-                    onChange={(e) => setField('program_id', e.target.value)}
+                    onChange={(e) => {
+                      const pId = e.target.value;
+                      const pBatches = allBatches.filter((b: any) => b.program_id === pId);
+                      const firstB = pBatches[0]?.id || '';
+                      setForm((f) => ({
+                        ...f,
+                        program_id: pId,
+                        program_ids: pId ? [pId] : [],
+                        batch_id: firstB,
+                        batch_ids: firstB ? [firstB] : [],
+                        subject_id: '',
+                        topic_id: '',
+                      }));
+                    }}
                     className={selectClass}
                     required
                   >
@@ -2771,7 +2929,11 @@ export const SessionsPage: React.FC = () => {
                     value={form.batch_id}
                     onChange={(e) => {
                       const bId = e.target.value;
-                      setField('batch_id', bId);
+                      setForm((f) => ({
+                        ...f,
+                        batch_id: bId,
+                        batch_ids: Array.from(new Set([bId, ...f.batch_ids])).filter(Boolean),
+                      }));
                     }}
                     className={selectClass}
                     disabled={!form.program_id}
@@ -2779,22 +2941,87 @@ export const SessionsPage: React.FC = () => {
                   >
                     <option value="">Select Batch</option>
                     {filteredBatches.map((b: any) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                      <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
                     ))}
                   </select>
                 </Field>
               </div>
 
+              {/* Additional Programs (Optional) */}
+              {programs.length > 1 && form.program_id && (
+                <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1.5">
+                    Also allocate to additional programs (Optional):
+                  </span>
+                  <div className="flex flex-wrap gap-4">
+                    {programs.map((p: any) => {
+                      if (p.id === form.program_id) return null;
+                      const isChecked = form.program_ids.includes(p.id);
+                      return (
+                        <label key={p.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setForm((f) => ({ ...f, program_ids: [...new Set([...f.program_ids, p.id])] }));
+                              } else {
+                                setForm((f) => ({ ...f, program_ids: f.program_ids.filter((id) => id !== p.id) }));
+                              }
+                            }}
+                            className="rounded border-slate-300 accent-slate-700 cursor-pointer"
+                          />
+                          <span>{p.code} — {p.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Cohorts (Optional) */}
+              {filteredBatches.length > 1 && (
+                <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1.5">
+                    Also allocate to additional cohorts (Optional):
+                  </span>
+                  <div className="flex flex-wrap gap-4">
+                    {filteredBatches.map((b: any) => {
+                      if (b.id === form.batch_id) return null;
+                      const isChecked = form.batch_ids.includes(b.id);
+                      const prog = programs.find((p: any) => p.id === b.program_id);
+                      return (
+                        <label key={b.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setForm((f) => ({ ...f, batch_ids: [...new Set([...f.batch_ids, b.id])] }));
+                              } else {
+                                setForm((f) => ({ ...f, batch_ids: f.batch_ids.filter((id) => id !== b.id) }));
+                              }
+                            }}
+                            className="rounded border-slate-300 accent-slate-700 cursor-pointer"
+                          />
+                          <span>{b.name} ({b.code}){prog ? ` · ${prog.code}` : ''}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Standard Class only: Subject, Lecture Number & Topic */}
               {form.session_type !== 'hyperbuild' && (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Subject" required hint={!form.batch_id ? 'Select a batch first' : undefined}>
+                    <Field label="Subject" required hint={!form.batch_id && form.batch_ids.length === 0 ? 'Select batch first' : undefined}>
                       <select
                         value={form.subject_id}
                         onChange={(e) => handleSubjectChange(e.target.value)}
                         className={selectClass}
-                        disabled={!form.batch_id}
+                        disabled={!form.batch_id && form.batch_ids.length === 0}
                         required
                       >
                         <option value="">Select Subject</option>
@@ -3056,7 +3283,7 @@ export const SessionsPage: React.FC = () => {
                             />
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                                 Start Time
@@ -3142,7 +3369,8 @@ export const SessionsPage: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL: MARK ATTENDANCE ──────────────────────────────────────────── */}
@@ -3255,7 +3483,7 @@ export const SessionsPage: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <p className="font-mono text-[10px] text-slate-500">PRN: {st.student_prn}</p>
+                        <p className="font-mono text-[10px] text-slate-500">PRN: {st.student_prn}{st.batch_name ? ` · Batch: ${st.batch_name}` : ''}</p>
                       </div>
 
                       <div className="flex items-center space-x-2">

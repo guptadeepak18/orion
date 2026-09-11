@@ -551,7 +551,7 @@ export const FinancePage: React.FC = () => {
                 <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                   <User className="h-4 w-4 text-cyan-500" /> Faculty Details
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Name:</span> {selectedBilling.faculty_name}</p>
                   <p><span className="font-semibold text-slate-500">Org:</span> {selectedBilling.organization || 'Independent'}</p>
                   <p><span className="font-semibold text-slate-500">Email:</span> {selectedBilling.email}</p>
@@ -566,7 +566,7 @@ export const FinancePage: React.FC = () => {
                 <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                   <Building className="h-4 w-4 text-indigo-500" /> Session Particulars
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
                   <p><span className="font-semibold text-slate-500">Subject:</span> {selectedBilling.subject_name || selectedBilling.topic_delivered}</p>
                   <p><span className="font-semibold text-slate-500">Batch:</span> {selectedBilling.batch_name || 'PGDM'}</p>
                   <p><span className="font-semibold text-slate-500">Class Date:</span> {selectedBilling.session_date}</p>

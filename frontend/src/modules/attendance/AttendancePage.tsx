@@ -33,6 +33,7 @@ import { api } from '../../lib/api';
 import { useAuthStore } from '../../lib/store';
 import { AttendanceCorrectionModal } from './AttendanceCorrectionModal';
 import { ExportAttendanceExcelModal } from './ExportAttendanceExcelModal';
+import { useModalScrollLock } from '../../lib/useModalScrollLock';
 
 export const AttendancePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -121,18 +122,20 @@ export const AttendancePage: React.FC = () => {
   // Roster Filter and Search State
   const [rosterSearch, setRosterSearch] = useState<string>('');
   const [rosterStatusFilter, setRosterStatusFilter] = useState<string>('all');
+  const [selectedRosterBatch, setSelectedRosterBatch] = useState<string>('all');
 
   // Kiosk / Interactive Focus Roll-Call Mode State
   const [isKioskOpen, setIsKioskOpen] = useState<boolean>(false);
   const [kioskIndex, setKioskIndex] = useState<number>(0);
   const [kioskAutoAdvance, setKioskAutoAdvance] = useState<boolean>(true);
 
-  // Sync selectedSessionId with URL
+  // Sync selectedSessionId with URL and reset cohort filter
   useEffect(() => {
     if (selectedSessionIdParam !== selectedSessionId) {
       setSelectedSessionId(selectedSessionIdParam || null);
     }
-  }, [selectedSessionIdParam]);
+    setSelectedRosterBatch('all');
+  }, [selectedSessionIdParam, selectedSessionId]);
 
   // Query allocated sessions
   const { data: allocatedSessionsData = [], isPending: sessionsLoading, refetch: refetchSessions } = useQuery({
@@ -274,12 +277,30 @@ export const AttendancePage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isKioskOpen, kioskIndex, activeSheetData, kioskAutoAdvance]);
 
+  // Cohorts / Batches present in this session
+  const rosterBatches = useMemo(() => {
+    if (!activeSheetData?.students) return [];
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    activeSheetData.students.forEach((st: any) => {
+      const bId = String(st.batch_id || 'unassigned');
+      const bName = st.batch_name || 'Cohort';
+      if (!map.has(bId)) map.set(bId, { id: bId, name: bName, count: 0 });
+      map.get(bId)!.count++;
+    });
+    return Array.from(map.values());
+  }, [activeSheetData]);
+
   // Filtered students for attendance roster sheet
   const filteredRosterStudents = useMemo(() => {
     if (!activeSheetData?.students) return [];
     return activeSheetData.students.filter((st: any) => {
       const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
       
+      // Cohort / Batch filter
+      if (selectedRosterBatch !== 'all' && String(st.batch_id || '') !== selectedRosterBatch) {
+        return false;
+      }
+
       // Status filter
       if (rosterStatusFilter === 'unmarked' && currentSt !== '') return false;
       if (rosterStatusFilter === 'present' && currentSt !== 'present') return false;
@@ -297,7 +318,25 @@ export const AttendancePage: React.FC = () => {
 
       return true;
     });
-  }, [activeSheetData, attendanceMap, rosterSearch, rosterStatusFilter]);
+  }, [activeSheetData, attendanceMap, rosterSearch, rosterStatusFilter, selectedRosterBatch]);
+
+  // Grouped students for multi-batch bifurcation
+  const groupedRosterStudents = useMemo(() => {
+    if (!filteredRosterStudents.length) return [];
+    if (selectedRosterBatch !== 'all' || rosterBatches.length <= 1) {
+      return [{ batchId: 'all', batchName: '', students: filteredRosterStudents }];
+    }
+    const map = new Map<string, { batchId: string; batchName: string; students: any[] }>();
+    filteredRosterStudents.forEach((st: any) => {
+      const bId = String(st.batch_id || 'unassigned');
+      const bName = st.batch_name || 'Cohort';
+      if (!map.has(bId)) {
+        map.set(bId, { batchId: bId, batchName: bName, students: [] });
+      }
+      map.get(bId)!.students.push(st);
+    });
+    return Array.from(map.values());
+  }, [filteredRosterStudents, selectedRosterBatch, rosterBatches]);
 
   // Stats calculation for current session sheet
   const currentSheetStats = useMemo(() => {
@@ -442,7 +481,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/subjects');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent && ['register', 'matrix', 'compliance', 'daily_ledger'].includes(activeTab),
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -564,7 +603,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/students');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent && activeTab === 'students',
+    enabled: !isStudent,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -574,7 +613,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/programs');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent && ['students', 'compliance'].includes(activeTab),
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -584,7 +623,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/batches');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent && ['students', 'compliance', 'daily_ledger'].includes(activeTab),
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -594,7 +633,7 @@ export const AttendancePage: React.FC = () => {
       const res = await api.get('/academic/divisions');
       return (res.data?.data || []) as any[];
     },
-    enabled: !isStudent && activeTab === 'students',
+    enabled: !isStudent,
     staleTime: 10 * 60 * 1000,
   });
 
@@ -879,6 +918,16 @@ export const AttendancePage: React.FC = () => {
   const [reviewAction, setReviewAction] = useState<'approved' | 'rejected'>('approved');
   const [reviewRemarks, setReviewRemarks] = useState<string>('');
   const [reviewError, setReviewError] = useState<string | null>(null);
+
+  // Lock mobile scrolling and handle Android hardware back button for modals
+  useModalScrollLock({
+    isOpen: Boolean(isKioskOpen || selectedAbsenteesModal || reviewingCorrection),
+    onClose: () => {
+      setIsKioskOpen(false);
+      setSelectedAbsenteesModal(null);
+      setReviewingCorrection(null);
+    },
+  });
 
   const { data: correctionsData = [], isPending: correctionsLoading, refetch: refetchCorrections } = useQuery({
     queryKey: ['attendance_corrections_list', correctionStatusFilter],
@@ -1193,7 +1242,7 @@ export const AttendancePage: React.FC = () => {
       </div>
 
       {/* ── WORKSPACE TABS NAVIGATION ──────────────────────────────────────── */}
-      <div className="border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+      <div className="border-b border-slate-200 dark:border-slate-800 overflow-x-auto touch-scroll no-scrollbar">
         <nav className="-mb-px flex space-x-6 min-w-max">
           {(isStudent
             ? [
@@ -1400,7 +1449,7 @@ export const AttendancePage: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-1 col-span-2">
                             <MapPin className="h-3 w-3" />
-                            <span className="truncate">{s.venue} • {s.batch_name}</span>
+                            <span className="truncate">{s.venue} • {s.program_name ? `${s.program_name} — ` : ''}{s.batch_name}</span>
                           </div>
                         </div>
 
@@ -1436,9 +1485,24 @@ export const AttendancePage: React.FC = () => {
                       <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
                         {getSessionTitle(activeSheetData)}
                       </h2>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                        {activeSheetData.batch_name || 'Batch'}
-                      </span>
+                      {activeSheetData.batch_names && activeSheetData.batch_names.length > 1 ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {activeSheetData.program_name && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                              {activeSheetData.program_name}
+                            </span>
+                          )}
+                          {activeSheetData.batch_names.map((bn: string) => (
+                            <span key={bn} className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                              {bn}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                          {activeSheetData.program_name ? `${activeSheetData.program_name} — ` : ''}{activeSheetData.batch_name || 'Batch'}
+                        </span>
+                      )}
                       {activeSheetData.course_category === 'elective' || activeSheetData.elective_domain ? (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1">
                           🟣 Elective: {activeSheetData.elective_domain || 'Specialization'} ({activeSheetData.total_students} Eligible)
@@ -1489,7 +1553,7 @@ export const AttendancePage: React.FC = () => {
 
                 {/* ── ACTION BAR: Fast Kiosk Mode + Bulk Shortcuts + Search ── */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {/* Focus Roll-Call Mode Trigger */}
                     <button
                       type="button"
@@ -1505,25 +1569,27 @@ export const AttendancePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        const m: Record<string, string> = {};
-                        activeSheetData.students.forEach((st: any) => { m[st.student_id] = 'present'; });
+                        const m = { ...attendanceMap };
+                        const targetList = selectedRosterBatch === 'all' ? activeSheetData.students : filteredRosterStudents;
+                        targetList.forEach((st: any) => { m[st.student_id] = 'present'; });
                         setAttendanceMap(m);
                       }}
                       className="px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold transition-colors cursor-pointer"
                     >
-                      Mark All P
+                      {selectedRosterBatch === 'all' ? 'Mark All P' : 'Mark Cohort P'}
                     </button>
 
                     <button
                       type="button"
                       onClick={() => {
-                        const m: Record<string, string> = {};
-                        activeSheetData.students.forEach((st: any) => { m[st.student_id] = 'absent'; });
+                        const m = { ...attendanceMap };
+                        const targetList = selectedRosterBatch === 'all' ? activeSheetData.students : filteredRosterStudents;
+                        targetList.forEach((st: any) => { m[st.student_id] = 'absent'; });
                         setAttendanceMap(m);
                       }}
                       className="px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950 text-rose-800 dark:text-rose-300 text-[11px] font-bold transition-colors cursor-pointer"
                     >
-                      Mark All A
+                      {selectedRosterBatch === 'all' ? 'Mark All A' : 'Mark Cohort A'}
                     </button>
 
                     <button
@@ -1547,6 +1613,40 @@ export const AttendancePage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                {/* Cohort / Batch Bifurcation Selector (if multiple batches) */}
+                {rosterBatches.length > 1 && (
+                  <div className="flex items-center gap-1.5 flex-wrap p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-500 dark:text-slate-400 font-bold text-[11px] mr-1 flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-indigo-500" /> Batch Cohort:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRosterBatch('all')}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        selectedRosterBatch === 'all'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      All Batches ({activeSheetData.students.length})
+                    </button>
+                    {rosterBatches.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelectedRosterBatch(b.id)}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          selectedRosterBatch === b.id
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {b.name} ({b.count})
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Filter and Search Bar for Roster Sheet */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
@@ -1587,8 +1687,8 @@ export const AttendancePage: React.FC = () => {
                 </div>
 
                 {/* Students Attendance Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
-                  <table className="w-full text-left text-xs border-collapse">
+                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto touch-scroll">
+                  <table className="w-full text-left text-xs border-collapse min-w-[500px]">
                     <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
                       <tr>
                         <th className="p-3 w-12 text-center">#</th>
@@ -1599,88 +1699,154 @@ export const AttendancePage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {filteredRosterStudents.map((st: any, idx: number) => {
-                        const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
-                        return (
-                          <tr key={st.student_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                            <td className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
-                            <td className="p-3 font-mono font-bold text-slate-900 dark:text-slate-200">
-                              {st.student_prn || 'PRN-N/A'} {st.roll_no ? `• #${st.roll_no}` : ''}
-                            </td>
-                            <td className="p-3">
-                              <p className="font-bold text-slate-900 dark:text-white">{st.student_name}</p>
-                              {st.specializations && (
-                                <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/40 inline-block mt-0.5">
-                                  {st.specializations}
-                                </span>
+                      {groupedRosterStudents.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
+                            No students found matching current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        groupedRosterStudents.map((group, gIdx) => {
+                          let runningIdx = 0;
+                          for (let i = 0; i < gIdx; i++) {
+                            runningIdx += groupedRosterStudents[i].students.length;
+                          }
+                          return (
+                            <React.Fragment key={group.batchId}>
+                              {group.batchName && (
+                                <tr className="bg-slate-100/90 dark:bg-slate-800/90 border-y border-slate-200 dark:border-slate-700">
+                                  <td colSpan={5} className="py-2.5 px-3">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <Users className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 tracking-wide">
+                                          {group.batchName}
+                                        </span>
+                                        <span className="text-[11px] text-slate-500 font-medium">
+                                          ({group.students.length} Students)
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const m = { ...attendanceMap };
+                                            group.students.forEach((st: any) => { m[st.student_id] = 'present'; });
+                                            setAttendanceMap(m);
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer"
+                                        >
+                                          Mark Batch Present
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const m = { ...attendanceMap };
+                                            group.students.forEach((st: any) => { m[st.student_id] = 'absent'; });
+                                            setAttendanceMap(m);
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 transition-colors cursor-pointer"
+                                        >
+                                          Mark Batch Absent
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
                               )}
-                            </td>
-                            <td className="p-3">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {!currentSt && (
-                                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mr-1">
-                                    Unmarked
-                                  </span>
-                                )}
-                                {[
-                                  { id: 'present', label: 'P', full: 'Present', color: 'emerald' },
-                                  { id: 'absent', label: 'A', full: 'Absent', color: 'rose' },
-                                  { id: 'late', label: 'L', full: 'Late', color: 'amber' },
-                                  { id: 'excused', label: 'E', full: 'Excused', color: 'indigo' },
-                                  { id: 'od_duty', label: 'OD', full: 'On Duty', color: 'cyan' },
-                                ].map((opt) => {
-                                  const isSel = currentSt === opt.id;
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={opt.id}
-                                      onClick={() => setAttendanceMap({ ...attendanceMap, [st.student_id]: opt.id })}
-                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
-                                        isSel
-                                          ? opt.color === 'emerald'
-                                            ? 'bg-emerald-600 text-white shadow-xs'
-                                            : opt.color === 'rose'
-                                            ? 'bg-rose-600 text-white shadow-xs'
-                                            : opt.color === 'amber'
-                                            ? 'bg-amber-600 text-white shadow-xs'
-                                            : opt.color === 'cyan'
-                                            ? 'bg-cyan-600 text-white shadow-xs'
-                                            : 'bg-indigo-600 text-white shadow-xs'
-                                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-                                      }`}
-                                      title={opt.full}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </td>
-                            <td className="p-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  openCorrectionModal({
-                                    attendance_id: st.id || st.attendance_id || st.student_id,
-                                    sessionId: activeSheetData.session_id,
-                                    studentId: st.student_id,
-                                    studentName: st.student_name,
-                                    studentPrn: st.student_prn,
-                                    subjectName: activeSheetData.subject_name,
-                                    sessionDate: activeSheetData.session_date,
-                                    sessionTime: `${activeSheetData.start_time} - ${activeSheetData.end_time}`,
-                                    venue: activeSheetData.venue,
-                                    currentStatus: currentSt,
-                                  })
-                                }
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-600 text-[11px] font-bold text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                              >
-                                <FileCheck2 className="h-3 w-3" /> Dispute
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              {group.students.map((st: any, idx: number) => {
+                                const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
+                                return (
+                                  <tr key={st.student_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                                    <td className="p-3 text-center font-mono text-slate-400 font-bold">{runningIdx + idx + 1}</td>
+                                    <td className="p-3 font-mono font-bold text-slate-900 dark:text-slate-200">
+                                      {st.student_prn || 'PRN-N/A'} {st.roll_no ? `• #${st.roll_no}` : ''}
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <p className="font-bold text-slate-900 dark:text-white">{st.student_name}</p>
+                                        {st.batch_name && (
+                                          <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                            {st.batch_name}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {st.specializations && (
+                                        <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/40 inline-block mt-0.5">
+                                          {st.specializations}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        {!currentSt && (
+                                          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mr-1">
+                                            Unmarked
+                                          </span>
+                                        )}
+                                        {[
+                                          { id: 'present', label: 'P', full: 'Present', color: 'emerald' },
+                                          { id: 'absent', label: 'A', full: 'Absent', color: 'rose' },
+                                          { id: 'late', label: 'L', full: 'Late', color: 'amber' },
+                                          { id: 'excused', label: 'E', full: 'Excused', color: 'indigo' },
+                                          { id: 'od_duty', label: 'OD', full: 'On Duty', color: 'cyan' },
+                                        ].map((opt) => {
+                                          const isSel = currentSt === opt.id;
+                                          return (
+                                            <button
+                                              type="button"
+                                              key={opt.id}
+                                              onClick={() => setAttendanceMap({ ...attendanceMap, [st.student_id]: opt.id })}
+                                              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                                                isSel
+                                                  ? opt.color === 'emerald'
+                                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                                    : opt.color === 'rose'
+                                                    ? 'bg-rose-600 text-white shadow-xs'
+                                                    : opt.color === 'amber'
+                                                    ? 'bg-amber-600 text-white shadow-xs'
+                                                    : opt.color === 'cyan'
+                                                    ? 'bg-cyan-600 text-white shadow-xs'
+                                                    : 'bg-indigo-600 text-white shadow-xs'
+                                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                                              }`}
+                                              title={opt.full}
+                                            >
+                                              {opt.label}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openCorrectionModal({
+                                            attendance_id: st.id || st.attendance_id || st.student_id,
+                                            sessionId: activeSheetData.session_id,
+                                            studentId: st.student_id,
+                                            studentName: st.student_name,
+                                            studentPrn: st.student_prn,
+                                            subjectName: activeSheetData.subject_name,
+                                            sessionDate: activeSheetData.session_date,
+                                            sessionTime: `${activeSheetData.start_time} - ${activeSheetData.end_time}`,
+                                            venue: activeSheetData.venue,
+                                            currentStatus: currentSt,
+                                          })
+                                        }
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-600 text-[11px] font-bold text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                                      >
+                                        <FileCheck2 className="h-3 w-3" /> Dispute
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -3011,8 +3177,8 @@ export const AttendancePage: React.FC = () => {
             </button>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[700px]">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider">
                 <tr>
                   <th className="px-3.5 py-3">Student</th>
@@ -3559,8 +3725,8 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Subject Debarment Registry Table */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto touch-scroll shadow-sm">
+                <table className="w-full text-left text-xs border-collapse min-w-[750px]">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="p-3.5">Student</th>
@@ -4257,36 +4423,36 @@ export const AttendancePage: React.FC = () => {
 
       {/* ─── FULL-SCREEN FOCUS ROLL-CALL (KIOSK MODE) MODAL ────────────────── */}
       {isKioskOpen && activeSheetData?.students && activeSheetData.students.length > 0 && (
-        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-80 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/90 backdrop-blur-md overscroll-contain">
+          <div className="w-full h-[95dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
             {/* Kiosk Top Bar */}
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-600 text-white font-bold">
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                <div className="p-2 rounded-xl bg-indigo-600 text-white font-bold shrink-0">
                   <Play className="h-4 w-4 fill-current" />
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                <div className="min-w-0">
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                     Interactive Roll-Call Mode
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 truncate">
                     {activeSheetData.subject_name} • {activeSheetData.batch_name}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2.5 py-1 rounded-lg">
                   {kioskIndex + 1} of {activeSheetData.students.length}
                 </span>
-                <button onClick={() => setIsKioskOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                <button onClick={() => setIsKioskOpen(false)} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
             {/* Kiosk Progress Bar */}
-            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 shrink-0">
               <div
                 className="bg-indigo-600 h-1.5 transition-all duration-200"
                 style={{ width: `${((kioskIndex + 1) / activeSheetData.students.length) * 100}%` }}
@@ -4298,18 +4464,19 @@ export const AttendancePage: React.FC = () => {
               const st = activeSheetData.students[kioskIndex];
               const currentSt = attendanceMap[st.student_id] ?? st.status ?? '';
               return (
-                <div className="p-8 text-center space-y-6">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-6 sm:p-8 text-center space-y-6 touch-scroll">
                   {/* Large Avatar */}
-                  <div className="h-20 w-20 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black text-2xl flex items-center justify-center mx-auto border-2 border-indigo-200 dark:border-indigo-800 shadow-md">
+                  <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black text-xl sm:text-2xl flex items-center justify-center mx-auto border-2 border-indigo-200 dark:border-indigo-800 shadow-md">
                     {st.student_name.slice(0, 2).toUpperCase()}
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                    <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                       {st.student_name}
                     </h3>
                     <p className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">
                       PRN: {st.student_prn || 'N/A'} {st.roll_no ? `• Roll No #${st.roll_no}` : ''}
+                      {st.batch_name ? ` • Batch: ${st.batch_name}` : ''}
                     </p>
                     {st.specializations && (
                       <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800/40 inline-block">
@@ -4340,7 +4507,7 @@ export const AttendancePage: React.FC = () => {
                   </div>
 
                   {/* 5 Big Action Buttons */}
-                  <div className="grid grid-cols-5 gap-2 max-w-md mx-auto pt-2">
+                  <div className="grid grid-cols-5 gap-1 sm:gap-2 max-w-md mx-auto pt-2">
                     {[
                       { id: 'present', label: 'Present', key: 'P', color: 'bg-emerald-600 hover:bg-emerald-700' },
                       { id: 'absent', label: 'Absent', key: 'A', color: 'bg-rose-600 hover:bg-rose-700' },
@@ -4357,16 +4524,16 @@ export const AttendancePage: React.FC = () => {
                             setKioskIndex(kioskIndex + 1);
                           }
                         }}
-                        className={`p-3 rounded-2xl text-white font-bold flex flex-col items-center justify-center gap-1 transition-all shadow-sm ${btn.color} cursor-pointer`}
+                        className={`p-1.5 sm:p-3 rounded-xl sm:rounded-2xl text-white font-bold flex flex-col items-center justify-center gap-0.5 sm:gap-1 transition-all shadow-sm ${btn.color} cursor-pointer min-w-0`}
                       >
-                        <span className="text-xs uppercase">{btn.label}</span>
-                        <span className="font-mono text-[10px] bg-white/20 px-1.5 py-0.2 rounded font-black">[{btn.key}]</span>
+                        <span className="text-[9px] sm:text-xs uppercase truncate w-full text-center">{btn.label}</span>
+                        <span className="font-mono text-[8px] sm:text-[10px] bg-white/20 px-1 py-0.2 rounded font-black">[{btn.key}]</span>
                       </button>
                     ))}
                   </div>
 
                   {/* Auto advance toggle & Navigation */}
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 text-xs font-semibold">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs font-semibold">
                     <label className="flex items-center gap-2 cursor-pointer text-slate-600 dark:text-slate-400">
                       <input
                         type="checkbox"
@@ -4374,7 +4541,7 @@ export const AttendancePage: React.FC = () => {
                         onChange={(e) => setKioskAutoAdvance(e.target.checked)}
                         className="rounded accent-indigo-600"
                       />
-                      <span>Auto-advance to next student</span>
+                      <span>Auto-advance</span>
                     </label>
 
                     <div className="flex items-center gap-2">
@@ -4401,8 +4568,8 @@ export const AttendancePage: React.FC = () => {
             })()}
 
             {/* Kiosk Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 flex items-center justify-between">
-              <div className="text-xs text-slate-500 font-medium">
+            <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="text-xs text-slate-500 font-medium hidden sm:block">
                 Tip: Press <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border text-[10px] font-mono">P</kbd>, <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border text-[10px] font-mono">A</kbd>, <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border text-[10px] font-mono">L</kbd>, <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border text-[10px] font-mono">E</kbd>, <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border text-[10px] font-mono">O</kbd> on your keyboard.
               </div>
 
@@ -4412,7 +4579,7 @@ export const AttendancePage: React.FC = () => {
                   setIsKioskOpen(false);
                   handleSaveAttendance();
                 }}
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer ml-auto"
               >
                 <CheckCircle2 className="h-4 w-4" /> Save & Finish
               </button>
@@ -4423,41 +4590,44 @@ export const AttendancePage: React.FC = () => {
 
       {/* ─── ABSENTEES LIST MODAL ───────────────────────────────────────────── */}
       {selectedAbsenteesModal && (
-        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
-              <div>
-                <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-80 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md overscroll-contain">
+          <div className="w-full h-[80dvh] sm:h-auto sm:max-h-[85dvh] sm:max-w-lg rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl transition-all duration-200 overscroll-contain">
+            {/* Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <div className="min-w-0 pr-3">
+                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white truncate">
                   Absentees List ({selectedAbsenteesModal.absentees.length} Students)
                 </h4>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-slate-500 truncate">
                   {selectedAbsenteesModal.session.subject_name} • {selectedAbsenteesModal.session.session_date}
                 </p>
               </div>
-              <button onClick={() => setSelectedAbsenteesModal(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={() => setSelectedAbsenteesModal(null)} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-4 max-h-[400px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800 touch-scroll">
               {selectedAbsenteesModal.absentees.map((a: any, idx: number) => (
                 <div key={idx} className="py-2.5 flex items-center justify-between gap-3 text-xs">
                   <div>
                     <span className="font-bold text-slate-900 dark:text-white">{a.student_name}</span>
                     <div className="text-[10.5px] font-mono text-slate-400">{a.student_prn} {a.roll_no ? `• #${a.roll_no}` : ''}</div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 uppercase">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 uppercase">
                     Absent
                   </span>
                 </div>
               ))}
             </div>
 
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+            {/* Sticky Footer */}
+            <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedAbsenteesModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
               >
                 Close
               </button>
@@ -4468,19 +4638,21 @@ export const AttendancePage: React.FC = () => {
 
       {/* ─── REVIEW CORRECTION MODAL ───────────────────────────────────────── */}
       {reviewingCorrection && (
-        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h4 className="font-semibold text-sm text-slate-900 dark:text-white">Review Dispute Request</h4>
-                <p className="text-[11px] text-slate-500">Course Faculty &amp; Academic Administration Verification</p>
+        <div className="fixed inset-0 z-80 flex flex-col justify-end sm:justify-center sm:items-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm overscroll-contain">
+          <div className="w-full h-[90dvh] sm:h-auto sm:max-h-[85dvh] sm:max-w-lg rounded-t-[2rem] sm:rounded-3xl flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl transition-all duration-200 overscroll-contain">
+            {/* Header */}
+            <div className="sticky top-0 z-20 px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0">
+              <div className="min-w-0 pr-3">
+                <h4 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate">Review Dispute Request</h4>
+                <p className="text-[11px] text-slate-500 truncate">Course Faculty &amp; Academic Administration Verification</p>
               </div>
-              <button onClick={() => setReviewingCorrection(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+              <button onClick={() => setReviewingCorrection(null)} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-3 text-xs touch-scroll">
               {/* Student & Session Summary */}
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg space-y-1.5 border border-slate-200/60 dark:border-slate-700/60">
                 <div className="flex justify-between">
@@ -4523,7 +4695,7 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Dual Approval Progress Status */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
                   <div className="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Course Faculty</div>
                   <div className="mt-1 font-medium">
@@ -4658,11 +4830,12 @@ export const AttendancePage: React.FC = () => {
               {reviewError && <p className="text-rose-600 text-xs font-medium">{reviewError}</p>}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            {/* Sticky Footer */}
+            <div className="sticky bottom-0 z-20 px-5 py-3 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setReviewingCorrection(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -4676,7 +4849,7 @@ export const AttendancePage: React.FC = () => {
                   }
                 }}
                 disabled={facultyReviewMutation.isPending || adminReviewMutation.isPending}
-                className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-medium text-xs disabled:opacity-50 cursor-pointer hover:bg-indigo-700 transition-colors"
+                className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs disabled:opacity-50 cursor-pointer hover:bg-indigo-700 transition-colors shadow-sm"
               >
                 {facultyReviewMutation.isPending || adminReviewMutation.isPending ? 'Submitting...' : `Submit as ${reviewAsRole === 'faculty' ? 'Faculty' : 'Admin'}`}
               </button>

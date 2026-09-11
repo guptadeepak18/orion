@@ -19,6 +19,8 @@ class StudentRegisterRequest(BaseModel):
     prn_number: str
     program_code: Optional[str] = "PGDM"
     program_name: Optional[str] = "Post Graduate Diploma in Management"
+    term_type: Optional[str] = None  # 'trimester' or 'semester'
+    term_number: Optional[int] = 1
 
     # Identity
     first_name: str
@@ -156,6 +158,8 @@ class ApproveStudentRegistrationRequest(BaseModel):
     program_id: Optional[UUID] = None
     batch_id: Optional[UUID] = None
     division_id: Optional[UUID] = None
+    term_type: Optional[str] = "trimester"
+    term_number: Optional[int] = 1
     trimester: Optional[int] = 1
     roll_no: Optional[str] = None
     enrollment_no: Optional[str] = None
