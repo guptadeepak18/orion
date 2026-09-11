@@ -50,18 +50,27 @@ export const ForgotPasswordPage: React.FC = () => {
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!email || !email.includes('@')) {
-      setError('Please enter a valid email address.');
+    const cleanInput = email.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+    if (!cleanInput) {
+      setError('Please enter your official email, personal email, or PRN number.');
       return;
     }
 
     setLoading(true);
     try {
-      await api.post('/auth/forgot-password/request-otp', { email: email.trim().toLowerCase() });
+      const res = await api.post('/auth/forgot-password/request-otp', { email: cleanInput.toLowerCase() });
+      if (res.data?.data?.email) {
+        setEmail(res.data.data.email);
+      }
       setStep(2);
       setResendTimer(30);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to send verification code. Please check your email.');
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to send verification code. Please check your email or PRN.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }
@@ -111,12 +120,17 @@ export const ForgotPasswordPage: React.FC = () => {
     setLoading(true);
     try {
       await api.post('/auth/forgot-password/verify-otp', {
-        email: email.trim().toLowerCase(),
+        email: email.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase(),
         code,
       });
       setStep(3);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Invalid or expired verification code.');
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Invalid or expired verification code.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }
@@ -128,11 +142,20 @@ export const ForgotPasswordPage: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      await api.post('/auth/forgot-password/request-otp', { email: email.trim().toLowerCase() });
+      const cleanInput = email.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
+      const res = await api.post('/auth/forgot-password/request-otp', { email: cleanInput });
+      if (res.data?.data?.email) {
+        setEmail(res.data.data.email);
+      }
       setResendTimer(30);
       setOtp(['', '', '', '', '', '']);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to resend code.');
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to resend code.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }
@@ -169,13 +192,18 @@ export const ForgotPasswordPage: React.FC = () => {
     setLoading(true);
     try {
       await api.post('/auth/forgot-password/reset', {
-        email: email.trim().toLowerCase(),
+        email: email.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase(),
         code: otp.join(''),
-        new_password: newPassword,
+        new_password: newPassword.trim(),
       });
       navigate('/login?reset=success');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to reset password. Please try again.');
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to reset password. Please try again.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }
@@ -230,23 +258,27 @@ export const ForgotPasswordPage: React.FC = () => {
                 </div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Reset Account Password</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-                  Enter your official email address to receive a 6-digit verification code.
+                  Enter your official email, personal email, or PRN number to receive a 6-digit verification code.
                 </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                  Official Email Address
+                  Official Email / Personal Email / PRN
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-50/80 dark:bg-slate-950/70 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                    placeholder="official.email@domain.com"
+                    placeholder="official.email@domain.com or PRN"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="username"
                     autoFocus
                   />
                 </div>

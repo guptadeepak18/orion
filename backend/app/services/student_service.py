@@ -19,7 +19,7 @@ async def ensure_user_for_student(
     If no user exists, creates one with default password 'Mile@123' and assigns the 'student' role.
     Links student.user_id = user.id.
     """
-    primary_email = (student.email_official or student.email or student.email_personal or "").strip().lower()
+    primary_email = (student.email_official or getattr(student, "email", None) or student.email_personal or "").strip().lower()
     if not primary_email:
         return None
 
@@ -52,7 +52,7 @@ async def ensure_user_for_student(
             email=primary_email,
             password_hash=get_password_hash(default_password),
             full_name=student.full_name or "Student",
-            phone=student.mobile_number or student.phone or None,
+            phone=student.mobile_number or getattr(student, "phone", None) or None,
             is_active=True,
         )
         db.add(user)

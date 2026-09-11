@@ -12,6 +12,8 @@ import {
   BookOpen,
   GraduationCap,
   ArrowRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
@@ -21,6 +23,7 @@ import { CosmicBackground } from '../components/CosmicBackground';
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -43,9 +46,13 @@ export const LoginPage: React.FC = () => {
 
     try {
       queryClient.clear();
+      const cleanIdentifier = loginEmail
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .trim()
+        .toLowerCase();
       const res = await api.post('/auth/login', {
-        email: loginEmail.trim().toLowerCase(),
-        password: loginPass,
+        email: cleanIdentifier,
+        password: loginPass.trim(),
       });
 
       if (res.data?.data) {
@@ -217,18 +224,21 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                  Email Address
+                  Official Email / Personal Email / PRN
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-50/80 dark:bg-slate-950/70 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all duration-200"
-                    placeholder="official.email@domain.com"
-                    autoComplete="email"
+                    placeholder="official.email@domain.com or PRN"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="username"
                   />
                 </div>
               </div>
@@ -248,14 +258,25 @@ export const LoginPage: React.FC = () => {
                 <div className="relative">
                   <KeyRound className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-50/80 dark:bg-slate-950/70 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all duration-200"
+                    className="w-full bg-slate-50/80 dark:bg-slate-950/70 border border-slate-300/80 dark:border-slate-800 rounded-xl pl-10 pr-11 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all duration-200"
                     placeholder="••••••••"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-0.5 rounded focus:outline-none"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 

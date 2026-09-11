@@ -3,9 +3,25 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, ConfigDict
 
 
+import re
+from pydantic import field_validator
+from app.core.security import validate_password_policy
+
+
+def clean_auth_identifier(v: str) -> str:
+    if not v or not str(v).strip():
+        raise ValueError("Email, PRN, or registered mobile number is required.")
+    return re.sub(r"[\u200B-\u200D\uFEFF\u00A0\s]+", "", str(v)).strip()
+
+
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str  # Official email, personal email, PRN, or mobile
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def sanitize_identifier(cls, v: str) -> str:
+        return clean_auth_identifier(v)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -40,22 +56,33 @@ class TokenResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: str  # Official email, personal email, PRN, or mobile
+
+    @field_validator("email")
+    @classmethod
+    def sanitize_identifier(cls, v: str) -> str:
+        return clean_auth_identifier(v)
 
 
 class ForgotPasswordVerifyRequest(BaseModel):
-    email: EmailStr
+    email: str
     code: str
 
-
-from pydantic import field_validator
-from app.core.security import validate_password_policy
+    @field_validator("email")
+    @classmethod
+    def sanitize_identifier(cls, v: str) -> str:
+        return clean_auth_identifier(v)
 
 
 class ForgotPasswordResetRequest(BaseModel):
-    email: EmailStr
+    email: str
     code: str
     new_password: str
+
+    @field_validator("email")
+    @classmethod
+    def sanitize_identifier(cls, v: str) -> str:
+        return clean_auth_identifier(v)
 
     @field_validator("new_password")
     @classmethod

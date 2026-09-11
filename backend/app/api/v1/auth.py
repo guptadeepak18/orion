@@ -253,12 +253,12 @@ async def forgot_password_request_otp(
     Generates a 6-digit OTP and sends it to their email via Hostinger Mail API.
     """
     try:
-        await request_password_reset(db, body.email)
+        sent_email = await request_password_reset(db, body.email)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ResponseEnvelope(data={
-        "message": f"A 6-digit password reset verification code has been sent to {body.email}.",
-        "email": body.email,
+        "message": f"A 6-digit password reset verification code has been dispatched to your registered email.",
+        "email": sent_email,
     })
 
 
