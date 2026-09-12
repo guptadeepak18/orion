@@ -244,9 +244,12 @@ async def get_hyperbuild_session_details(
             att_res = await db.execute(att_stmt)
             st_att = att_res.scalar_one_or_none()
             if st_att:
-                roll_call_status = getattr(st_att, "roll_call_status", None) or st_att.status
-                if roll_call_status == "absent" or st_att.status == "absent":
+                raw_rc = getattr(st_att, "roll_call_status", None)
+                roll_call_status = raw_rc or st_att.status
+                if roll_call_status == "absent":
                     is_roll_call_absent = True
+                else:
+                    is_roll_call_absent = False
 
     activity_responses = []
     active_activity_id = None
@@ -743,7 +746,7 @@ async def verify_student_activity_presence(
     rc_rec = rc_res.scalar_one_or_none()
     if rc_rec:
         actual_rc = getattr(rc_rec, "roll_call_status", None) or rc_rec.status
-        if actual_rc == "absent" or rc_rec.status == "absent":
+        if actual_rc == "absent":
             raise ValueError(
                 "Cannot verify attendance: You were marked Absent during classroom roll call. "
                 "Secret key verification is locked for students marked absent. If this is an error, please ask your faculty in class to update your roll call attendance first."
@@ -822,9 +825,12 @@ async def verify_student_activity_presence(
         )
         db.add(att_rec)
     else:
-        # Check roll call status to preserve absent if teacher marked absent
+        # Check roll call status to preserve late or absent
         rc_status = getattr(att_rec, "roll_call_status", None) or att_rec.status
-        if rc_status != "absent":
+        if rc_status == "late":
+            att_rec.status = "late"
+            att_rec.remarks = f"Verified via HyperBuild Act #{activity.activity_no} (Late)"
+        elif rc_status != "absent":
             att_rec.status = "present"
             att_rec.remarks = f"Verified via HyperBuild Act #{activity.activity_no}"
 
@@ -847,6 +853,13 @@ async def verify_student_activity_presence(
         },
     )
 
+    final_att_status = getattr(att_rec, "status", None)
+    success_msg = (
+        f"Attendance successfully verified for {activity.subject.name}! Recorded as Late (+{activity.duration_minutes} mins credited)"
+        if final_att_status == "late"
+        else f"Attendance successfully verified for {activity.subject.name}! (+{activity.duration_minutes} mins credited)"
+    )
+
     return HyperbuildVerificationResponse(
         activity_id=activity.id,
         student_id=student.id,
@@ -854,7 +867,7 @@ async def verify_student_activity_presence(
         verification_status="verified_present",
         is_geofence_valid=is_geo_ok,
         distance_from_campus_meters=dist_meters,
-        message=f"Attendance successfully verified for {activity.subject.name}! (+{activity.duration_minutes} mins credited)",
+        message=success_msg,
         credited_subject_id=activity.subject.id,
         credited_subject_name=activity.subject.name,
         credited_duration_minutes=activity.duration_minutes,
@@ -927,7 +940,9 @@ async def get_activity_live_roster(
         rc_st = "unmarked"
         if att_rec:
             raw_rc = getattr(att_rec, "roll_call_status", None) or att_rec.status
-            if raw_rc in PRESENT_STATUSES:
+            if raw_rc == "late":
+                rc_st = "late"
+            elif raw_rc in PRESENT_STATUSES:
                 rc_st = "present"
             elif raw_rc == "absent":
                 rc_st = "absent"
@@ -943,7 +958,7 @@ async def get_activity_live_roster(
             is_downgraded = False
         else:
             total_eligible += 1
-            if rc_st == "present":
+            if rc_st in ["present", "late"]:
                 roll_call_present_cnt += 1
             elif rc_st == "absent":
                 roll_call_absent_cnt += 1
@@ -961,8 +976,12 @@ async def get_activity_live_roster(
                 final_st = "present"
                 is_downgraded = False
                 final_present_cnt += 1
-            elif rc_st == "present" and not is_verif:
-                # MARKED PRESENT IN ROLL CALL, BUT FAILED TO ENTER KEY -> MARKED ABSENT AUTOMATICALLY!
+            elif rc_st == "late" and is_verif:
+                final_st = "late"
+                is_downgraded = False
+                final_present_cnt += 1
+            elif rc_st in ["present", "late"] and not is_verif:
+                # MARKED PRESENT OR LATE IN ROLL CALL, BUT FAILED TO ENTER KEY -> MARKED ABSENT AUTOMATICALLY!
                 final_st = "absent"
                 is_downgraded = True
                 downgraded_cnt += 1
@@ -1098,18 +1117,20 @@ async def update_activity_student_attendance(
     att_rec = att_res.scalar_one_or_none()
 
     if is_present:
+        target_status = clean_status if clean_status in ["late", "present"] else ("late" if getattr(att_rec, "roll_call_status", None) == "late" else "present")
         if not att_rec:
             att_rec = StudentAttendance(
                 session_id=sess_id,
                 student_id=student.id,
-                status="present",
-                roll_call_status="present",
+                status=target_status,
+                roll_call_status=target_status,
                 remarks=req.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
             )
             db.add(att_rec)
         else:
-            att_rec.status = "present"
-            att_rec.roll_call_status = "present"
+            att_rec.status = target_status
+            if getattr(att_rec, "roll_call_status", None) not in ["late", "present"]:
+                att_rec.roll_call_status = target_status
             if req.remarks:
                 att_rec.remarks = req.remarks
     else:
@@ -1216,19 +1237,21 @@ async def bulk_update_activity_attendance(
 
         att_rec = existing_atts.get(item.student_id)
         if is_present:
+            target_status = clean_status if clean_status in ["late", "present"] else ("late" if getattr(att_rec, "roll_call_status", None) == "late" else "present")
             if not att_rec:
                 att_rec = StudentAttendance(
                     session_id=sess_id,
                     student_id=item.student_id,
-                    status="present",
-                    roll_call_status="present",
+                    status=target_status,
+                    roll_call_status=target_status,
                     remarks=item.remarks or f"Verified via HyperBuild Act #{activity.activity_no}",
                 )
                 db.add(att_rec)
                 existing_atts[item.student_id] = att_rec
             else:
-                att_rec.status = "present"
-                att_rec.roll_call_status = "present"
+                att_rec.status = target_status
+                if getattr(att_rec, "roll_call_status", None) not in ["late", "present"]:
+                    att_rec.roll_call_status = target_status
         else:
             if att_rec:
                 att_rec.status = "absent"

@@ -340,7 +340,8 @@ async def mark_and_lock_session_attendance(
             if roll_status in PRESENT_STATUSES:
                 if item.student_id not in verified_student_ids:
                     eff_status = "absent"
-                    eff_remarks = item.remarks or "Auto-Absent: Secret key not entered (Roll call: Present)"
+                    rc_label = "Late" if roll_status == "late" else "Present"
+                    eff_remarks = item.remarks or f"Auto-Absent: Secret key not entered (Roll call: {rc_label})"
             else:
                 eff_status = "absent"
 
@@ -828,7 +829,7 @@ async def get_student_attendance_dossier(
                 if act_required_key:
                     if parent_is_present and v_is_present:
                         is_att = True
-                        act_status = "present"
+                        act_status = "late" if (getattr(r, "roll_call_status", None) == "late" or r.status == "late") else "present"
                         item_remarks = f"HyperBuild: {act.title} (Verified)"
                     elif parent_is_present and not v_is_present:
                         is_att = False

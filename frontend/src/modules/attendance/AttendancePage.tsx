@@ -1687,9 +1687,9 @@ export const AttendancePage: React.FC = () => {
                 </div>
 
                 {/* Students Attendance Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto touch-scroll">
+                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto overflow-y-auto max-h-[calc(100vh-360px)] min-h-[420px] touch-scroll shadow-inner">
                   <table className="w-full text-left text-xs border-collapse min-w-[500px]">
-                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
+                    <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-xs text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 shadow-xs">
                       <tr>
                         <th className="p-3 w-12 text-center">#</th>
                         <th className="p-3">PRN & Roll No</th>
@@ -1714,7 +1714,7 @@ export const AttendancePage: React.FC = () => {
                           return (
                             <React.Fragment key={group.batchId}>
                               {group.batchName && (
-                                <tr className="bg-slate-100/90 dark:bg-slate-800/90 border-y border-slate-200 dark:border-slate-700">
+                                <tr className="sticky top-[41px] z-10 bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur-xs border-y border-slate-200 dark:border-slate-700 shadow-xs">
                                   <td colSpan={5} className="py-2.5 px-3">
                                     <div className="flex items-center justify-between flex-wrap gap-2">
                                       <div className="flex items-center gap-2">

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Zap, CheckCircle2, AlertCircle,
-  X, Lock, Radio, KeyRound
+  X, Lock, Radio, KeyRound, Clock
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSessionWebSocket } from '../../lib/useSessionWebSocket';
@@ -115,6 +115,11 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
                     <Lock className="h-2.5 w-2.5" />
                     Roll Call: Absent (Locked)
+                  </span>
+                ) : sessionDetails?.roll_call_status === 'late' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    <Clock className="h-2.5 w-2.5" />
+                    Roll Call: Late
                   </span>
                 ) : sessionDetails?.roll_call_status === 'present' ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
@@ -273,6 +278,17 @@ export const StudentHyperbuildModal: React.FC<StudentHyperbuildModalProps> = ({ 
                   </div>
                 ) : (
                   <div className="space-y-4 pt-1">
+                    {sessionDetails?.roll_call_status === 'late' && (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                        <Clock className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Roll Call: Marked Late</p>
+                          <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5 leading-normal">
+                            Enter the classroom key below to confirm your presence. Your attendance will be confirmed as <strong>Late</strong> (which counts as present for % calculation).
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     {/* Key Input */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">

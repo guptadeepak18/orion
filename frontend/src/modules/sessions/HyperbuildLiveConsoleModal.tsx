@@ -755,7 +755,8 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                       ) : (
                         filteredRoster.map((st: any) => {
                           const isRcAbsent = st.roll_call_status === 'absent';
-                          const isFinalPresent = st.final_status === 'present';
+                          const isFinalPresent = st.final_status === 'present' || st.final_status === 'late';
+                          const isFinalLate = st.final_status === 'late';
                           const isDowngraded = Boolean(st.is_downgraded);
 
                           return (
@@ -778,11 +779,13 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                                       {st.full_name}
                                     </p>
                                     <span className={`sm:hidden px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
-                                      isFinalPresent
+                                      isFinalLate
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : isFinalPresent
                                         ? 'bg-emerald-600 text-white shadow-xs'
                                         : 'bg-rose-600 text-white shadow-xs'
                                     }`}>
-                                      {isFinalPresent ? 'Present' : 'Absent'}
+                                      {isFinalLate ? 'Late' : isFinalPresent ? 'Present' : 'Absent'}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5 flex-wrap">
@@ -800,6 +803,8 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                                     <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
                                       st.roll_call_status === 'present'
                                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : st.roll_call_status === 'late'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                                         : st.roll_call_status === 'absent'
                                         ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                                         : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
@@ -820,11 +825,13 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
 
                                     {/* Final Status Badge on desktop */}
                                     <span className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                      isFinalPresent
+                                      isFinalLate
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : isFinalPresent
                                         ? 'bg-emerald-600 text-white shadow-xs'
                                         : 'bg-rose-600 text-white shadow-xs'
                                     }`}>
-                                      {isFinalPresent ? 'Present' : 'Absent'}
+                                      {isFinalLate ? 'Late' : isFinalPresent ? 'Present' : 'Absent'}
                                     </span>
                                   </div>
 
@@ -858,7 +865,7 @@ export const HyperbuildLiveConsoleModal: React.FC<HyperbuildLiveConsoleModalProp
                               {isDowngraded && (
                                 <div className="mt-2 p-2 rounded-xl bg-amber-100/70 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-900 text-[10px] font-bold text-amber-900 dark:text-amber-200 flex items-start gap-1.5 leading-normal">
                                   <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
-                                  <span className="break-words flex-1">Auto-Absent Downgraded: Marked Present in Roll Call, but did not enter challenge key within window.</span>
+                                  <span className="break-words flex-1">Auto-Absent Downgraded: Marked {st.roll_call_status === 'late' ? 'Late' : 'Present'} in Roll Call, but did not enter challenge key within window.</span>
                                 </div>
                               )}
 
