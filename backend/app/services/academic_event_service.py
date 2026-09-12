@@ -188,6 +188,7 @@ async def create_academic_event(
     db: AsyncSession,
     req: AcademicEventCreate,
     created_by_user_id: Optional[uuid.UUID] = None,
+    background_tasks: Optional[Any] = None,
 ) -> AcademicEventResponse:
     ev = AcademicEvent(
         title=req.title.strip(),
@@ -223,21 +224,36 @@ async def create_academic_event(
 
     # Trigger student email notifications in the background
     if getattr(req, "notify_students", True):
-        try:
-            asyncio.create_task(notify_event_students(ev.id))
-        except Exception as err:
-            logger.error(f"Failed to schedule event notification task: {err}")
+        if background_tasks:
+            background_tasks.add_task(notify_event_students, ev.id)
+        else:
+            try:
+                asyncio.create_task(notify_event_students(ev.id))
+            except Exception as err:
+                logger.error(f"Failed to schedule event notification task: {err}")
 
     return saved
 
 
-async def notify_event_students(event_id: uuid.UUID) -> int:
+_recent_event_notifications: dict = {}
+
+
+async def notify_event_students(event_id: uuid.UUID, force: bool = False) -> int:
     """
     Dispatches announcement notification emails to all students targeted by an academic event.
-    Runs asynchronously with its own database session.
+    Closes database session before network email dispatch to ensure connection isolation and prevent pool exhaustion.
+    Uses send_custom_html_email_batch for polite pacing across mail providers.
     """
+    import time as time_module
     from app.core.database import AsyncSessionLocal
-    from app.services.email_template_service import trigger_activity_email
+    from app.services.email_template_service import get_template_by_event, render_placeholders
+    from app.services.email_service import send_custom_html_email_batch
+
+    now_ts = time_module.time()
+    if not force and event_id in _recent_event_notifications and (now_ts - _recent_event_notifications[event_id]) < 30:
+        logger.info(f"Student notification for event {event_id} recently dispatched. Skipping duplicate.")
+        return 0
+    _recent_event_notifications[event_id] = now_ts
 
     logger.info(f"Initiating notification email dispatch for academic event {event_id}...")
     async with AsyncSessionLocal() as db:
@@ -270,8 +286,13 @@ async def notify_event_students(event_id: uuid.UUID) -> int:
             st_stmt = st_stmt.join(StudentDivision, StudentDivision.student_id == Student.id).where(StudentDivision.division_id == ev.division_id)
 
         st_res = await db.execute(st_stmt)
-        students = st_res.scalars().all()
+        students = list(st_res.scalars().all())
         logger.info(f"Event '{ev.title}' targets {len(students)} student(s).")
+
+        tmpl = await get_template_by_event(db, "academic_event_scheduled")
+        if tmpl and not tmpl.is_active:
+            logger.info("Skipping event notification emails: academic_event_scheduled template is inactive.")
+            return 0
 
         time_str = "All Day" if ev.is_all_day else (
             f"{ev.start_time.strftime('%I:%M %p') if ev.start_time else '10:00 AM'} - {ev.end_time.strftime('%I:%M %p') if ev.end_time else '12:00 PM'}"
@@ -322,53 +343,59 @@ async def notify_event_students(event_id: uuid.UUID) -> int:
         venue_text = ev.venue or "College Turf / Campus Ground, Lexicon MILE"
         organizer_text = ev.organizer_name or "Academic Operations & Cultural Committee"
         speaker_text = ev.speaker_guest_details or "Faculty Coordinators & Student Council"
+        ev_title = ev.title
+        ev_mode = (ev.mode or "offline").upper()
 
-        sem = asyncio.Semaphore(8)
+        fallback_subject = f"Orion — Academic Event: {ev_title} ({date_str})"
+        raw_subject = tmpl.subject if tmpl else fallback_subject
+        raw_html = tmpl.html_content if tmpl else f"<div><h2>{ev_title}</h2><p>{desc_formatted}</p></div>"
 
-        async def _send_to_student(st: Student) -> bool:
-            recipient = (st.email_official or st.email or st.email_personal or "").strip()
-            if not recipient:
-                return False
+        recipients_list = []
+        for st in students:
+            email = (st.email_official or st.email or st.email_personal or "").strip()
+            if email:
+                recipients_list.append({
+                    "email": email,
+                    "name": st.full_name or f"{st.first_name} {st.last_name or ''}".strip() or "Student",
+                })
 
-            full_name = st.full_name or f"{st.first_name} {st.last_name or ''}".strip() or "Student"
-            context = {
-                "full_name": full_name,
-                "event_title": ev.title,
-                "event_category": category_label,
-                "event_date": date_str,
-                "event_time": time_str,
-                "venue": venue_text,
-                "mode": (ev.mode or "offline").upper(),
-                "is_mandatory": mandatory_label,
-                "badge_bg": badge_bg,
-                "badge_color": badge_color,
-                "badge_border": badge_border,
-                "speaker_guest_details": speaker_text,
-                "description_html": desc_formatted,
-                "organizer_name": organizer_text,
-                "poster_section": poster_section,
-                "registration_btn": registration_btn,
-                "app_name": "Orion Portal",
-                "support_email": "deepak.gupta@mile.education",
-            }
+    # DB session closed! Build email batch in memory
+    base_context = {
+        "event_title": ev_title,
+        "event_category": category_label,
+        "event_date": date_str,
+        "event_time": time_str,
+        "venue": venue_text,
+        "mode": ev_mode,
+        "is_mandatory": mandatory_label,
+        "badge_bg": badge_bg,
+        "badge_color": badge_color,
+        "badge_border": badge_border,
+        "speaker_guest_details": speaker_text,
+        "description_html": desc_formatted,
+        "organizer_name": organizer_text,
+        "poster_section": poster_section,
+        "registration_btn": registration_btn,
+        "app_name": "Orion Portal",
+        "support_email": "deepak.gupta@mile.education",
+    }
 
-            async with sem:
-                try:
-                    return await trigger_activity_email(
-                        db=db,
-                        event_key="academic_event_scheduled",
-                        recipient_email=recipient,
-                        context=context,
-                        fallback_subject=f"Orion — Academic Event: {ev.title} ({date_str})",
-                    )
-                except Exception as ex:
-                    logger.error(f"Error emailing student {recipient} for event {ev.id}: {ex}")
-                    return False
+    batch_items = []
+    for r in recipients_list:
+        ctx = dict(base_context)
+        ctx["full_name"] = r["name"]
+        ctx["recipient_name"] = r["name"]
+        sub = render_placeholders(raw_subject, ctx)
+        html = render_placeholders(raw_html, ctx)
+        batch_items.append({
+            "email": r["email"],
+            "subject": sub,
+            "html": html,
+        })
 
-        results = await asyncio.gather(*[_send_to_student(st) for st in students])
-        dispatched_count = sum(1 for r in results if r)
-        logger.info(f"Successfully dispatched {dispatched_count} notification email(s) for event '{ev.title}'.")
-        return dispatched_count
+    dispatched_count = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
+    logger.info(f"Successfully dispatched {dispatched_count}/{len(batch_items)} notification email(s) for event '{ev_title}'.")
+    return dispatched_count
 
 
 async def update_academic_event(

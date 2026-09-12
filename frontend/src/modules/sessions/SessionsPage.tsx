@@ -7,7 +7,8 @@ import {
   Upload, AlertTriangle, Sparkles, ClipboardList,
   Check, X, Users, Plus, BookOpen, Calendar, Clock,
   Edit3, ChevronLeft, ChevronRight, LayoutList, CalendarDays, Grid, MapPin, Trash2,
-  ArrowLeftRight, Shuffle, Undo2, TrendingUp, CheckCircle2, Download, AlertCircle, Zap
+  ArrowLeftRight, Shuffle, Undo2, TrendingUp, CheckCircle2, Download, AlertCircle, Zap,
+  Mail
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
@@ -1499,6 +1500,32 @@ export const SessionsPage: React.FC = () => {
     }
   };
 
+  // Session email notification handler
+  const [notifyingSessionId, setNotifyingSessionId] = useState<string | null>(null);
+  const [notifyFeedback, setNotifyFeedback] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleNotifySession = async (session: Session) => {
+    const title = session.subject_name || (session.session_type === 'hyperbuild' ? 'HyperBuild Sprint' : 'Academic Session');
+    const dateStr = session.session_date || '';
+    if (!window.confirm(`Dispatch timetable email notification to all enrolled students and faculty for "${title}" (${dateStr})?`)) {
+      return;
+    }
+    try {
+      setNotifyingSessionId(session.id);
+      setNotifyFeedback(null);
+      const res = await api.post(`/sessions/${session.id}/notify`);
+      const msg = res.data?.data?.message || 'Notification emails dispatched successfully!';
+      setNotifyFeedback({ id: session.id, type: 'success', message: msg });
+      setTimeout(() => setNotifyFeedback(null), 6000);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.detail || err?.message || 'Failed to dispatch email notifications.';
+      setNotifyFeedback({ id: session.id, type: 'error', message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
+      setTimeout(() => setNotifyFeedback(null), 8000);
+    } finally {
+      setNotifyingSessionId(null);
+    }
+  };
+
   // Synchronize modal state with URL parameters
   const urlModal = searchParams.get('modal');
   const urlId = searchParams.get('id');
@@ -1648,6 +1675,16 @@ export const SessionsPage: React.FC = () => {
               title="Edit Scheduled Class"
             >
               <Edit3 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {canScheduleSessions && (
+            <button
+              onClick={() => handleNotifySession(r)}
+              disabled={notifyingSessionId === r.id}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors cursor-pointer disabled:opacity-50"
+              title="Dispatch / Re-send Timetable Notification Email"
+            >
+              <Mail className="h-3.5 w-3.5" />
             </button>
           )}
           {canMarkSession(r) && (
@@ -2074,6 +2111,17 @@ export const SessionsPage: React.FC = () => {
                         <span>Edit Class</span>
                       </button>
                     )}
+                    {canScheduleSessions && (
+                      <button
+                        onClick={() => handleNotifySession(sess)}
+                        disabled={notifyingSessionId === sess.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Dispatch / Re-send Email Notification to Students & Faculty"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        <span>{notifyingSessionId === sess.id ? 'Sending...' : 'Notify'}</span>
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         onClick={() => handleDeleteSession(sess)}
@@ -2210,6 +2258,15 @@ export const SessionsPage: React.FC = () => {
                                 title="Edit Class"
                               >
                                 <Edit3 className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleNotifySession(s); }}
+                                disabled={notifyingSessionId === s.id}
+                                className="p-1 rounded text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 disabled:opacity-50"
+                                title="Dispatch / Re-send Timetable Notification Email"
+                              >
+                                <Mail className="h-3 w-3" />
                               </button>
                               <button
                                 type="button"
@@ -4060,6 +4117,35 @@ export const SessionsPage: React.FC = () => {
                 </a>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOAST / BANNER: SESSION NOTIFICATION FEEDBACK ──────────────────── */}
+      {notifyFeedback && (
+        <div className="fixed bottom-6 right-6 z-60">
+          <div
+            className={`flex items-start gap-3 p-4 rounded-2xl shadow-2xl border backdrop-blur-md max-w-md ${
+              notifyFeedback.type === 'success'
+                ? 'bg-emerald-600 text-white border-emerald-500'
+                : 'bg-rose-600 text-white border-rose-500'
+            }`}
+          >
+            {notifyFeedback.type === 'success' ? (
+              <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5 text-white" />
+            ) : (
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 text-white" />
+            )}
+            <div className="flex-1 text-xs font-semibold leading-relaxed">
+              {notifyFeedback.message}
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotifyFeedback(null)}
+              className="text-white/80 hover:text-white p-0.5 cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}

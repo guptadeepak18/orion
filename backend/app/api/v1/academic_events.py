@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import date
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -198,11 +198,14 @@ async def get_event_endpoint(
 )
 async def create_event_endpoint(
     req: AcademicEventCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     try:
-        ev = await academic_event_service.create_academic_event(db, req, created_by_user_id=current_user.id)
+        ev = await academic_event_service.create_academic_event(
+            db, req, created_by_user_id=current_user.id, background_tasks=background_tasks
+        )
         return ResponseEnvelope(data=ev)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -258,7 +261,7 @@ async def notify_event_endpoint(
     if not ev:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic event not found")
 
-    count = await academic_event_service.notify_event_students(event_id)
+    count = await academic_event_service.notify_event_students(event_id, force=True)
     return ResponseEnvelope(
         data={
             "event_id": str(event_id),

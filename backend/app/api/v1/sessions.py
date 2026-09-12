@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -32,7 +32,12 @@ FACULTY_ADMIN_ROLES = ["crc_admin", "crc_coordinator", "faculty_internal", "facu
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("academic", "edit"))],
 )
-async def create_session(request: Request, s_in: SessionCreate, db: AsyncSession = Depends(get_db)):
+async def create_session(
+    request: Request,
+    s_in: SessionCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     # DEBUG: Log raw request body to diagnose UUID validation issues
     try:
         raw_body = await request.body()
@@ -40,7 +45,7 @@ async def create_session(request: Request, s_in: SessionCreate, db: AsyncSession
     except Exception:
         pass
     try:
-        session = await session_service.create_session(db, s_in)
+        session = await session_service.create_session(db, s_in, background_tasks=background_tasks)
         resp = await session_service.format_single_session_response(db, session.id)
         return ResponseEnvelope(data=resp)
     except FacultyComplianceException as fe:
@@ -333,5 +338,33 @@ async def record_session_variance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/{session_id}/notify",
+    dependencies=[Depends(require_permission("academic", "edit"))],
+    summary="Dispatch or re-send email notifications to enrolled students and faculty for this session",
+)
+async def notify_session_endpoint(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    payload=Depends(get_current_token_payload),
+):
+    from app.models.academic import Session as SessionModel
+    stmt = select(SessionModel).where(SessionModel.id == session_id, SessionModel.is_deleted == False)
+    res = await db.execute(stmt)
+    sess = res.scalar_one_or_none()
+    if not sess:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    count = await session_service.notify_session_students(session_id, force=True)
+    return ResponseEnvelope(
+        data={
+            "session_id": str(session_id),
+            "notified_count": count,
+            "message": f"Successfully dispatched notification emails to {count} recipient(s)",
+        }
+    )
+
 
 

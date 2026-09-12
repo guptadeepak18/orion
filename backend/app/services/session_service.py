@@ -260,26 +260,33 @@ def format_hyperbuild_activities_html(activities: List[Any], subject_map: Option
 
 _recent_session_notifications: Dict[Tuple[UUID, str], float] = {}
 
+
 async def notify_session_students(
     session_id: UUID,
     activities_data: Optional[List[Dict[str, Any]]] = None,
     event_key: str = "class_session_scheduled",
     cancellation_reason: Optional[str] = None,
+    force: bool = False,
 ) -> int:
     """
     Dispatches timetable notification emails (scheduled, rescheduled, cancelled)
-    to all enrolled/eligible students. Runs asynchronously with its own database session.
+    to all enrolled/eligible students and the assigned faculty member.
+    Closes database session before network email dispatch to ensure connection isolation and prevent pool exhaustion.
+    Uses send_custom_html_email_batch for polite pacing across mail providers.
     """
+    import time as time_module
     from app.core.database import AsyncSessionLocal
+    from app.services.email_template_service import get_template_by_event, render_placeholders
+    from app.services.email_service import send_custom_html_email_batch
 
     now_ts = time_module.time()
     cache_key = (session_id, event_key)
-    if cache_key in _recent_session_notifications and (now_ts - _recent_session_notifications[cache_key]) < 30:
-        logger.info(f"Student notification for session {session_id} [{event_key}] recently dispatched. Skipping duplicate.")
+    if not force and cache_key in _recent_session_notifications and (now_ts - _recent_session_notifications[cache_key]) < 30:
+        logger.info(f"Notification for session {session_id} [{event_key}] recently dispatched. Skipping duplicate.")
         return 0
     _recent_session_notifications[cache_key] = now_ts
 
-    logger.info(f"Initiating student notification email dispatch [{event_key}] for session {session_id}...")
+    logger.info(f"Initiating notification email dispatch [{event_key}] for session {session_id}...")
     async with AsyncSessionLocal() as db:
         stmt = (
             select(Session)
@@ -290,20 +297,23 @@ async def notify_session_students(
                 joinedload(Session.faculty_external),
                 joinedload(Session.hyperbuild_activities).joinedload(HyperbuildActivity.subject),
             )
-            .where(Session.id == session_id)
+            .where(Session.id == session_id, Session.is_deleted == False)
         )
         res = await db.execute(stmt)
         session = res.unique().scalar_one_or_none()
         if not session:
-            logger.warning(f"Session {session_id} not found for student notification.")
+            logger.warning(f"Session {session_id} not found for notification.")
             return 0
 
-        # Faculty name
+        # Faculty details
         fac_name = "Assigned Faculty"
+        fac_email = None
         if session.faculty_type == "internal" and session.faculty_internal:
             fac_name = session.faculty_internal.full_name
+            fac_email = (session.faculty_internal.email or "").strip()
         elif session.faculty_type == "external" and session.faculty_external:
             fac_name = session.faculty_external.name
+            fac_email = (session.faculty_external.email or "").strip()
 
         subj_obj = session.subject
         subj_code = subj_obj.code if subj_obj else ""
@@ -340,6 +350,7 @@ async def notify_session_students(
         end_time_str = session.end_time.strftime('%H:%M') if session.end_time else ""
         time_str = f"{start_time_str} - {end_time_str}" if (start_time_str and end_time_str) else "Scheduled Time"
         session_date_str = str(session.session_date) if session.session_date else ""
+        venue_str = session.venue or ("Campus Classroom" if not is_hyperbuild else "Campus")
 
         if event_key == "class_session_cancelled":
             fallback_subject = f"Notice: Class Cancelled — {subj_name} ({session_date_str})"
@@ -347,9 +358,9 @@ async def notify_session_students(
             fallback_subject = f"Schedule Update: {subj_name} Rescheduled to {session_date_str} at {start_time_str}"
         else:
             fallback_subject = (
-                f"HyperBuild Scheduled: {subj_name} on {session_date_str} at {time_str} (Venue: {session.venue or 'Campus'})"
+                f"HyperBuild Scheduled: {subj_name} on {session_date_str} at {time_str} (Venue: {venue_str})"
                 if is_hyperbuild
-                else f"Class Scheduled [{class_type_label}]: {subj_name} on {session_date_str} at {time_str} (Venue: {session.venue or 'Campus Classroom'})"
+                else f"Class Scheduled [{class_type_label}]: {subj_name} on {session_date_str} at {time_str} (Venue: {venue_str})"
             )
 
         # Query all active students in the session's batches
@@ -378,9 +389,6 @@ async def notify_session_students(
 
         logger.info(f"Session '{subj_name}' [{event_key}] targets {len(eligible_students)} student(s) in batch {batch_name}.")
 
-        from app.services.email_template_service import get_template_by_event, render_placeholders
-        from app.services.email_service import send_custom_html_email
-
         tmpl = await get_template_by_event(db, event_key)
         if tmpl and not tmpl.is_active:
             logger.info(f"Skipping student notification emails: {event_key} template is inactive.")
@@ -389,93 +397,75 @@ async def notify_session_students(
         raw_subject = tmpl.subject if tmpl else fallback_subject
         raw_html = tmpl.html_content if tmpl else f"<div><p>{fallback_subject}</p>{activities_section_html}</div>"
 
-        sem = asyncio.Semaphore(4)
+        recipients_list = []
+        for st in eligible_students:
+            email = (st.email_official or st.email or st.email_personal or "").strip()
+            if email:
+                recipients_list.append({
+                    "email": email,
+                    "name": st.full_name or f"{st.first_name} {st.last_name or ''}".strip() or "Student",
+                })
 
-        async def _send_to_student(st: Student) -> bool:
-            recipient = (st.email_official or st.email or st.email_personal or "").strip()
-            if not recipient:
-                return False
+    # DB session closed! Build email batch in memory
+    base_context = {
+        "subject_name": subj_name,
+        "subject_code": subj_code,
+        "faculty_name": fac_name,
+        "session_date": session_date_str,
+        "session_time": time_str,
+        "start_time": start_time_str,
+        "end_time": end_time_str,
+        "venue": venue_str,
+        "batch_name": batch_name,
+        "division_name": "",
+        "app_name": "Orion Portal",
+        "support_email": "deepak.gupta@mile.education",
+        "class_type": class_type_label,
+        "header_title": header_title,
+        "intro_text": intro_text,
+        "activities_section": activities_section_html,
+        "reason": cancellation_reason or "Administrative timetable adjustment",
+    }
 
-            full_name = st.full_name or f"{st.first_name} {st.last_name or ''}".strip() or "Student"
-            context = {
-                "recipient_name": full_name,
-                "full_name": full_name,
-                "subject_name": subj_name,
-                "subject_code": subj_code,
-                "faculty_name": fac_name,
-                "session_date": session_date_str,
-                "session_time": time_str,
-                "start_time": start_time_str,
-                "end_time": end_time_str,
-                "venue": session.venue or "Campus Classroom",
-                "batch_name": batch_name,
-                "division_name": "",
-                "app_name": "Orion Portal",
-                "support_email": "deepak.gupta@mile.education",
-                "class_type": class_type_label,
-                "header_title": header_title,
-                "intro_text": intro_text,
-                "activities_section": activities_section_html,
-                "reason": cancellation_reason or "Administrative timetable adjustment",
-            }
+    batch_items = []
 
-            sub = render_placeholders(raw_subject, context)
-            html = render_placeholders(raw_html, context)
+    # 1. Add faculty recipient first if available
+    if fac_email:
+        fac_ctx = dict(base_context)
+        fac_ctx["recipient_name"] = fac_name
+        fac_ctx["full_name"] = fac_name
+        fac_ctx["intro_text"] = f"Dear Professor {fac_name}, this is an official notification regarding your class schedule:"
+        fac_sub = render_placeholders(raw_subject, fac_ctx)
+        fac_html = render_placeholders(raw_html, fac_ctx)
+        batch_items.append({
+            "email": fac_email,
+            "subject": fac_sub,
+            "html": fac_html,
+        })
 
-            async with sem:
-                try:
-                    return await asyncio.to_thread(send_custom_html_email, recipient, sub, html)
-                except Exception as ex:
-                    logger.error(f"Error emailing student {recipient} for session {session.id} [{event_key}]: {ex}")
-                    return False
+    # 2. Add students
+    for r in recipients_list:
+        ctx = dict(base_context)
+        ctx["recipient_name"] = r["name"]
+        ctx["full_name"] = r["name"]
+        sub = render_placeholders(raw_subject, ctx)
+        html = render_placeholders(raw_html, ctx)
+        batch_items.append({
+            "email": r["email"],
+            "subject": sub,
+            "html": html,
+        })
 
-        results = await asyncio.gather(*[_send_to_student(st) for st in eligible_students])
-        dispatched_count = sum(1 for r in results if r)
-
-        # Also dispatch notification to the assigned faculty member
-        fac_email = None
-        if session.faculty_type == "internal" and session.faculty_internal and session.faculty_internal.email:
-            fac_email = session.faculty_internal.email.strip()
-        elif session.faculty_type == "external" and session.faculty_external and session.faculty_external.email:
-            fac_email = session.faculty_external.email.strip()
-
-        if fac_email:
-            fac_context = {
-                "recipient_name": fac_name,
-                "full_name": fac_name,
-                "subject_name": subj_name,
-                "subject_code": subj_code,
-                "faculty_name": fac_name,
-                "session_date": session_date_str,
-                "session_time": time_str,
-                "start_time": start_time_str,
-                "end_time": end_time_str,
-                "venue": session.venue or "Campus Classroom",
-                "batch_name": batch_name,
-                "division_name": "",
-                "app_name": "Orion Portal",
-                "support_email": "deepak.gupta@mile.education",
-                "class_type": class_type_label,
-                "header_title": header_title,
-                "intro_text": f"Dear Professor {fac_name}, this is an official notification regarding your class schedule:",
-                "activities_section": activities_section_html,
-                "reason": cancellation_reason or "Administrative timetable adjustment",
-            }
-            fac_sub = render_placeholders(raw_subject, fac_context)
-            fac_html = render_placeholders(raw_html, fac_context)
-            try:
-                sent = await asyncio.to_thread(send_custom_html_email, fac_email, fac_sub, fac_html)
-                if sent:
-                    logger.info(f"Dispatched faculty timetable alert [{event_key}] to {fac_email} for session {session.id}.")
-                    dispatched_count += 1
-            except Exception as ex:
-                logger.error(f"Error emailing faculty {fac_email} for session {session.id} [{event_key}]: {ex}")
-
-        logger.info(f"Successfully dispatched {dispatched_count} timetable [{event_key}] notification email(s) for session '{subj_name}'.")
-        return dispatched_count
+    dispatched_count = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
+    logger.info(f"Successfully dispatched {dispatched_count}/{len(batch_items)} timetable [{event_key}] notification email(s) for session '{subj_name}'.")
+    return dispatched_count
 
 
-async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
+async def create_session(
+    db: AsyncSession,
+    s_in: SessionCreate,
+    background_tasks: Optional[Any] = None,
+) -> Session:
     # 1. Faculty Agreement Compliance Check
     if s_in.faculty_type == "external" and s_in.faculty_external_id:
         await faculty_compliance_agent.validate_faculty_agreement(
@@ -581,91 +571,14 @@ async def create_session(db: AsyncSession, s_in: SessionCreate) -> Session:
         except Exception as e:
             logger.error(f"Error persisting hyperbuild activities during create_session: {e}")
 
-    # Trigger class_session_scheduled email notification
+    # Trigger class_session_scheduled email notification in the background
     try:
-        subj_obj = (await db.execute(select(Subject).where(Subject.id == session.subject_id))).scalar_one_or_none() if session.subject_id else None
-        is_hyperbuild = (session.session_type or "").lower().strip() == "hyperbuild"
-        if is_hyperbuild:
-            subj_name = subj_obj.name if subj_obj else "HyperBuild Sprint"
+        if background_tasks:
+            background_tasks.add_task(notify_session_students, session.id, activities_in, "class_session_scheduled")
         else:
-            subj_name = subj_obj.name if subj_obj else "Academic Session"
-
-        fac_name = "Assigned Faculty"
-        fac_email = None
-
-        if session.faculty_type == "internal" and session.faculty_internal_id:
-            fi = (await db.execute(select(FacultyInternal).where(FacultyInternal.id == session.faculty_internal_id))).scalar_one_or_none()
-            if fi:
-                fac_name = fi.full_name
-                fac_email = fi.email
-        elif session.faculty_type == "external" and session.faculty_external_id:
-            fe = (await db.execute(select(FacultyExternal).where(FacultyExternal.id == session.faculty_external_id))).scalar_one_or_none()
-            if fe:
-                fac_name = fe.name
-                fac_email = fe.email
-
-        batch_name = "All Batches"
-        if session.batch_id:
-            b_obj = (await db.execute(select(Batch).where(Batch.id == session.batch_id))).scalar_one_or_none()
-            if b_obj:
-                batch_name = b_obj.name
-
-        class_type_label, header_title, intro_text = get_class_type_info(session.session_type)
-        time_str = f"{session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}" if (session.start_time and session.end_time) else "Scheduled Time"
-
-        activities_section_html = ""
-        if is_hyperbuild:
-            act_list = saved_activities or activities_in or []
-            sub_ids = []
-            for a in act_list:
-                sid = a.get("subject_id") if isinstance(a, dict) else getattr(a, "subject_id", None)
-                if sid:
-                    sub_ids.append(sid)
-            subject_map = {}
-            if sub_ids:
-                s_res = await db.execute(select(Subject.id, Subject.name).where(Subject.id.in_(sub_ids)))
-                for s_id, s_name in s_res.all():
-                    subject_map[s_id] = s_name
-                    subject_map[str(s_id)] = s_name
-            activities_section_html = format_hyperbuild_activities_html(act_list, subject_map=subject_map)
-
-        context = {
-            "recipient_name": fac_name,
-            "full_name": fac_name,
-            "subject_name": subj_name,
-            "faculty_name": fac_name,
-            "session_date": str(session.session_date),
-            "session_time": time_str,
-            "venue": session.venue or "Campus Classroom",
-            "batch_name": batch_name,
-            "division_name": "",
-            "app_name": "Orion Portal",
-            "class_type": class_type_label,
-            "header_title": header_title,
-            "intro_text": intro_text,
-            "activities_section": activities_section_html,
-        }
-
-        fallback_subject = (
-            f"HyperBuild Scheduled: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus'})"
-            if is_hyperbuild
-            else f"Class Scheduled [{class_type_label}]: {subj_name} on {session.session_date} at {time_str} (Venue: {session.venue or 'Campus Classroom'})"
-        )
-
-        # Send to faculty if email exists
-        if fac_email:
-            await trigger_activity_email(
-                db=db,
-                event_key="class_session_scheduled",
-                recipient_email=fac_email,
-                context=context,
-                fallback_subject=fallback_subject,
-            )
-
-        # Asynchronously dispatch timetable notification to all eligible students
-        asyncio.create_task(notify_session_students(session.id, activities_data=activities_in))
+            asyncio.create_task(notify_session_students(session.id, activities_data=activities_in, event_key="class_session_scheduled"))
     except Exception as e:
-        logger.error(f"Error triggering timetable session notifications: {e}")
+        logger.error(f"Error triggering timetable session notification task: {e}")
 
     return session
 
