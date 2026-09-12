@@ -3,7 +3,8 @@ import logging
 import os
 import uuid
 from datetime import date, datetime, timezone, timedelta
-from typing import List, Optional
+from typing import List, Optional, Any
+from fastapi import BackgroundTasks
 from sqlalchemy import select, and_, or_, desc, asc, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload

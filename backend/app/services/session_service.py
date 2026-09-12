@@ -4,6 +4,7 @@ import time as time_module
 from datetime import datetime, date, time, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
+from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_, and_, func
 from sqlalchemy.orm import selectinload, joinedload
