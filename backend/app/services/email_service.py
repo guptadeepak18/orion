@@ -398,30 +398,23 @@ def _try_hostinger_api(target_email: str, subject: str, html_content: str) -> bo
                     logger.info(f"[Hostinger Mail API] Email delivered to {target_email}")
                     return True
                 elif resp is not None and resp.status_code == 429:
-                    # Transient rate limit: back off and retry before giving up
-                    wait_sec = 2.0 * (attempt + 1)
-                    if attempt < max_attempts - 1:
-                        logger.warning(
-                            f"[Hostinger Mail API] Rate limited (429) for {target_email} (attempt {attempt + 1}/{max_attempts}). "
-                            f"Backing off for {wait_sec}s before retry..."
-                        )
-                        time_module.sleep(wait_sec)
-                        continue
-                    else:
-                        logger.warning(f"[Hostinger Mail API] Rate limit (429) persisted after {max_attempts} attempts for {target_email}: {resp.text}")
-                        # Trip a short 60s cooldown (not 30 minutes!)
-                        _trip_circuit_breaker(
-                            "hostinger",
-                            duration_seconds=60.0,
-                            reason=f"Rate limit hit (429) after {max_attempts} retries: {resp.text[:120]}",
-                        )
-                        return False
+                    # Immediate failover on rate-limiting: trip circuit breaker for 60s so this and subsequent emails route directly to Brevo
+                    logger.warning(
+                        f"[Hostinger Mail API] Rate limited (429) for {target_email}: {resp.text[:120]}. "
+                        f"Tripping circuit breaker for 60s and immediately failing over to Brevo..."
+                    )
+                    _trip_circuit_breaker(
+                        "hostinger",
+                        duration_seconds=60.0,
+                        reason=f"Rate limit hit (429): {resp.text[:120]}",
+                    )
+                    return False
                 elif resp is not None:
                     resp_text = resp.text.lower()
                     logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code}: {resp.text}")
                     # Non-transient error or quota exhaustion
                     if resp.status_code in (403, 400) and any(
-                        k in resp_text for k in ["quota", "restriction", "daily", "reached", "suspended"]
+                        k in resp_text for k in ["quota", "restriction", "daily", "reached", "suspended", "limit"]
                     ):
                         _trip_circuit_breaker(
                             "hostinger",
@@ -587,19 +580,21 @@ def _send_raw_custom_html(
         provider_order = [force_provider.lower().strip()]
     else:
         pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
-        provider_order = [pref] if pref in ["hostinger", "smtp", "brevo", "resend", "sendgrid"] else ["hostinger"]
-        for p in ["hostinger", "smtp", "brevo", "resend", "sendgrid"]:
+        provider_order = [pref] if pref in ["hostinger", "brevo", "smtp", "resend", "sendgrid"] else ["hostinger"]
+        for p in ["hostinger", "brevo", "smtp", "resend", "sendgrid"]:
             if p not in provider_order:
                 provider_order.append(p)
 
     attempted = []
     for provider in provider_order:
         attempted.append(provider)
+        if provider != provider_order[0]:
+            logger.info(f"[Email Dispatch] Primary provider unavailable or rate-limited. Activating fallback via '{provider}' for {target_email}...")
         if provider == "hostinger" and _try_hostinger_api(target_email, subject, html_content):
             return True
-        elif provider == "smtp" and _try_smtp_dispatch(target_email, subject, html_content, from_email, reply_to):
-            return True
         elif provider == "brevo" and _try_brevo_api(target_email, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "smtp" and _try_smtp_dispatch(target_email, subject, html_content, from_email, reply_to):
             return True
         elif provider == "resend" and _try_resend_api(target_email, subject, html_content, from_email, reply_to):
             return True
@@ -874,8 +869,8 @@ def get_email_provider_status() -> dict:
     brevo_sender, brevo_name = _get_brevo_sender()
     pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
 
-    active_order = [pref] if pref in ["hostinger", "smtp", "brevo", "resend", "sendgrid"] else ["hostinger"]
-    for p in ["hostinger", "smtp", "brevo", "resend", "sendgrid"]:
+    active_order = [pref] if pref in ["hostinger", "brevo", "smtp", "resend", "sendgrid"] else ["hostinger"]
+    for p in ["hostinger", "brevo", "smtp", "resend", "sendgrid"]:
         if p not in active_order:
             active_order.append(p)
 
