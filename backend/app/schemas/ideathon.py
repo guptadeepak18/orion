@@ -131,12 +131,15 @@ class IdeathonBroadcastRequest(BaseModel):
     batch_ids: Optional[List[str]] = Field(default_factory=lambda: ["ALL"])
     title: Optional[str] = None
     message: Optional[str] = None
+    send_email: bool = True
 
 
 class IdeathonBroadcastResponse(BaseModel):
     notified_count: int
+    emails_queued: Optional[int] = 0
     programs_targeted: List[str]
     batches_targeted: List[str]
+    email_dispatched: bool = True
     message: str
 
 

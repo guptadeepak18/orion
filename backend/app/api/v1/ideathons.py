@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, Query, status, HTTPException, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -261,12 +261,13 @@ async def delete_ideathon(
 async def broadcast_competition_notification(
     id: uuid.UUID,
     payload: IdeathonBroadcastRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Admin broadcasts competition notifications to targeted programs and batches."""
     roles = [r.name for r in current_user.roles]
-    if not any(r in ["crc_admin", "crc_coordinator"] for r in roles):
+    if not any(r in ["crc_admin", "crc_coordinator", "faculty_internal", "super_admin"] for r in roles):
         raise HTTPException(status_code=403, detail="Only admins can broadcast notifications.")
 
     res = await ideathon_service.broadcast_notification(
@@ -276,6 +277,8 @@ async def broadcast_competition_notification(
         batch_ids=payload.batch_ids,
         custom_title=payload.title,
         custom_message=payload.message,
+        send_email=payload.send_email,
+        background_tasks=background_tasks,
     )
     return ResponseEnvelope(data=res)
 

@@ -869,6 +869,175 @@ DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
 </html>""",
     },
     {
+        "event_key": "ideathon_announcement",
+        "name": "Ideathon & Innovation Challenge Announcement",
+        "category": "Competitions & Innovation",
+        "description": "Sent to targeted student cohorts when an Ideathon, Innovation Challenge, or Hackathon competition is broadcast.",
+        "subject": "{{title}}",
+        "variables": [
+            "full_name",
+            "student_name",
+            "title",
+            "competition_title",
+            "theme",
+            "brief",
+            "message_html",
+            "team_size",
+            "target_cohorts",
+            "registration_deadline",
+            "submission_deadline",
+            "action_url",
+            "action_button_text",
+            "banner_section",
+            "app_name",
+            "support_email",
+        ],
+        "is_active": True,
+        "is_system": True,
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{title}}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155;">
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+      <td align="center">
+        <div style="max-width: 600px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1);">
+          
+          <!-- BRAND HEADER -->
+          <div style="background: linear-gradient(135deg, #0e7490 0%, #0284c7 50%, #2563eb 100%); padding: 32px 36px 28px;">
+            <table width="100%" border="0" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="vertical-align: middle;">
+                  <div style="display: inline-block; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.35); margin-bottom: 10px;">
+                    <span style="color: #ffffff; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">
+                      🚀 INNOVATION CHALLENGE
+                    </span>
+                  </div>
+                  <h1 style="color: #ffffff; margin: 0; font-size: 21px; font-weight: 800; line-height: 1.25; letter-spacing: -0.3px;">
+                    {{competition_title}}
+                  </h1>
+                  <p style="color: #bae6fd; margin: 6px 0 0; font-size: 13px; font-weight: 500;">
+                    HyperBuild Venture Incubation &amp; Competitions Hub
+                  </p>
+                </td>
+                <td style="vertical-align: middle; text-align: right; width: 130px; padding-left: 12px;">
+                  <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 8px 14px; text-align: center;">
+                    <span style="font-size: 14px; font-weight: 900; letter-spacing: 1px; color: #ffffff; display: block; line-height: 1.1; text-transform: uppercase;">
+                      ✨ ORION
+                    </span>
+                    <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; display: block; margin-top: 2px;">
+                      LEXICON MILE
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- BANNER (IF ATTACHED) -->
+          {{banner_section}}
+
+          <!-- MAIN BODY -->
+          <div style="padding: 32px 36px;">
+            <p style="font-size: 15px; line-height: 1.6; color: #1e293b; margin: 0 0 16px;">
+              Hello <strong>{{student_name}}</strong>,
+            </p>
+
+            <!-- ANNOUNCEMENT BODY -->
+            <div style="margin: 16px 0 24px; padding: 18px 20px; background: #f0f9ff; border-left: 4px solid #0284c7; border-radius: 8px; font-size: 14.5px; line-height: 1.7; color: #0c4a6e;">
+              {{message_html}}
+            </div>
+
+            <!-- CHALLENGE KEY DETAILS CARD -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 22px 24px; margin: 24px 0;">
+              <h3 style="margin: 0 0 14px; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: #0e7490;">
+                💡 Competition Overview &amp; Requirements
+              </h3>
+
+              <table width="100%" border="0" cellpadding="5" cellspacing="0" style="font-size: 13.5px; border-collapse: collapse;">
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; width: 140px; vertical-align: top;">
+                    🎯 Theme:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 700; vertical-align: top;">
+                    {{theme}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; width: 140px; vertical-align: top;">
+                    👥 Team Structure:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 600; vertical-align: top;">
+                    {{team_size}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; width: 140px; vertical-align: top;">
+                    🎓 Eligible Cohorts:
+                  </td>
+                  <td style="color: #0f172a; font-weight: 600; vertical-align: top;">
+                    {{target_cohorts}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 700; width: 140px; vertical-align: top;">
+                    ⏰ Deadline:
+                  </td>
+                  <td style="color: #0369a1; font-weight: 700; vertical-align: top;">
+                    {{submission_deadline}}
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- PRIMARY CALL TO ACTION BUTTON -->
+            <div style="text-align: center; margin: 32px 0 16px;">
+              <a href="{{action_url}}" style="display: inline-block; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff !important; padding: 14px 34px; border-radius: 12px; font-weight: 800; text-decoration: none; font-size: 14px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); letter-spacing: 0.2px;">
+                {{action_button_text}} →
+              </a>
+            </div>
+
+            <!-- ADVISORY NOTICE -->
+            <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #f1f5f9; font-size: 12.5px; line-height: 1.6; color: #64748b;">
+              <p style="margin: 0 0 8px;">
+                🏆 <strong>Incubation &amp; Awards:</strong> High-scoring ventures qualify for prototype development grants, seed support, and showcase at Lexicon Incubation Council.
+              </p>
+              <p style="margin: 0;">
+                For queries or guidance, connect with HyperBuild Incubation Operations at <a href="mailto:{{support_email}}" style="color: #0284c7; text-decoration: none; font-weight: 600;">{{support_email}}</a>.
+              </p>
+            </div>
+
+            <!-- SIGN-OFF -->
+            <div style="margin-top: 24px; font-size: 13.5px; line-height: 1.5; color: #1e293b;">
+              Warm regards,<br />
+              <strong>HyperBuild Incubation &amp; Academic Operations</strong><br />
+              <span style="color: #64748b; font-size: 12.5px;">Lexicon Management Institute of Leadership &amp; Excellence (MILE)</span>
+            </div>
+
+          </div>
+
+          <!-- FOOTER -->
+          <div style="background: #f8fafc; padding: 22px 36px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+            <p style="margin: 0 0 4px; font-weight: 600; color: #64748b;">
+              Lexicon MILE · Orion Academic &amp; Innovation Platform
+            </p>
+            <p style="margin: 0;">
+              Gate No. 726, Pune-Nagar Road, Wagholi, Pune, Maharashtra 412207
+            </p>
+          </div>
+
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>""",
+    },
+    {
         "event_key": "academic_event_scheduled",
         "name": "Academic Event & Milestone Scheduled Announcement",
         "category": "Academic Operations & Calendar",

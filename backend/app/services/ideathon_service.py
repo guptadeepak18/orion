@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import random
 import re
 import string
@@ -11,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 from fastapi import HTTPException, status
 
+from app.core.database import AsyncSessionLocal
 from app.models.system import Notification, AuditLog
+from app.services.email_template_service import render_email, render_placeholders
+from app.services.email_service import send_custom_html_email_batch
+
+logger = logging.getLogger("crc_one.ideathons")
 
 from app.models.ideathon import (
     Ideathon,
@@ -475,6 +481,119 @@ async def delete_ideathon(db: AsyncSession, ideathon_id: uuid.UUID) -> bool:
     return True
 
 
+async def send_ideathon_broadcast_emails_task(
+    ideathon_id: uuid.UUID,
+    recipients: List[Dict[str, str]],
+    custom_title: Optional[str] = None,
+    custom_message: Optional[str] = None,
+) -> int:
+    """
+    Background worker that formats and dispatches Ideathon competition announcement emails
+    to targeted students using polite pacing and automatic Hostinger -> Brevo failover.
+    """
+    if not recipients:
+        return 0
+
+    logger.info(f"[Ideathon Email Broadcast] Beginning email dispatch to {len(recipients)} students for Ideathon {ideathon_id}...")
+
+    # Load competition details in an isolated DB session
+    async with AsyncSessionLocal() as db:
+        ideo = await db.get(Ideathon, ideathon_id)
+        if not ideo:
+            logger.warning(f"[Ideathon Email Broadcast] Ideathon {ideathon_id} not found. Aborting email dispatch.")
+            return 0
+
+        title = custom_title or f"📢 Innovation Challenge: {ideo.title}"
+        body = (
+            custom_message
+            or f"A new Ideathon '{ideo.title}' has been launched! Theme: {ideo.theme}. Explore problem statements and register your venture in the Competitions Hub."
+        )
+        body_html = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br />")
+
+        deadline_str = "TBA"
+        if ideo.submission_end_at:
+            deadline_str = ideo.submission_end_at.strftime("%d %b %Y, %I:%M %p")
+        elif ideo.registration_end_at:
+            deadline_str = ideo.registration_end_at.strftime("%d %b %Y, %I:%M %p")
+
+        team_size_str = f"{ideo.min_team_size} – {ideo.max_team_size} members"
+        if ideo.min_team_size == ideo.max_team_size:
+            team_size_str = f"{ideo.min_team_size} member" if ideo.min_team_size == 1 else f"{ideo.min_team_size} members"
+
+        target_cohorts_list = []
+        if ideo.target_programs and "ALL" not in ideo.target_programs:
+            target_cohorts_list.append(", ".join(ideo.target_programs))
+        if ideo.target_batches and "ALL" not in ideo.target_batches:
+            target_cohorts_list.append(", ".join(ideo.target_batches))
+        target_cohorts_str = " · ".join(target_cohorts_list) if target_cohorts_list else "All Academic Programs & Cohorts"
+
+        action_url = f"https://dataxplore.club/ideathons/{ideo.id}"
+
+        banner_section = ""
+        if ideo.banner_url:
+            banner_section = f'''
+            <div style="background: #0b0f19; padding: 12px; text-align: center;">
+              <a href="{action_url}" target="_blank" style="display: block; text-decoration: none;">
+                <img src="{ideo.banner_url}" alt="{ideo.title}" style="max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 0 auto; box-shadow: 0 4px 16px rgba(0,0,0,0.25);" />
+              </a>
+            </div>
+            '''
+
+        base_context = {
+            "title": title,
+            "competition_title": ideo.title,
+            "theme": ideo.theme,
+            "brief": ideo.brief or ideo.theme,
+            "message_html": body_html,
+            "team_size": team_size_str,
+            "target_cohorts": target_cohorts_str,
+            "registration_deadline": deadline_str,
+            "submission_deadline": deadline_str,
+            "action_url": action_url,
+            "action_button_text": "View Competition & Register Team",
+            "banner_section": banner_section,
+            "app_name": "Orion Portal",
+            "support_email": "deepak.gupta@mile.education",
+        }
+
+        # Render template via template service
+        rendered_sub, rendered_html, is_active = await render_email(
+            db=db,
+            event_key="ideathon_announcement",
+            context=base_context,
+            fallback_subject=title,
+            fallback_html=f"<h2>{ideo.title}</h2><p>{body_html}</p><p><a href='{action_url}'>View Challenge</a></p>",
+        )
+
+        if not is_active:
+            logger.info(f"[Ideathon Email Broadcast] Template 'ideathon_announcement' is disabled. Skipping dispatch.")
+            return 0
+
+    # DB session closed. Build email batch for each recipient
+    batch_items = []
+    for r in recipients:
+        to_email = r.get("email", "").strip()
+        if not to_email:
+            continue
+        student_name = r.get("name", "Student").strip()
+        student_ctx = dict(base_context)
+        student_ctx["full_name"] = student_name
+        student_ctx["student_name"] = student_name
+        student_ctx["recipient_name"] = student_name
+
+        sub = render_placeholders(rendered_sub, student_ctx)
+        html = render_placeholders(rendered_html, student_ctx)
+        batch_items.append({
+            "email": to_email,
+            "subject": sub,
+            "html": html,
+        })
+
+    dispatched = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
+    logger.info(f"[Ideathon Email Broadcast] Completed dispatch: {dispatched}/{len(batch_items)} emails successfully delivered.")
+    return dispatched
+
+
 async def broadcast_notification(
     db: AsyncSession,
     ideathon_id: uuid.UUID,
@@ -482,13 +601,15 @@ async def broadcast_notification(
     batch_ids: Optional[List[str]] = None,
     custom_title: Optional[str] = None,
     custom_message: Optional[str] = None,
+    send_email: bool = True,
+    background_tasks: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Triggers in-app notification to all students in targeted programs & batches."""
+    """Triggers in-app notification and email broadcast to all students in targeted programs & batches."""
     ideo = await db.get(Ideathon, ideathon_id)
     if not ideo:
         raise HTTPException(status_code=404, detail="Competition not found")
 
-    stmt = select(Student).where(Student.is_deleted == False, Student.user_id.isnot(None))
+    stmt = select(Student).options(joinedload(Student.user)).where(Student.is_deleted == False)
 
     is_all_programs = not program_ids or "ALL" in program_ids
     is_all_batches = not batch_ids or "ALL" in batch_ids
@@ -519,12 +640,15 @@ async def broadcast_notification(
         if batch_uuids:
             stmt = stmt.where(Student.batch_id.in_(batch_uuids))
 
-    students = (await db.execute(stmt)).scalars().all()
+    res = await db.execute(stmt)
+    students = res.unique().scalars().all()
     if not students:
         return {
             "notified_count": 0,
+            "emails_queued": 0,
             "programs_targeted": program_ids or ["ALL"],
             "batches_targeted": batch_ids or ["ALL"],
+            "email_dispatched": False,
             "message": "No enrolled students found matching the selected program and batch criteria.",
         }
 
@@ -534,19 +658,35 @@ async def broadcast_notification(
         or f"A new Ideathon '{ideo.title}' has been launched! Theme: {ideo.theme}. Explore problem statements and register your venture in the Competitions Hub."
     )
 
+    recipients_list = []
     for student in students:
-        notif = Notification(
-            user_id=student.user_id,
-            type="ideathon_announcement",
-            title=title,
-            body=body,
-            priority="high",
-            source="ideathon",
-            is_read=False,
-            related_entity_type="ideathon",
-            related_entity_id=ideo.id,
-        )
-        db.add(notif)
+        if student.user_id:
+            notif = Notification(
+                user_id=student.user_id,
+                type="ideathon_announcement",
+                title=title,
+                body=body,
+                priority="high",
+                source="ideathon",
+                is_read=False,
+                related_entity_type="ideathon",
+                related_entity_id=ideo.id,
+            )
+            db.add(notif)
+
+        # Collect student email
+        student_email = (
+            student.email_official
+            or student.email
+            or (student.user.email if student.user else "")
+            or student.email_personal
+            or ""
+        ).strip()
+        if student_email and "@" in student_email:
+            recipients_list.append({
+                "email": student_email,
+                "name": student.full_name or f"{student.first_name} {student.last_name or ''}".strip() or "Student",
+            })
 
     audit = AuditLog(
         actor_type="human",
@@ -556,19 +696,44 @@ async def broadcast_notification(
         entity_id=ideo.id,
         new_value={
             "students_notified": len(students),
+            "emails_queued": len(recipients_list) if send_email else 0,
             "program_ids": program_ids,
             "batch_ids": batch_ids,
             "title": title,
+            "send_email": send_email,
         }
     )
     db.add(audit)
     await db.commit()
 
+    # Schedule background email dispatch
+    if send_email and recipients_list:
+        if background_tasks:
+            background_tasks.add_task(
+                send_ideathon_broadcast_emails_task,
+                ideathon_id,
+                recipients_list,
+                title,
+                body,
+            )
+        else:
+            import asyncio
+            asyncio.create_task(
+                send_ideathon_broadcast_emails_task(
+                    ideathon_id,
+                    recipients_list,
+                    title,
+                    body,
+                )
+            )
+
     return {
         "notified_count": len(students),
+        "emails_queued": len(recipients_list) if send_email else 0,
         "programs_targeted": program_ids or ["ALL"],
         "batches_targeted": batch_ids or ["ALL"],
-        "message": f"Successfully notified {len(students)} students across selected programs and batches.",
+        "email_dispatched": send_email and len(recipients_list) > 0,
+        "message": f"Successfully notified {len(students)} students via in-app alerts" + (f" and queued {len(recipients_list)} emails for dispatch." if send_email else "."),
     }
 
 
