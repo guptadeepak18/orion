@@ -350,7 +350,7 @@ async def notify_session_endpoint(
     db: AsyncSession = Depends(get_db),
     payload=Depends(get_current_token_payload),
 ):
-    from app.models.academic import Session as SessionModel
+    from app.models.session import Session as SessionModel
     stmt = select(SessionModel).where(SessionModel.id == session_id, SessionModel.is_deleted == False)
     res = await db.execute(stmt)
     sess = res.scalar_one_or_none()
