@@ -10,14 +10,18 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("crc_one")
+
 import app.models  # Register all models on Base.metadata
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal, Base
 from app.api.v1.router import api_router
 from app.services.user_service import seed_initial_data
 from app.schemas.common import ErrorEnvelope, ErrorDetails
-
-logger = logging.getLogger("app.validation_debug")
 
 
 async def _event_auto_complete_loop():
