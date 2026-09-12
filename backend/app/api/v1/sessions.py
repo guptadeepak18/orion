@@ -347,6 +347,7 @@ async def record_session_variance(
 )
 async def notify_session_endpoint(
     session_id: UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     payload=Depends(get_current_token_payload),
 ):
@@ -357,12 +358,12 @@ async def notify_session_endpoint(
     if not sess:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    count = await session_service.notify_session_students(session_id, force=True)
+    background_tasks.add_task(session_service.notify_session_students, session_id, None, "class_session_scheduled", None, True)
     return ResponseEnvelope(
         data={
             "session_id": str(session_id),
-            "notified_count": count,
-            "message": f"Successfully dispatched notification emails to {count} recipient(s)",
+            "status": "queued",
+            "message": "Successfully initiated timetable notification email dispatch to enrolled students and faculty.",
         }
     )
 

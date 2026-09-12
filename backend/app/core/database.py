@@ -66,9 +66,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             raise
         finally:
-            if session.is_active:
-                await session.rollback()
-            await session.close()
+            try:
+                if session.is_active:
+                    await session.rollback()
+            except Exception:
+                pass
+            try:
+                await session.close()
+            except Exception:
+                pass
+

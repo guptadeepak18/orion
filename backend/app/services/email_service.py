@@ -635,9 +635,9 @@ async def send_custom_html_email_batch(
     logger.info(f"[EmailBatch] Beginning paced dispatch of {total} email(s) (pacing={pacing_delay_seconds}s)...")
 
     for i, item in enumerate(recipients_data):
-        to_email = (item.get("email") or "").strip()
-        sub = item.get("subject", "")
-        html = item.get("html", "")
+        to_email = (item.get("email") or item.get("recipient_email") or "").strip()
+        sub = item.get("subject") or item.get("title") or ""
+        html = item.get("html") or item.get("html_content") or ""
         if not to_email:
             continue
 

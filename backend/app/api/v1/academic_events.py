@@ -254,6 +254,7 @@ async def delete_event_endpoint(
 )
 async def notify_event_endpoint(
     event_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -261,11 +262,11 @@ async def notify_event_endpoint(
     if not ev:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic event not found")
 
-    count = await academic_event_service.notify_event_students(event_id, force=True)
+    background_tasks.add_task(academic_event_service.notify_event_students, event_id, force=True)
     return ResponseEnvelope(
         data={
             "event_id": str(event_id),
-            "notified_count": count,
-            "message": f"Successfully dispatched notification emails to {count} student(s)",
+            "status": "queued",
+            "message": "Successfully initiated notification email dispatch to targeted students.",
         }
     )

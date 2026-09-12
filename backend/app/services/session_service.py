@@ -691,24 +691,8 @@ async def update_session(db: AsyncSession, session_id: UUID, s_in: SessionUpdate
         session_date_str = str(session.session_date)
 
         # 1. Session Cancelled
-        if old_status != "cancelled" and session.status == "cancelled":
+        if session.status == "cancelled" and old_status != "cancelled":
             c_reason = update_data.get("cancellation_reason") or "Administrative timetable adjustment"
-            if fac_email:
-                await trigger_activity_email(
-                    db=db,
-                    event_key="class_session_cancelled",
-                    recipient_email=fac_email,
-                    context={
-                        "recipient_name": fac_name,
-                        "subject_name": subj_name,
-                        "faculty_name": fac_name,
-                        "session_date": session_date_str,
-                        "reason": c_reason,
-                        "app_name": "Orion Portal",
-                        "support_email": "deepak.gupta@mile.education",
-                    },
-                    fallback_subject=f"Notice: Class Cancelled — {subj_name} ({session_date_str})",
-                )
             asyncio.create_task(
                 notify_session_students(
                     session.id,
@@ -719,27 +703,6 @@ async def update_session(db: AsyncSession, session_id: UUID, s_in: SessionUpdate
 
         # 2. Session Rescheduled (time, date, or venue changed while still active)
         elif is_rescheduled and session.status != "cancelled":
-            if fac_email:
-                await trigger_activity_email(
-                    db=db,
-                    event_key="class_session_rescheduled",
-                    recipient_email=fac_email,
-                    context={
-                        "recipient_name": fac_name,
-                        "subject_name": subj_name,
-                        "subject_code": subj_code,
-                        "session_date": session_date_str,
-                        "start_time": start_time_str,
-                        "end_time": end_time_str,
-                        "session_time": time_str,
-                        "venue": session.venue or "Campus Classroom",
-                        "faculty_name": fac_name,
-                        "batch_name": batch_name,
-                        "app_name": "Orion Portal",
-                        "support_email": "deepak.gupta@mile.education",
-                    },
-                    fallback_subject=f"Schedule Update: {subj_name} Rescheduled to {session_date_str} at {start_time_str}",
-                )
             asyncio.create_task(
                 notify_session_students(
                     session.id,
@@ -800,22 +763,6 @@ async def delete_session(db: AsyncSession, session_id: UUID) -> bool:
 
     if was_active:
         try:
-            if fac_email:
-                await trigger_activity_email(
-                    db=db,
-                    event_key="class_session_cancelled",
-                    recipient_email=fac_email,
-                    context={
-                        "recipient_name": fac_name,
-                        "subject_name": subj_name,
-                        "faculty_name": fac_name,
-                        "session_date": session_date_str,
-                        "reason": "Session has been removed from timetable",
-                        "app_name": "Orion Portal",
-                        "support_email": "deepak.gupta@mile.education",
-                    },
-                    fallback_subject=f"Notice: Class Cancelled — {subj_name} ({session_date_str})",
-                )
             asyncio.create_task(
                 notify_session_students(
                     session.id,
@@ -1257,22 +1204,6 @@ async def record_session_variance(
         batch_name = session.batch.name if session.batch else "All Batches"
 
         if req.variance_type == "cancelled":
-            if fac_email:
-                await trigger_activity_email(
-                    db=db,
-                    event_key="class_session_cancelled",
-                    recipient_email=fac_email,
-                    context={
-                        "recipient_name": fac_name,
-                        "subject_name": subj_name,
-                        "faculty_name": fac_name,
-                        "session_date": session_date_str,
-                        "reason": req.reason or "Class cancelled via timetable adjustment",
-                        "app_name": "Orion Portal",
-                        "support_email": "deepak.gupta@mile.education",
-                    },
-                    fallback_subject=f"Notice: Class Cancelled — {subj_name} ({session_date_str})",
-                )
             asyncio.create_task(
                 notify_session_students(
                     session.id,
@@ -1281,27 +1212,6 @@ async def record_session_variance(
                 )
             )
         elif req.variance_type in ["rescheduled", "faculty_substitution", "subject_swapped"]:
-            if fac_email:
-                await trigger_activity_email(
-                    db=db,
-                    event_key="class_session_rescheduled",
-                    recipient_email=fac_email,
-                    context={
-                        "recipient_name": fac_name,
-                        "subject_name": subj_name,
-                        "subject_code": subj_code,
-                        "session_date": session_date_str,
-                        "start_time": start_time_str,
-                        "end_time": end_time_str,
-                        "session_time": time_str,
-                        "venue": session.venue or "Campus Classroom",
-                        "faculty_name": fac_name,
-                        "batch_name": batch_name,
-                        "app_name": "Orion Portal",
-                        "support_email": "deepak.gupta@mile.education",
-                    },
-                    fallback_subject=f"Schedule Update: {subj_name} Rescheduled to {session_date_str} at {start_time_str}",
-                )
             asyncio.create_task(
                 notify_session_students(
                     session.id,
