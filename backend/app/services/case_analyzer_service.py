@@ -61,11 +61,10 @@ class CaseAnalyzerService:
             or os.getenv("GOOGLE_API_KEY")
         )
         self.gemini_models = [
-            "gemini-2.5-flash",
-            "gemini-3.7-flash",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
+            getattr(settings, "GEMINI_MODEL", "gemini-flash-latest") or "gemini-flash-latest",
             "gemini-flash-latest",
+            "gemini-3.5-flash",
+            "gemini-3.7-flash",
             "gemini-pro-latest",
         ]
 
@@ -403,7 +402,24 @@ Return ONLY valid JSON matching this schema."""
             except Exception as ex:
                 logger.warning(f"Gemini {model} request failed: {ex}")
 
-        raise RuntimeError("Gemini API calls failed")
+        # Fallback to Cloudflare Workers AI (262,144 context) if Gemini is busy or rate-limited
+        if getattr(settings, "CLOUDFLARE_API_TOKEN", "") and getattr(settings, "CLOUDFLARE_ACCOUNT_ID", ""):
+            try:
+                from app.services.ai_provider_hub import ai_hub
+                messages = [
+                    {"role": "system", "content": "You are a senior Harvard Business School strategy professor. Always output pure, valid JSON matching the requested schema with no markdown code fences."},
+                    {"role": "user", "content": master_prompt}
+                ]
+                parsed = await ai_hub.call_cloudflare(messages=messages, max_tokens=6000)
+                if isinstance(parsed, dict) and "meta" in parsed:
+                    parsed["meta"]["generated_timestamp"] = datetime.utcnow().strftime("%B %d, %Y — %H:%M UTC")
+                    parsed["meta"]["ai_powered"] = True
+                    logger.info("Case study analysis generated via Cloudflare Workers AI fallback")
+                    return parsed
+            except Exception as cf_err:
+                logger.warning(f"Cloudflare Case Study fallback failed: {cf_err}")
+
+        raise RuntimeError("All Case Study AI providers failed")
 
     def _generate_bespoke_outcome_analysis(
         self,

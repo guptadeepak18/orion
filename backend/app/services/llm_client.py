@@ -37,16 +37,85 @@ class LLMClient:
             try:
                 return await self._call_gemini(user_prompt, system_instruction, retrieved_data, tool_call)
             except Exception as e:
-                logger.warning(f"Gemini Copilot generation warning: {e}. Falling back to internal engine.")
+                logger.warning(f"Gemini Copilot generation warning: {e}. Cascading to backup providers.")
 
-        # 2. Attempt Anthropic if key is present
-        if self.anthropic_key:
+        # Build standard chat messages
+        context_str = ""
+        if retrieved_data:
+            context_str = f"\n\nRetrieved Academic Data ({len(retrieved_data)} records):\n{retrieved_data}"
+        messages = [
+            {"role": "system", "content": system_instruction or "You are Orion Copilot, an intelligent academic operations assistant. Provide concise, helpful answers."},
+            {"role": "user", "content": f"{user_prompt}{context_str}"}
+        ]
+
+        # 2. Attempt Groq LPU
+        if getattr(settings, "GROQ_API_KEY", ""):
             try:
-                return await self._call_anthropic(user_prompt, system_instruction, retrieved_data, tool_call)
+                from app.services.ai_provider_hub import ai_hub
+                res = await ai_hub.call_groq(messages=messages)
+                if isinstance(res, dict) and "raw_response" in res:
+                    return res["raw_response"]
+                elif isinstance(res, str):
+                    return res
+                elif isinstance(res, dict):
+                    return res.get("message") or str(res)
             except Exception as e:
-                logger.warning(f"Anthropic Copilot generation warning: {e}")
+                logger.warning(f"Groq Copilot fallback warning: {e}")
 
-        # 3. Deterministic schema-aware fallback summary
+        # 3. Attempt Hugging Face Router
+        if getattr(settings, "HUGGINGFACE_API_KEY", ""):
+            try:
+                from app.services.ai_provider_hub import ai_hub
+                res = await ai_hub.call_huggingface(messages=messages)
+                if isinstance(res, dict) and "raw_response" in res:
+                    return res["raw_response"]
+                elif isinstance(res, str):
+                    return res
+                elif isinstance(res, dict):
+                    return res.get("message") or str(res)
+            except Exception as e:
+                logger.warning(f"Hugging Face Copilot fallback warning: {e}")
+
+        # 4. Attempt Mistral AI
+        if getattr(settings, "MISTRAL_API_KEY", ""):
+            try:
+                from app.services.ai_provider_hub import ai_hub
+                res = await ai_hub.call_mistral(messages=messages)
+                if isinstance(res, dict) and "raw_response" in res:
+                    return res["raw_response"]
+                elif isinstance(res, str):
+                    return res
+                elif isinstance(res, dict):
+                    return res.get("message") or str(res)
+            except Exception as e:
+                logger.warning(f"Mistral Copilot fallback warning: {e}")
+
+        # 5. Attempt Cloudflare Workers AI
+        if getattr(settings, "CLOUDFLARE_API_TOKEN", "") and getattr(settings, "CLOUDFLARE_ACCOUNT_ID", ""):
+            try:
+                from app.services.ai_provider_hub import ai_hub
+                res = await ai_hub.call_cloudflare(messages=messages)
+                if isinstance(res, dict) and "raw_response" in res:
+                    return res["raw_response"]
+                elif isinstance(res, str):
+                    return res
+                elif isinstance(res, dict):
+                    return res.get("message") or str(res)
+            except Exception as e:
+                logger.warning(f"Cloudflare Copilot fallback warning: {e}")
+
+        # 6. Attempt Pollinations.ai (unmetered open community)
+        try:
+            from app.services.ai_provider_hub import ai_hub
+            res = await ai_hub.call_pollinations(messages=messages)
+            if isinstance(res, dict) and "raw_response" in res:
+                return res["raw_response"]
+            elif isinstance(res, str):
+                return res
+        except Exception as e:
+            logger.warning(f"Pollinations Copilot fallback warning: {e}")
+
+        # 7. Deterministic schema-aware fallback summary
         return self._generate_intelligent_fallback_response(user_prompt, retrieved_data, tool_call)
 
     async def _call_gemini(
@@ -56,7 +125,7 @@ class LLMClient:
         retrieved_data: Optional[List[Dict[str, Any]]],
         tool_call: Optional[str],
     ) -> str:
-        models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
+        models_to_try = ["gemini-flash-latest", "gemini-3.5-flash"]
         
         # Build prompt with database context
         context_str = ""
@@ -73,7 +142,7 @@ class LLMClient:
         for model in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
             try:
-                async with httpx.AsyncClient(timeout=4.0) as client:
+                async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(
                         url,
                         headers={"content-type": "application/json"},
@@ -97,8 +166,7 @@ class LLMClient:
             except Exception as ex:
                 logger.warning(f"Gemini model {model} request failed: {ex}")
 
-        # If all API calls exhausted/rate limited, return intelligent schema response
-        return self._generate_intelligent_fallback_response(user_prompt, retrieved_data, tool_call)
+        raise RuntimeError("All configured Gemini models failed.")
 
     async def _call_anthropic(
         self,

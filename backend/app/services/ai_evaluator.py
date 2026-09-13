@@ -89,24 +89,10 @@ async def evaluate_submission_against_rubric(
     ollama_model = getattr(settings, "OLLAMA_MODEL", "gemma4:31b-cloud") or "gemma4:31b-cloud"
     ollama_key = getattr(settings, "OLLAMA_API_KEY", None) or os.getenv("OLLAMA_API_KEY")
 
-    # 4. Attempt AI evaluation with multi-provider cascade
-    # Priority 1: High-precision Ollama Cloud (Gemma 4 31B, sub-second, 262k context, no rate limits)
-    global _ollama_backoff_until
+    # 4. Attempt AI evaluation with resilient multi-provider cascade
     now_ts = time.time()
-    if ollama_url and now_ts > _ollama_backoff_until:
-        try:
-            result = await _evaluate_with_ollama(
-                activity, rubric, full_submission_text,
-                base_url=ollama_url, model=ollama_model, api_key=ollama_key,
-                student_name=student_name
-            )
-        except Exception as e:
-            logger.warning(f"Ollama evaluation failed: {e}")
-            if "429" in str(e) or "too many requests" in str(e).lower():
-                _ollama_backoff_until = now_ts + 300.0  # Backoff Ollama for 5 mins
 
-
-    # Priority 2: Groq Multi-Model LPU (120B / 27B)
+    # Tier 1: Ultra-Fast LPU & Serverless Engines (Groq & Hugging Face)
     global _groq_backoff_until
     if not result and groq_key and now_ts > _groq_backoff_until:
         try:
@@ -116,19 +102,37 @@ async def evaluate_submission_against_rubric(
             if "429" in str(e) or "too many requests" in str(e).lower() or "rate" in str(e).lower():
                 _groq_backoff_until = time.time() + 60.0
 
-    global _openrouter_backoff_until
-    if not result and openrouter_key and os.getenv("OPENROUTER_MODEL") and now_ts > _openrouter_backoff_until:
+    if not result and getattr(settings, "HUGGINGFACE_API_KEY", ""):
         try:
-            result = await _evaluate_with_openrouter(activity, rubric, full_submission_text, openrouter_key, student_name=student_name)
+            result = await _evaluate_with_huggingface(activity, rubric, full_submission_text, student_name=student_name)
         except Exception as e:
-            logger.warning(f"OpenRouter evaluation failed: {e}")
-            _openrouter_backoff_until = time.time() + 600.0
+            logger.warning(f"Hugging Face evaluation failed: {e}")
 
-    if not result and anthropic_key:
+    # Tier 2: Precision European Academic & Enterprise Reasoning (Mistral AI & Cohere)
+    if not result and getattr(settings, "MISTRAL_API_KEY", ""):
         try:
-            result = await _evaluate_with_anthropic(activity, rubric, full_submission_text, anthropic_key, student_name=student_name)
+            result = await _evaluate_with_mistral(activity, rubric, full_submission_text, student_name=student_name)
         except Exception as e:
-            logger.warning(f"Anthropic evaluation failed: {e}")
+            logger.warning(f"Mistral evaluation failed: {e}")
+
+    if not result and getattr(settings, "COHERE_API_KEY", ""):
+        try:
+            result = await _evaluate_with_cohere(activity, rubric, full_submission_text, student_name=student_name)
+        except Exception as e:
+            logger.warning(f"Cohere evaluation failed: {e}")
+
+    # Tier 3: Multi-Model Cloud & Long-Context Powerhouses (SiliconFlow, Cloudflare, Google Gemini)
+    if not result and getattr(settings, "SILICONFLOW_API_KEY", ""):
+        try:
+            result = await _evaluate_with_siliconflow(activity, rubric, full_submission_text, student_name=student_name)
+        except Exception as e:
+            logger.warning(f"SiliconFlow evaluation failed: {e}")
+
+    if not result and getattr(settings, "CLOUDFLARE_API_TOKEN", "") and getattr(settings, "CLOUDFLARE_ACCOUNT_ID", ""):
+        try:
+            result = await _evaluate_with_cloudflare(activity, rubric, full_submission_text, student_name=student_name)
+        except Exception as e:
+            logger.warning(f"Cloudflare evaluation failed: {e}")
 
     global _gemini_backoff_until
     if not result and gemini_key and now_ts > _gemini_backoff_until:
@@ -136,13 +140,27 @@ async def evaluate_submission_against_rubric(
             result = await _evaluate_with_gemini(activity, rubric, full_submission_text, gemini_key, student_name=student_name)
         except Exception as e:
             logger.warning(f"Gemini evaluation failed: {e}")
-            _gemini_backoff_until = time.time() + 600.0
+            _gemini_backoff_until = time.time() + 60.0
 
-    if not result and openai_key:
+    # Tier 4: Community & Local Engines (Pollinations.ai & Local Ollama)
+    if not result:
         try:
-            result = await _evaluate_with_openai(activity, rubric, full_submission_text, openai_key, student_name=student_name)
+            result = await _evaluate_with_pollinations(activity, rubric, full_submission_text, student_name=student_name)
         except Exception as e:
-            logger.warning(f"OpenAI evaluation failed: {e}")
+            logger.warning(f"Pollinations fallback failed: {e}")
+
+    global _ollama_backoff_until
+    if not result and ollama_url and now_ts > _ollama_backoff_until:
+        try:
+            result = await _evaluate_with_ollama(
+                activity, rubric, full_submission_text,
+                base_url=ollama_url, model=ollama_model, api_key=ollama_key,
+                student_name=student_name
+            )
+        except Exception as e:
+            logger.warning(f"Ollama evaluation failed: {e}")
+            if "429" in str(e) or "too many requests" in str(e).lower():
+                _ollama_backoff_until = now_ts + 300.0
 
     # 5. Fallback rule-based evaluator if all live LLMs fail or not configured
     if not result:
@@ -554,7 +572,7 @@ async def _evaluate_with_anthropic(activity: Any, rubric: List[Dict[str, Any]], 
 
 async def _evaluate_with_gemini(activity: Any, rubric: List[Dict[str, Any]], student_text: str, api_key: str, student_name: str = "Student") -> Dict[str, Any]:
     prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.getenv("GEMINI_MODEL") or getattr(settings, "GEMINI_MODEL", "gemini-flash-latest") or "gemini-flash-latest"
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -600,6 +618,87 @@ async def _evaluate_with_openai(activity: Any, rubric: List[Dict[str, Any]], stu
         parsed["model_used"] = f"OpenAI {model}"
         parsed["evaluated_at"] = datetime.utcnow().isoformat()
         return parsed
+
+
+async def _evaluate_with_huggingface(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    from app.services.ai_provider_hub import ai_hub
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    messages = [
+        {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON matching the requested schema with no conversational filler."},
+        {"role": "user", "content": prompt}
+    ]
+    res = await ai_hub.call_huggingface(messages=messages)
+    res["evaluated_at"] = datetime.utcnow().isoformat()
+    return res
+
+
+async def _evaluate_with_mistral(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    from app.services.ai_provider_hub import ai_hub
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    messages = [
+        {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON matching the requested schema with no conversational filler."},
+        {"role": "user", "content": prompt}
+    ]
+    res = await ai_hub.call_mistral(messages=messages)
+    res["evaluated_at"] = datetime.utcnow().isoformat()
+    return res
+
+
+async def _evaluate_with_siliconflow(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    from app.services.ai_provider_hub import ai_hub
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    messages = [
+        {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON matching the requested schema with no conversational filler."},
+        {"role": "user", "content": prompt}
+    ]
+    res = await ai_hub.call_siliconflow(messages=messages)
+    res["evaluated_at"] = datetime.utcnow().isoformat()
+    return res
+
+
+async def _evaluate_with_cloudflare(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    from app.services.ai_provider_hub import ai_hub
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    messages = [
+        {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON with no conversational filler."},
+        {"role": "user", "content": prompt}
+    ]
+    res = await ai_hub.call_cloudflare(messages=messages)
+    res["evaluated_at"] = datetime.utcnow().isoformat()
+    return res
+
+
+async def _evaluate_with_cohere(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    key = settings.COHERE_API_KEY
+    if not key:
+        raise ValueError("Cohere API key not configured.")
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    url = "https://api.cohere.com/v2/chat"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "command-r-08-2024",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        raw_text = resp.json()["message"]["content"][0]["text"].strip()
+        parsed = _clean_and_parse_json(raw_text)
+        parsed["model_used"] = "COHERE (command-r-08-2024)"
+        parsed["evaluated_at"] = datetime.utcnow().isoformat()
+        return parsed
+
+
+async def _evaluate_with_pollinations(activity: Any, rubric: List[Dict[str, Any]], student_text: str, student_name: str = "Student") -> Dict[str, Any]:
+    from app.services.ai_provider_hub import ai_hub
+    prompt = _build_evaluation_prompt(activity, rubric, student_text, student_name=student_name)
+    messages = [
+        {"role": "system", "content": "You are an expert academic evaluator. Always output pure, valid JSON with no conversational text or markdown code fences."},
+        {"role": "user", "content": prompt}
+    ]
+    res = await ai_hub.call_pollinations(messages=messages)
+    res["evaluated_at"] = datetime.utcnow().isoformat()
+    return res
 
 
 def _clean_and_parse_json(raw_text: str) -> Dict[str, Any]:

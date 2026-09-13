@@ -1,5 +1,6 @@
 import os
 from typing import List
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_BREVO_KEY = bytes([
@@ -29,9 +30,44 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "nvidia/nemotron-3.5-lightning:free"
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-flash-latest"
     ANTHROPIC_API_KEY: str = ""
     
+    # Cloudflare Workers AI
+    CLOUDFLARE_ACCOUNT_ID: str = ""
+    CLOUDFLARE_API_TOKEN: str = ""
+    CLOUDFLARE_AI_MODEL: str = "@cf/qwen/qwen3.8-27b"
+
+    # Cerebras Cloud Inference (Wafer-scale LPU)
+    CEREBRAS_API_KEY: str = os.getenv("CEREBRAS_API_KEY", "")
+    CEREBRAS_MODEL: str = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+
+    # SambaNova Cloud
+    SAMBANOVA_API_KEY: str = os.getenv("SAMBANOVA_API_KEY", "")
+    SAMBANOVA_MODEL: str = os.getenv("SAMBANOVA_MODEL", "Meta-Llama-3.3-70B-Instruct")
+
+    # GitHub Models (Azure AI)
+    GITHUB_MODELS_TOKEN: str = os.getenv("GITHUB_MODELS_TOKEN", "")
+    GITHUB_MODELS_MODEL: str = os.getenv("GITHUB_MODELS_MODEL", "gpt-4o-mini")
+
+    # Mistral AI
+    MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "")
+    MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "open-mistral-nemo")
+
+    # Cohere, SiliconFlow, Zhipu, Baidu, Tencent
+    COHERE_API_KEY: str = os.getenv("COHERE_API_KEY", "")
+    SILICONFLOW_API_KEY: str = os.getenv("SILICONFLOW_API_KEY", "")
+    ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
+    BAIDU_API_KEY: str = os.getenv("BAIDU_API_KEY", "")
+    TENCENT_API_KEY: str = os.getenv("TENCENT_API_KEY", "")
+
+    # Embeddings, Audio & Community
+    HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
+    VOYAGE_API_KEY: str = os.getenv("VOYAGE_API_KEY", "")
+    JINA_API_KEY: str = os.getenv("JINA_API_KEY", "")
+    GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
+    POLLINATIONS_ENABLED: bool = True
+
     OLLAMA_BASE_URL: str = "https://ollama.com"
     OLLAMA_MODEL: str = "gemma4:31b"
     OLLAMA_API_KEY: str = "50b753f0964f41c2bef750dcaac3966d.rJ4R2dCwIVFM8SZUk4oULy1T"
@@ -74,6 +110,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = "no-reply@dataxplore.club"
     SMTP_REPLY_TO: str = "deepak.gupta@mile.education"
+
+    @model_validator(mode="after")
+    def sync_credentials(self):
+        if not self.CLOUDFLARE_ACCOUNT_ID and self.R2_ACCOUNT_ID:
+            self.CLOUDFLARE_ACCOUNT_ID = self.R2_ACCOUNT_ID
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",
