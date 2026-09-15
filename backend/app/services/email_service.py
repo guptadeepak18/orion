@@ -563,6 +563,34 @@ def _try_smtp_dispatch(target_email: str, subject: str, html_content: str, from_
     return False
 
 
+def _try_google_workspace_smtp_dispatch(target_email: str, subject: str, html_content: str, reply_to: str) -> bool:
+    if not _is_provider_available("google_workspace"):
+        return False
+    host = getattr(settings, "GW_SMTP_HOST", "smtp.gmail.com") or os.environ.get("GOOGLE_WORKSPACE_SMTP_HOST", "smtp.gmail.com")
+    port = int(getattr(settings, "GW_SMTP_PORT", 587) or os.environ.get("GOOGLE_WORKSPACE_SMTP_PORT", 587))
+    user = getattr(settings, "GW_SMTP_USER", "deepak.gupta@mile.education") or os.environ.get("GOOGLE_WORKSPACE_SMTP_USER", "deepak.gupta@mile.education")
+    pwd = getattr(settings, "GW_SMTP_PASSWORD", "") or os.environ.get("GOOGLE_WORKSPACE_SMTP_PASSWORD", "")
+    from_email = getattr(settings, "GW_SMTP_FROM_EMAIL", user) or os.environ.get("GOOGLE_WORKSPACE_SMTP_FROM_EMAIL", user)
+
+    if not (host and user and pwd):
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"Orion Portal <{from_email}>"
+    msg["To"] = target_email
+    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+    msg.attach(MIMEText(html_content, "html"))
+    try:
+        _dispatch_smtp(host, port, user, pwd, user, target_email, msg)
+        logger.info(f"[Google Workspace SMTP] Email delivered to {target_email} (from {user})")
+        return True
+    except Exception as e:
+        logger.warning(f"[Google Workspace SMTP] Dispatch failed: {e}")
+        _trip_circuit_breaker("google_workspace", duration_seconds=60.0, reason=f"SMTP error: {str(e)[:100]}")
+    return False
+
+
 def _send_raw_custom_html(
     target_email: str,
     subject: str,
@@ -570,8 +598,12 @@ def _send_raw_custom_html(
     force_provider: Optional[str] = None,
 ) -> bool:
     """
-    Internal dispatcher across Hostinger, SMTP, Brevo, Resend, and SendGrid with automatic failover.
-    Priority: Hostinger (Priority 1) -> SMTP / Brevo / Resend / SendGrid (Priority 2+ failover).
+    Internal dispatcher across Hostinger, Brevo, Personal SMTP, Google Workspace SMTP, Resend, and SendGrid.
+    Priority Hierarchy:
+      Priority 1: Hostinger Mail API
+      Priority 2: Brevo API
+      Priority 3: Personal Gmail SMTP Relay
+      Priority 4: Google Workspace SMTP Relay (deepak.gupta@mile.education)
     """
     from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
     reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
@@ -580,8 +612,8 @@ def _send_raw_custom_html(
         provider_order = [force_provider.lower().strip()]
     else:
         pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
-        provider_order = [pref] if pref in ["hostinger", "brevo", "smtp", "resend", "sendgrid"] else ["hostinger"]
-        for p in ["hostinger", "brevo", "smtp", "resend", "sendgrid"]:
+        provider_order = [pref] if pref in ["hostinger", "brevo", "smtp", "google_workspace", "resend", "sendgrid"] else ["hostinger"]
+        for p in ["hostinger", "brevo", "smtp", "google_workspace", "resend", "sendgrid"]:
             if p not in provider_order:
                 provider_order.append(p)
 
@@ -589,12 +621,14 @@ def _send_raw_custom_html(
     for provider in provider_order:
         attempted.append(provider)
         if provider != provider_order[0]:
-            logger.info(f"[Email Dispatch] Primary provider unavailable or rate-limited. Activating fallback via '{provider}' for {target_email}...")
+            logger.info(f"[Email Dispatch] Activating fallback tier '{provider}' for {target_email}...")
         if provider == "hostinger" and _try_hostinger_api(target_email, subject, html_content):
             return True
         elif provider == "brevo" and _try_brevo_api(target_email, subject, html_content, from_email, reply_to):
             return True
         elif provider == "smtp" and _try_smtp_dispatch(target_email, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "google_workspace" and _try_google_workspace_smtp_dispatch(target_email, subject, html_content, reply_to):
             return True
         elif provider == "resend" and _try_resend_api(target_email, subject, html_content, from_email, reply_to):
             return True
@@ -653,6 +687,226 @@ async def send_custom_html_email_batch(
 
     logger.info(f"[EmailBatch] Completed paced dispatch: {success_count}/{total} delivered.")
     return success_count
+
+
+def _try_hostinger_api_bcc(bcc_emails: list, subject: str, html_content: str) -> bool:
+    if not _is_provider_available("hostinger"):
+        return False
+    api_key = (getattr(settings, "HOSTINGER_MAIL_API_KEY", "") or os.environ.get("HOSTINGER_MAIL_API_KEY", "")).strip()
+    if not api_key:
+        return False
+    mailbox_id = getattr(settings, "HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213") or os.environ.get("HOSTINGER_MAILBOX_ID", "AC450fbdeffe5c83d81e26fcf45213")
+    url = f"https://api.mail.hostinger.com/api/v1/mailboxes/{mailbox_id}/send"
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "to": ["no-reply@dataxplore.club"],
+        "bcc": bcc_emails,
+        "subject": subject,
+        "html": html_content,
+    }
+    try:
+        with httpx.Client(timeout=25.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201, 204):
+                logger.info(f"[Hostinger Mail API] BCC Email delivered to {len(bcc_emails)} recipient(s)")
+                return True
+            elif resp.status_code == 429:
+                logger.warning("[Hostinger Mail API] Rate limited (429) during BCC dispatch. Tripping circuit breaker for 60s...")
+                _trip_circuit_breaker("hostinger", duration_seconds=60.0, reason=f"Rate limit hit (429): {resp.text[:100]}")
+                return False
+            else:
+                logger.warning(f"[Hostinger Mail API] Returned status {resp.status_code} on BCC: {resp.text}")
+                return False
+    except Exception as e:
+        logger.error(f"[Hostinger Mail API] BCC Request failed: {e}")
+        _trip_circuit_breaker("hostinger", duration_seconds=30.0, reason=f"Connection failure: {str(e)[:100]}")
+        return False
+
+
+def _try_brevo_api_bcc(bcc_emails: list, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("brevo"):
+        return False
+    api_key = _get_brevo_api_key()
+    if not api_key:
+        return False
+    sender_email, sender_name = _get_brevo_sender(from_email)
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": sender_email, "name": "Orion Students"}],
+        "bcc": [{"email": e.strip()} for e in bcc_emails if e.strip()],
+        "subject": subject,
+        "htmlContent": html_content,
+        "replyTo": {"email": reply_to, "name": "Deepak Gupta"},
+    }
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                logger.info(f"[Brevo] BCC Email delivered to {len(bcc_emails)} recipient(s) (from {sender_email})")
+                return True
+            else:
+                resp_text = resp.text.lower()
+                logger.warning(f"[Brevo] Returned status {resp.status_code} on BCC: {resp.text}")
+                if resp.status_code == 429 or "rate" in resp_text or "quota" in resp_text:
+                    _trip_circuit_breaker("brevo", duration_seconds=300.0, reason="Rate limit hit (429)")
+                return False
+    except Exception as e:
+        logger.error(f"[Brevo] BCC Request failed: {e}")
+        return False
+
+
+def _try_smtp_dispatch_bcc(bcc_emails: list, subject: str, html_content: str, from_email: str, reply_to: str) -> bool:
+    if not _is_provider_available("smtp"):
+        return False
+    smtp_host = getattr(settings, "SMTP_HOST", "")
+    smtp_user = getattr(settings, "SMTP_USER", "")
+    smtp_password = getattr(settings, "SMTP_PASSWORD", "")
+    smtp_port = int(getattr(settings, "SMTP_PORT", 587))
+    if not (smtp_host and smtp_user and smtp_password):
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"Orion Portal <{from_email}>"
+    msg["To"] = f"Orion Students <{from_email}>"
+    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+    msg.attach(MIMEText(html_content, "html"))
+
+    target_list = [from_email] + [e.strip() for e in bcc_emails if e.strip()]
+    try:
+        if smtp_port == 465:
+            with IPv4SMTP_SSL(smtp_host, smtp_port, timeout=8) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, target_list, msg.as_string())
+        else:
+            with IPv4SMTP(smtp_host, smtp_port, timeout=8) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, target_list, msg.as_string())
+        logger.info(f"[SMTP] BCC Email delivered to {len(bcc_emails)} recipient(s)")
+        return True
+    except Exception as e:
+        logger.warning(f"[SMTP] BCC Dispatch failed: {e}")
+        return False
+
+
+def _try_google_workspace_smtp_dispatch_bcc(bcc_emails: list, subject: str, html_content: str, reply_to: str) -> bool:
+    if not _is_provider_available("google_workspace"):
+        return False
+    host = getattr(settings, "GW_SMTP_HOST", "smtp.gmail.com") or os.environ.get("GOOGLE_WORKSPACE_SMTP_HOST", "smtp.gmail.com")
+    port = int(getattr(settings, "GW_SMTP_PORT", 587) or os.environ.get("GOOGLE_WORKSPACE_SMTP_PORT", 587))
+    user = getattr(settings, "GW_SMTP_USER", "deepak.gupta@mile.education") or os.environ.get("GOOGLE_WORKSPACE_SMTP_USER", "deepak.gupta@mile.education")
+    pwd = getattr(settings, "GW_SMTP_PASSWORD", "") or os.environ.get("GOOGLE_WORKSPACE_SMTP_PASSWORD", "")
+    gw_from = getattr(settings, "GW_SMTP_FROM_EMAIL", user) or os.environ.get("GOOGLE_WORKSPACE_SMTP_FROM_EMAIL", user)
+
+    if not (host and user and pwd):
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"Orion Portal <{gw_from}>"
+    msg["To"] = f"Orion Students <{gw_from}>"
+    msg["Reply-To"] = f"Deepak Gupta <{reply_to}>"
+    msg.attach(MIMEText(html_content, "html"))
+
+    target_list = [user] + [e.strip() for e in bcc_emails if e.strip()]
+    try:
+        if port == 465:
+            with IPv4SMTP_SSL(host, port, timeout=8) as server:
+                server.login(user, pwd)
+                server.sendmail(user, target_list, msg.as_string())
+        else:
+            with IPv4SMTP(host, port, timeout=8) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(user, pwd)
+                server.sendmail(user, target_list, msg.as_string())
+        logger.info(f"[Google Workspace SMTP] BCC Email delivered to {len(bcc_emails)} recipient(s) (from {user})")
+        return True
+    except Exception as e:
+        logger.warning(f"[Google Workspace SMTP] BCC Dispatch failed: {e}")
+        _trip_circuit_breaker("google_workspace", duration_seconds=60.0, reason=f"SMTP error: {str(e)[:100]}")
+        return False
+
+
+def _send_raw_custom_html_bcc(
+    bcc_emails: list,
+    subject: str,
+    html_content: str,
+    force_provider: Optional[str] = None,
+) -> bool:
+    from_email = getattr(settings, "SMTP_FROM_EMAIL", "no-reply@dataxplore.club")
+    reply_to = getattr(settings, "SMTP_REPLY_TO", "deepak.gupta@mile.education")
+
+    if force_provider:
+        provider_order = [force_provider.lower().strip()]
+    else:
+        pref = getattr(settings, "PRIMARY_EMAIL_PROVIDER", "hostinger").lower().strip()
+        provider_order = [pref] if pref in ["hostinger", "brevo", "smtp", "google_workspace"] else ["hostinger"]
+        for p in ["hostinger", "brevo", "smtp", "google_workspace"]:
+            if p not in provider_order:
+                provider_order.append(p)
+
+    for provider in provider_order:
+        if provider == "hostinger" and _try_hostinger_api_bcc(bcc_emails, subject, html_content):
+            return True
+        elif provider == "brevo" and _try_brevo_api_bcc(bcc_emails, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "smtp" and _try_smtp_dispatch_bcc(bcc_emails, subject, html_content, from_email, reply_to):
+            return True
+        elif provider == "google_workspace" and _try_google_workspace_smtp_dispatch_bcc(bcc_emails, subject, html_content, reply_to):
+            return True
+
+    logger.error(f"[BCC Dispatch Warning] Could not deliver BCC email batch of {len(bcc_emails)} recipients across providers.")
+    return False
+
+
+async def send_bcc_batch_email(
+    bcc_recipients: list,
+    subject: str,
+    html_content: str,
+    chunk_size: int = 50,
+    pacing_delay_seconds: float = 0.5,
+) -> int:
+    """
+    Dispatches announcement/broadcast email in BCC chunks (default 50 recipients per send).
+    Massively reduces provider quota consumption (e.g. 200 students = 4 sends instead of 200).
+    Returns total count of recipients reached.
+    """
+    import asyncio
+    clean_recipients = list(dict.fromkeys([e.strip() for e in bcc_recipients if e and "@" in e]))
+    if not clean_recipients:
+        return 0
+
+    chunks = [clean_recipients[i : i + chunk_size] for i in range(0, len(clean_recipients), chunk_size)]
+    total_chunks = len(chunks)
+    logger.info(f"[BCCBatch] Initiating BCC broadcast to {len(clean_recipients)} recipient(s) across {total_chunks} chunk(s) (chunk_size={chunk_size})...")
+
+    delivered_recipients = 0
+    for idx, chunk in enumerate(chunks):
+        if idx > 0 and pacing_delay_seconds > 0:
+            await asyncio.sleep(pacing_delay_seconds)
+
+        success = await asyncio.to_thread(
+            _send_raw_custom_html_bcc,
+            chunk,
+            subject,
+            html_content,
+        )
+        if success:
+            delivered_recipients += len(chunk)
+
+    logger.info(f"[BCCBatch] Completed broadcast: {delivered_recipients}/{len(clean_recipients)} student(s) reached.")
+    return delivered_recipients
 
 
 def send_verification_email(to_email: str, full_name: str, otp: str) -> bool:

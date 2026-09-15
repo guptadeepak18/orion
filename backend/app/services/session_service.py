@@ -278,7 +278,7 @@ async def notify_session_students(
     import time as time_module
     from app.core.database import AsyncSessionLocal
     from app.services.email_template_service import get_template_by_event, render_placeholders
-    from app.services.email_service import send_custom_html_email_batch
+    from app.services.email_service import send_custom_html_email_batch, send_bcc_batch_email, send_custom_html_email
 
     now_ts = time_module.time()
     cache_key = (session_id, event_key)
@@ -428,9 +428,9 @@ async def notify_session_students(
         "reason": cancellation_reason or "Administrative timetable adjustment",
     }
 
-    batch_items = []
+    total_dispatched = 0
 
-    # 1. Add faculty recipient first if available
+    # 1. Send personal notification to assigned faculty first
     if fac_email:
         fac_ctx = dict(base_context)
         fac_ctx["recipient_name"] = fac_name
@@ -438,28 +438,42 @@ async def notify_session_students(
         fac_ctx["intro_text"] = f"Dear Professor {fac_name}, this is an official notification regarding your class schedule:"
         fac_sub = render_placeholders(raw_subject, fac_ctx)
         fac_html = render_placeholders(raw_html, fac_ctx)
-        batch_items.append({
-            "email": fac_email,
-            "subject": fac_sub,
-            "html": fac_html,
-        })
+        try:
+            if send_custom_html_email(fac_email, fac_sub, fac_html):
+                total_dispatched += 1
+        except Exception as f_err:
+            logger.warning(f"Failed to deliver faculty timetable email to {fac_email}: {f_err}")
 
-    # 2. Add students
-    for r in recipients_list:
-        ctx = dict(base_context)
-        ctx["recipient_name"] = r["name"]
-        ctx["full_name"] = r["name"]
-        sub = render_placeholders(raw_subject, ctx)
-        html = render_placeholders(raw_html, ctx)
-        batch_items.append({
-            "email": r["email"],
-            "subject": sub,
-            "html": html,
-        })
+    # 2. Deliver to students via high-efficiency BCC batching if batch has > 3 students
+    if len(recipients_list) > 3:
+        st_ctx = dict(base_context)
+        st_ctx["recipient_name"] = "Student"
+        st_ctx["full_name"] = "Student"
+        st_sub = render_placeholders(raw_subject, st_ctx)
+        st_html = render_placeholders(raw_html, st_ctx)
+        student_emails = [r["email"] for r in recipients_list]
+        st_dispatched = await send_bcc_batch_email(student_emails, st_sub, st_html, chunk_size=50)
+        total_dispatched += st_dispatched
+        logger.info(f"Successfully broadcast timetable [{event_key}] to {st_dispatched}/{len(student_emails)} student(s) via BCC batching.")
+    else:
+        batch_items = []
+        for r in recipients_list:
+            ctx = dict(base_context)
+            ctx["recipient_name"] = r["name"]
+            ctx["full_name"] = r["name"]
+            sub = render_placeholders(raw_subject, ctx)
+            html = render_placeholders(raw_html, ctx)
+            batch_items.append({
+                "email": r["email"],
+                "subject": sub,
+                "html": html,
+            })
+        if batch_items:
+            st_dispatched = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
+            total_dispatched += st_dispatched
 
-    dispatched_count = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
-    logger.info(f"Successfully dispatched {dispatched_count}/{len(batch_items)} timetable [{event_key}] notification email(s) for session '{subj_name}'.")
-    return dispatched_count
+    logger.info(f"Completed timetable [{event_key}] notification: {total_dispatched} total deliveries for session '{subj_name}'.")
+    return total_dispatched
 
 
 async def create_session(

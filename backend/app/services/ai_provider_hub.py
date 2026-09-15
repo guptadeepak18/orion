@@ -81,6 +81,28 @@ class AIProviderHub:
             configured.append("siliconflow")
         if settings.HUGGINGFACE_API_KEY:
             configured.append("huggingface")
+        if getattr(settings, "GLADIA_API_KEY", ""):
+            configured.append("gladia")
+        if getattr(settings, "ASSEMBLYAI_API_KEY", ""):
+            configured.append("assemblyai")
+        if getattr(settings, "TAVILY_API_KEY", ""):
+            configured.append("tavily")
+        if getattr(settings, "EXA_API_KEY", ""):
+            configured.append("exa")
+        if getattr(settings, "SERPER_API_KEY", ""):
+            configured.append("serper")
+        if getattr(settings, "ELEVENLABS_API_KEY", ""):
+            configured.append("elevenlabs")
+        if getattr(settings, "CARTESIA_API_KEY", ""):
+            configured.append("cartesia")
+        if getattr(settings, "APIFY_API_TOKEN", ""):
+            configured.append("apify")
+        if getattr(settings, "NVIDIA_API_KEY", ""):
+            configured.append("nvidia")
+        if getattr(settings, "UPSTAGE_API_KEY", ""):
+            configured.append("upstage")
+        if getattr(settings, "OLLAMA_BASE_URL", ""):
+            configured.append("ollama")
         if getattr(settings, "POLLINATIONS_ENABLED", True):
             configured.append("pollinations")
         return configured
@@ -132,6 +154,9 @@ class AIProviderHub:
                 elif res.status_code == 402:
                     set_backoff(provider_name, seconds=86400.0)
                     raise RuntimeError(f"{provider_name} requires payment/billing. Paused for 24h.")
+                elif res.status_code == 410:
+                    set_backoff(provider_name, seconds=86400.0)
+                    raise RuntimeError(f"{provider_name} API retired by vendor (HTTP 410). Paused for 24h.")
                 elif res.status_code == 413:
                     raise RuntimeError(f"{provider_name} returned 413 Request Too Large.")
                 else:
@@ -371,6 +396,114 @@ class AIProviderHub:
             timeout=30.0,
         )
 
+    @classmethod
+    async def call_ollama(
+        cls,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2500,
+        response_format: Optional[Dict[str, Any]] = None,
+        timeout: float = 45.0,
+    ) -> Dict[str, Any]:
+        """Calls Localhost Ollama server using its OpenAI-compatible v1 endpoint."""
+        base_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434") or "http://127.0.0.1:11434"
+        endpoint = f"{base_url.rstrip('/')}/v1"
+        target_model = model or getattr(settings, "OLLAMA_MODEL", "gemma4:latest") or "gemma4:latest"
+        api_key = getattr(settings, "OLLAMA_API_KEY", "ollama") or "ollama"
+        return await cls.call_openai_compatible(
+            provider_name="ollama",
+            base_url=endpoint,
+            api_key=api_key,
+            model=target_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout=timeout,
+        )
+
+    @classmethod
+    async def call_nvidia(
+        cls,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2500,
+        response_format: Optional[Dict[str, Any]] = None,
+        timeout: float = 40.0,
+    ) -> Dict[str, Any]:
+        """Calls NVIDIA NIM / API Catalog using accelerated enterprise GPU clusters."""
+        key = getattr(settings, "NVIDIA_API_KEY", "")
+        if not key:
+            raise ValueError("NVIDIA API Key not configured.")
+        target_model = model or getattr(settings, "NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct") or "meta/llama-3.2-11b-vision-instruct"
+        return await cls.call_openai_compatible(
+            provider_name="nvidia",
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=key,
+            model=target_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout=timeout,
+        )
+
+    @classmethod
+    async def call_upstage(
+        cls,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2500,
+        response_format: Optional[Dict[str, Any]] = None,
+        timeout: float = 35.0,
+    ) -> Dict[str, Any]:
+        """Calls Upstage Solar API for layout-aware document reasoning and case analysis."""
+        key = getattr(settings, "UPSTAGE_API_KEY", "")
+        if not key:
+            raise ValueError("Upstage API Key not configured.")
+        target_model = model or getattr(settings, "UPSTAGE_MODEL", "solar-mini") or "solar-mini"
+        return await cls.call_openai_compatible(
+            provider_name="upstage",
+            base_url="https://api.upstage.ai/v1/solar",
+            api_key=key,
+            model=target_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout=timeout,
+        )
+
+    @classmethod
+    async def call_ai21(
+        cls,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2500,
+        response_format: Optional[Dict[str, Any]] = None,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
+        """Calls AI21 Labs API with automatic fallback circuit breaker."""
+        key = getattr(settings, "AI21_API_KEY", "")
+        if not key:
+            raise ValueError("AI21 API Key not configured.")
+        target_model = model or "jamba-1.5-mini"
+        return await cls.call_openai_compatible(
+            provider_name="ai21",
+            base_url="https://api.ai21.com/studio/v1",
+            api_key=key,
+            model=target_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout=timeout,
+        )
+
     # -------------------------------------------------------------
     # Vision & Multimodal OCR
     # -------------------------------------------------------------
@@ -448,6 +581,305 @@ class AIProviderHub:
                 logger.warning(f"Gemini Vision OCR failed: {e}")
 
         return ""
+
+    @classmethod
+    async def search_tavily(
+        cls,
+        query: str,
+        search_depth: str = "basic",
+        max_results: int = 5,
+        include_answer: bool = True,
+        timeout: float = 20.0,
+    ) -> Dict[str, Any]:
+        """
+        Real-time web search and live grounding using Tavily AI Search API.
+        Returns AI-synthesized answer and relevant URL sources.
+        """
+        api_key = getattr(settings, "TAVILY_API_KEY", "")
+        if not api_key:
+            return {"error": "TAVILY_API_KEY is not configured", "results": []}
+        if not is_available("tavily"):
+            return {"error": "Tavily circuit breaker active", "results": []}
+
+        url = "https://api.tavily.com/search"
+        payload = {
+            "api_key": api_key,
+            "query": query,
+            "search_depth": search_depth,
+            "include_answer": include_answer,
+            "max_results": max_results,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == 200:
+                    return res.json()
+                elif res.status_code == 429:
+                    set_backoff("tavily", 60.0)
+                    return {"error": "Rate limit exceeded (HTTP 429)", "results": []}
+                else:
+                    return {"error": f"Tavily returned HTTP {res.status_code}", "results": []}
+        except Exception as e:
+            logger.warning(f"Tavily search failed: {e}")
+            return {"error": str(e), "results": []}
+
+    @classmethod
+    async def search_exa(
+        cls,
+        query: str,
+        num_results: int = 5,
+        use_autoprompt: bool = True,
+        timeout: float = 20.0,
+    ) -> Dict[str, Any]:
+        """
+        Neural semantic search across academic papers, university syllabi, and HBS cases via Exa.ai.
+        """
+        api_key = getattr(settings, "EXA_API_KEY", "")
+        if not api_key:
+            return {"error": "EXA_API_KEY is not configured", "results": []}
+        if not is_available("exa"):
+            return {"error": "Exa circuit breaker active", "results": []}
+
+        url = "https://api.exa.ai/search"
+        headers = {
+            "x-api-key": api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "query": query,
+            "numResults": num_results,
+            "useAutoprompt": use_autoprompt,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    return res.json()
+                elif res.status_code == 429:
+                    set_backoff("exa", 60.0)
+                    return {"error": "Rate limit exceeded (HTTP 429)", "results": []}
+                else:
+                    return {"error": f"Exa returned HTTP {res.status_code}", "results": []}
+        except Exception as e:
+            logger.warning(f"Exa search failed: {e}")
+            return {"error": str(e), "results": []}
+
+    @classmethod
+    async def search_serper(
+        cls,
+        query: str,
+        num_results: int = 5,
+        search_type: str = "search",
+        timeout: float = 20.0,
+    ) -> Dict[str, Any]:
+        """
+        Live Google Search queries, Knowledge Graph extraction, and corporate intelligence via Serper.dev.
+        """
+        api_key = getattr(settings, "SERPER_API_KEY", "")
+        if not api_key:
+            return {"error": "SERPER_API_KEY is not configured", "organic": []}
+        if not is_available("serper"):
+            return {"error": "Serper circuit breaker active", "organic": []}
+
+        url = f"https://google.serper.dev/{search_type}"
+        headers = {
+            "X-API-KEY": api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "q": query,
+            "num": num_results,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    return res.json()
+                elif res.status_code == 429:
+                    set_backoff("serper", 60.0)
+                    return {"error": "Rate limit exceeded (HTTP 429)", "organic": []}
+                else:
+                    return {"error": f"Serper returned HTTP {res.status_code}", "organic": []}
+        except Exception as e:
+            logger.warning(f"Serper search failed: {e}")
+            return {"error": str(e), "organic": []}
+
+    @classmethod
+    async def text_to_speech_elevenlabs(
+        cls,
+        text: str,
+        voice_id: Optional[str] = None,
+        model_id: str = "eleven_flash_v2_5",
+        timeout: float = 30.0,
+    ) -> bytes:
+        """
+        Synthesize high-fidelity voice audio from text using ElevenLabs API.
+        Returns raw MPEG audio bytes.
+        """
+        api_key = getattr(settings, "ELEVENLABS_API_KEY", "")
+        if not api_key:
+            logger.warning("ELEVENLABS_API_KEY is not configured")
+            return b""
+        if not is_available("elevenlabs"):
+            logger.warning("ElevenLabs circuit breaker active")
+            return b""
+
+        target_voice = voice_id or getattr(settings, "ELEVENLABS_VOICE_ID", "CwhRBWXzGAHq8TQ4Fs17") or "CwhRBWXzGAHq8TQ4Fs17"
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{target_voice}"
+        headers = {
+            "xi-api-key": api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "text": text,
+            "model_id": model_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    return res.content
+                elif res.status_code == 429:
+                    set_backoff("elevenlabs", 60.0)
+                else:
+                    logger.warning(f"ElevenLabs TTS returned HTTP {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.warning(f"ElevenLabs TTS failed: {e}")
+        return b""
+
+    @classmethod
+    async def text_to_speech_cartesia(
+        cls,
+        text: str,
+        voice_id: Optional[str] = None,
+        model_id: str = "sonic-3.6",
+        timeout: float = 20.0,
+    ) -> bytes:
+        """
+        Ultra-low latency streaming voice synthesis via Cartesia Sonic API.
+        Returns raw WAV audio bytes.
+        """
+        api_key = getattr(settings, "CARTESIA_API_KEY", "")
+        if not api_key:
+            logger.warning("CARTESIA_API_KEY is not configured")
+            return b""
+        if not is_available("cartesia"):
+            logger.warning("Cartesia circuit breaker active")
+            return b""
+
+        target_voice = voice_id or getattr(settings, "CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091") or "a0e99841-438c-4a64-b679-ae501e7d6091"
+        url = "https://api.cartesia.ai/tts/bytes"
+        headers = {
+            "X-API-Key": api_key,
+            "Cartesia-Version": "2024-06-10",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model_id": model_id,
+            "transcript": text,
+            "voice": {
+                "mode": "id",
+                "id": target_voice,
+            },
+            "output_format": {
+                "container": "wav",
+                "encoding": "pcm_s16le",
+                "sample_rate": 24000,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    return res.content
+                elif res.status_code == 429:
+                    set_backoff("cartesia", 60.0)
+                else:
+                    logger.warning(f"Cartesia TTS returned HTTP {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.warning(f"Cartesia TTS failed: {e}")
+        return b""
+
+    @classmethod
+    async def transcribe_assemblyai(
+        cls,
+        audio_url: str,
+        timeout: float = 60.0,
+    ) -> Dict[str, Any]:
+        """
+        Transcribes audio using AssemblyAI with speaker diarization and chapter summaries.
+        Submits job and polls until complete.
+        """
+        api_key = getattr(settings, "ASSEMBLYAI_API_KEY", "")
+        if not api_key:
+            return {"error": "ASSEMBLYAI_API_KEY is not configured", "text": ""}
+        if not is_available("assemblyai"):
+            return {"error": "AssemblyAI circuit breaker active", "text": ""}
+
+        headers = {
+            "Authorization": api_key,
+            "Content-Type": "application/json",
+        }
+        url = "https://api.assemblyai.com/v2/transcript"
+        payload = {
+            "audio_url": audio_url,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code != 200:
+                    return {"error": f"AssemblyAI submission error: {res.text}", "text": ""}
+                transcript_id = res.json().get("id")
+                # Poll for completion
+                for _ in range(30):
+                    await asyncio.sleep(2.0)
+                    poll_res = await client.get(f"{url}/{transcript_id}", headers=headers)
+                    if poll_res.status_code == 200:
+                        data = poll_res.json()
+                        status = data.get("status")
+                        if status == "completed":
+                            return data
+                        elif status == "error":
+                            return {"error": data.get("error", "Transcription failed"), "text": ""}
+                return {"error": "Transcription timed out", "text": ""}
+        except Exception as e:
+            logger.warning(f"AssemblyAI transcription failed: {e}")
+            return {"error": str(e), "text": ""}
+
+    @classmethod
+    async def run_apify_actor(
+        cls,
+        actor_id: str,
+        run_input: Dict[str, Any],
+        timeout: float = 45.0,
+    ) -> Dict[str, Any]:
+        """
+        Executes an Apify cloud actor (e.g. web scraper, job crawler) synchronously and returns dataset items.
+        """
+        token = getattr(settings, "APIFY_API_TOKEN", "")
+        if not token:
+            return {"error": "APIFY_API_TOKEN is not configured", "items": []}
+        if not is_available("apify"):
+            return {"error": "Apify circuit breaker active", "items": []}
+
+        url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, headers=headers, json=run_input)
+                if res.status_code in (200, 201):
+                    return {"items": res.json()}
+                elif res.status_code == 429:
+                    set_backoff("apify", 60.0)
+                    return {"error": "Rate limit exceeded (HTTP 429)", "items": []}
+                else:
+                    return {"error": f"Apify returned HTTP {res.status_code}: {res.text}", "items": []}
+        except Exception as e:
+            logger.warning(f"Apify actor execution failed: {e}")
+            return {"error": str(e), "items": []}
 
 
 # Singleton instance

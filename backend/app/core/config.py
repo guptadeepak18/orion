@@ -61,16 +61,32 @@ class Settings(BaseSettings):
     BAIDU_API_KEY: str = os.getenv("BAIDU_API_KEY", "")
     TENCENT_API_KEY: str = os.getenv("TENCENT_API_KEY", "")
 
-    # Embeddings, Audio & Community
+    # Embeddings, Audio, Web Search & Community
     HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
     VOYAGE_API_KEY: str = os.getenv("VOYAGE_API_KEY", "")
     JINA_API_KEY: str = os.getenv("JINA_API_KEY", "")
     GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
+    ASSEMBLYAI_API_KEY: str = os.getenv("ASSEMBLYAI_API_KEY", "")
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
+    EXA_API_KEY: str = os.getenv("EXA_API_KEY", "")
+    SERPER_API_KEY: str = os.getenv("SERPER_API_KEY", "")
+    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
+    ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "CwhRBWXzGAHq8TQ4Fs17")
+    CARTESIA_API_KEY: str = os.getenv("CARTESIA_API_KEY", "")
+    CARTESIA_VOICE_ID: str = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091")
+    APIFY_API_TOKEN: str = os.getenv("APIFY_API_TOKEN", "")
+    NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY", "")
+    NVIDIA_MODEL: str = os.getenv("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
+    UPSTAGE_API_KEY: str = os.getenv("UPSTAGE_API_KEY", "")
+    UPSTAGE_MODEL: str = os.getenv("UPSTAGE_MODEL", "solar-mini")
+    AI21_API_KEY: str = os.getenv("AI21_API_KEY", "")
+    AI21_AGENT_ID: str = os.getenv("AI21_AGENT_ID", "")
+    AI21_USER_ID: str = os.getenv("AI21_USER_ID", "")
     POLLINATIONS_ENABLED: bool = True
 
-    OLLAMA_BASE_URL: str = "https://ollama.com"
-    OLLAMA_MODEL: str = "gemma4:31b"
-    OLLAMA_API_KEY: str = "50b753f0964f41c2bef750dcaac3966d.rJ4R2dCwIVFM8SZUk4oULy1T"
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma4:latest")
+    OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", "")
     
     ENVIRONMENT: str = "production"
     DEV_NOTIFICATION_OVERRIDE_EMAIL: str = ""
@@ -110,6 +126,13 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = "no-reply@dataxplore.club"
     SMTP_REPLY_TO: str = "deepak.gupta@mile.education"
+
+    # Priority 4: Google Workspace Institutional SMTP Relay (2,000 emails/day failover)
+    GW_SMTP_HOST: str = "smtp.gmail.com"
+    GW_SMTP_PORT: int = 587
+    GW_SMTP_USER: str = "deepak.gupta@mile.education"
+    GW_SMTP_PASSWORD: str = ""
+    GW_SMTP_FROM_EMAIL: str = "deepak.gupta@mile.education"
 
     @model_validator(mode="after")
     def sync_credentials(self):

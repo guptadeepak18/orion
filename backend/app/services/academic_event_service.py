@@ -248,7 +248,7 @@ async def notify_event_students(event_id: uuid.UUID, force: bool = False) -> int
     import time as time_module
     from app.core.database import AsyncSessionLocal
     from app.services.email_template_service import get_template_by_event, render_placeholders
-    from app.services.email_service import send_custom_html_email_batch
+    from app.services.email_service import send_custom_html_email_batch, send_bcc_batch_email
 
     now_ts = time_module.time()
     if not force and event_id in _recent_event_notifications and (now_ts - _recent_event_notifications[event_id]) < 30:
@@ -381,22 +381,35 @@ async def notify_event_students(event_id: uuid.UUID, force: bool = False) -> int
         "support_email": "deepak.gupta@mile.education",
     }
 
-    batch_items = []
-    for r in recipients_list:
-        ctx = dict(base_context)
-        ctx["full_name"] = r["name"]
-        ctx["recipient_name"] = r["name"]
-        sub = render_placeholders(raw_subject, ctx)
-        html = render_placeholders(raw_html, ctx)
-        batch_items.append({
-            "email": r["email"],
-            "subject": sub,
-            "html": html,
-        })
+    if len(recipients_list) > 3:
+        # High-efficiency BCC Batching: groups students into chunks of 50
+        # Reduces provider quota consumption by ~95% while safeguarding recipient privacy.
+        b_ctx = dict(base_context)
+        b_ctx["full_name"] = "Student"
+        b_ctx["recipient_name"] = "Student"
+        sub = render_placeholders(raw_subject, b_ctx)
+        html = render_placeholders(raw_html, b_ctx)
+        student_emails = [r["email"] for r in recipients_list]
+        dispatched_count = await send_bcc_batch_email(student_emails, sub, html, chunk_size=50)
+        logger.info(f"Successfully broadcast event '{ev_title}' to {dispatched_count}/{len(student_emails)} student(s) via BCC batching.")
+        return dispatched_count
+    else:
+        batch_items = []
+        for r in recipients_list:
+            ctx = dict(base_context)
+            ctx["full_name"] = r["name"]
+            ctx["recipient_name"] = r["name"]
+            sub = render_placeholders(raw_subject, ctx)
+            html = render_placeholders(raw_html, ctx)
+            batch_items.append({
+                "email": r["email"],
+                "subject": sub,
+                "html": html,
+            })
 
-    dispatched_count = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
-    logger.info(f"Successfully dispatched {dispatched_count}/{len(batch_items)} notification email(s) for event '{ev_title}'.")
-    return dispatched_count
+        dispatched_count = await send_custom_html_email_batch(batch_items, pacing_delay_seconds=0.25)
+        logger.info(f"Successfully dispatched {dispatched_count}/{len(batch_items)} notification email(s) for event '{ev_title}'.")
+        return dispatched_count
 
 
 async def update_academic_event(
