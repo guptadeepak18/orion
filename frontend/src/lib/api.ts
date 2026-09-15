@@ -1,6 +1,20 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  // If explicitly configured and not pointing to the firewall-blocked *.run.app domain, use it
+  if (envUrl && !envUrl.includes('run.app')) {
+    return envUrl;
+  }
+  // In browser environments, always prefer same-origin relative path /api/v1
+  // This completely bypasses institutional firewalls, proxy blocks, and CORS preflight
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return '/api/v1';
+  }
+  return 'https://dataxplore.club/api/v1';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

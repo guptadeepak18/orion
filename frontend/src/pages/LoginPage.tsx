@@ -15,7 +15,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, extractApiErrorMessage } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { CosmicBackground } from '../components/CosmicBackground';
@@ -64,12 +64,8 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      const detail =
-        err.response?.data?.detail ||
-        err.response?.data?.message ||
-        err.message ||
-        'Login failed. Please check your credentials or network connection.';
-      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      const message = extractApiErrorMessage(err, 'Login failed. Please check your credentials.');
+      setError(message);
     } finally {
       setLoading(false);
     }
