@@ -54,17 +54,36 @@ export function useSessionWebSocket(
         if (event.data === 'pong') return;
         try {
           const parsed: WebSocketEvent = JSON.parse(event.data);
-          
-          // Instant automated TanStack Query Invalidation
-          if (parsed.session_id) {
-            queryClient.invalidateQueries({ queryKey: ['hyperbuild-details', parsed.session_id] });
-            queryClient.invalidateQueries({ queryKey: ['student-hyperbuild', parsed.session_id] });
-          }
-          if (parsed.data?.activity_id) {
-            queryClient.invalidateQueries({ queryKey: ['hyperbuild-roster', parsed.data.activity_id] });
-            queryClient.invalidateQueries({ queryKey: ['hyperbuild-audit', parsed.data.activity_id] });
-          }
-          queryClient.invalidateQueries({ queryKey: ['sessions'] });
+
+          // Add client jitter (100ms - 1000ms) to prevent the "thundering herd"
+          // where 70+ students on the same campus Wi-Fi simultaneously bombard the API
+          const jitterMs = Math.floor(Math.random() * 900) + 100;
+          setTimeout(() => {
+            if (parsed.session_id) {
+              queryClient.invalidateQueries({
+                queryKey: ['hyperbuild-details', parsed.session_id],
+                refetchType: 'active',
+              });
+              queryClient.invalidateQueries({
+                queryKey: ['student-hyperbuild', parsed.session_id],
+                refetchType: 'active',
+              });
+            }
+            if (parsed.data?.activity_id) {
+              queryClient.invalidateQueries({
+                queryKey: ['hyperbuild-roster', parsed.data.activity_id],
+                refetchType: 'active',
+              });
+              queryClient.invalidateQueries({
+                queryKey: ['hyperbuild-audit', parsed.data.activity_id],
+                refetchType: 'active',
+              });
+            }
+            queryClient.invalidateQueries({
+              queryKey: ['sessions'],
+              refetchType: 'active',
+            });
+          }, jitterMs);
 
           if (onEvent) {
             onEvent(parsed);
