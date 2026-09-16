@@ -158,8 +158,11 @@ export function extractApiErrorMessage(err: any, fallbackMessage = 'An unexpecte
   if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
     return 'The server took too long to respond. Please try again.';
   }
+  if (err?.response?.status === 429 || (err.message && err.message.toLowerCase().includes('rate'))) {
+    return 'The server is experiencing high traffic. Please wait 10-15 seconds and try again.';
+  }
   if (err.message === 'Network Error' || (!err.response && !err.status && err.request)) {
-    return 'Network error: Unable to reach the server. Please check your internet connection and try again.';
+    return 'Unable to connect to the server right now. The server may be busy or undergoing high traffic. Please wait a few moments and try again.';
   }
   const data = err?.response?.data;
   if (typeof data === 'string' && data.trim()) return data;

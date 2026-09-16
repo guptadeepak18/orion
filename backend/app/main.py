@@ -105,16 +105,36 @@ async def sanitize_empty_query_params(request: Request, call_next):
 
 
 from fastapi.encoders import jsonable_encoder
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 def _get_cors_headers(request: Request) -> dict:
-    """Explicitly mirrors request origin for CORS headers to prevent browser masking 500s as Network Error."""
-    origin = request.headers.get("origin") or "*"
+    """Explicitly mirrors request origin for CORS headers to prevent browser masking errors as Network Error."""
+    origin = request.headers.get("origin")
+    if origin:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
     return {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "*",
         "Access-Control-Allow-Headers": "*",
     }
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    headers = _get_cors_headers(request)
+    if exc.headers:
+        headers.update(exc.headers)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail},
+        headers=headers,
+    )
 
 
 @app.exception_handler(RequestValidationError)

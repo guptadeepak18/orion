@@ -37,15 +37,15 @@ if db_url.startswith("sqlite"):
     )
 else:
     # Optimized connection pool for cloud PostgreSQL (Aiven Developer-1 cap: 20 max connections total across all services)
-    # Aiven background workers use 10-12 connections. 2 Cloud Run instances with max 4 connections each stay well within the cap.
+    # Aiven background workers use 8-10 connections. Cloud Run instances with 2 connections each stay strictly within the 20-connection cap.
     engine = create_async_engine(
         db_url,
         echo=False,
         future=True,
-        pool_size=3,
-        max_overflow=1,
-        pool_timeout=10.0,
-        pool_recycle=60,
+        pool_size=2,
+        max_overflow=0,
+        pool_timeout=5.0,
+        pool_recycle=30,
         pool_pre_ping=True,
         connect_args=connect_args,
     )
