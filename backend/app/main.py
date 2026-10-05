@@ -162,7 +162,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content=ErrorEnvelope(
             error=ErrorDetails(
                 code="INTERNAL_SERVER_ERROR",
-                message=str(exc) if settings.ENVIRONMENT == "local" else "An unexpected error occurred",
+                message=str(exc),
             )
         ).model_dump(),
         headers=_get_cors_headers(request),
@@ -172,6 +172,20 @@ from app.api.v1.websocket import router as ws_router
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
+
+
+@app.get(f"{settings.API_V1_STR}/test-db", tags=["Health"])
+async def test_db():
+    from app.core.database import AsyncSessionLocal, db_url
+    from sqlalchemy import text
+    try:
+        async with AsyncSessionLocal() as session:
+            r = await session.execute(text("SELECT 1"))
+            val = r.scalar()
+            return {"status": "ok", "result": val, "db_url_prefix": db_url[:35]}
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc(), "db_url_prefix": db_url[:35]}
 
 
 @app.get(f"{settings.API_V1_STR}", tags=["Health"])
