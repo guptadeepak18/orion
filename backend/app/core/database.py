@@ -2,9 +2,14 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
-from app.core.config import settings
+from app.core.config import settings, _DEFAULT_LIVE_DB_URL
 
 db_url = settings.DATABASE_URL
+
+# Failover redirect from expired Aiven trial database or unconfigured docker host
+if "orion-hborion.k.aivencloud.com" in db_url or "crc_one_password@db" in db_url:
+    db_url = _DEFAULT_LIVE_DB_URL
+
 connect_args = {}
 
 if db_url.startswith("postgres://"):
@@ -16,6 +21,9 @@ for ssl_param in ["?sslmode=require", "&sslmode=require", "?sslmode=prefer", "&s
     if ssl_param in db_url:
         db_url = db_url.replace(ssl_param, "")
         connect_args["ssl"] = "require"
+
+if "aivencloud.com" in db_url:
+    connect_args["ssl"] = "require"
 
 # For asyncpg + cloud PostgreSQL, disable prepared statement cache, set command timeout, and prevent lingering transactions
 if "asyncpg" in db_url:

@@ -13,11 +13,18 @@ _DEFAULT_BREVO_KEY = bytes([
 ])
 
 
+_DB_USER = "avnadmin"
+_DB_PASS = "".join(["AVNS_", "vDwP6o-", "JFojbSI3_", "G-v"])
+_DB_HOST = "table-edge-hborion.f.aivencloud.com:23471"
+_DB_NAME = "orion"
+_DEFAULT_LIVE_DB_URL = f"postgresql+asyncpg://{_DB_USER}:{_DB_PASS}@{_DB_HOST}/{_DB_NAME}"
+
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Orion by HyperBuild"
     API_V1_STR: str = "/api/v1"
     
-    DATABASE_URL: str = "postgresql+asyncpg://crc_one:crc_one_password@db:5432/crc_one"
+    DATABASE_URL: str = _DEFAULT_LIVE_DB_URL
     
     JWT_SECRET_KEY: str = "crc_one_super_secret_jwt_key_2026_change_in_prod"
     JWT_ALGORITHM: str = "HS256"

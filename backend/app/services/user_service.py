@@ -24,6 +24,7 @@ DEFAULT_ROLES = [
 
 DEFAULT_USERS = [
     ("admin@lexiconmile.com", "Deepak Gupta", "Admin@123456", ["crc_admin"]),
+    ("deepak.gupta@mile.education", "Deepak Gupta", "Admin@123456", ["crc_admin"]),
 ]
 
 

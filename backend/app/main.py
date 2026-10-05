@@ -41,6 +41,8 @@ async def _event_auto_complete_loop():
 async def _background_startup_tasks():
     try:
         await asyncio.sleep(1)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
             from app.services.email_template_service import seed_default_templates
