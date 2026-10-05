@@ -6,8 +6,8 @@ from app.core.config import settings, _DEFAULT_LIVE_DB_URL
 
 db_url = settings.DATABASE_URL
 
-# Failover redirect from expired Aiven trial database or unconfigured docker host
-if "orion-hborion.k.aivencloud.com" in db_url or "crc_one_password@db" in db_url:
+# Failover redirect from unconfigured docker host
+if "crc_one_password@db" in db_url:
     db_url = _DEFAULT_LIVE_DB_URL
 
 connect_args = {}
