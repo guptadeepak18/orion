@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.cache import cache
 from app.core.permissions import get_current_token_payload, require_permission
 from app.schemas.student_registration import (
     StudentRegistrationResponse,
@@ -59,6 +60,7 @@ async def approve_registration(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await cache.invalidate_tags("dashboard")
     return ResponseEnvelope(data=StudentRegistrationResponse.model_validate(reg))
 
 
@@ -81,6 +83,7 @@ async def reject_registration(
         reg = await student_registration_service.reject_registration(db, reg_id, reason, reviewer_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await cache.invalidate_tags("dashboard")
     return ResponseEnvelope(data=StudentRegistrationResponse.model_validate(reg))
 
 

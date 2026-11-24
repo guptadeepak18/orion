@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 
 from app.core.database import get_db
+from app.core.cache import cache
 from app.core.permissions import require_permission, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.schemas.academic import (
@@ -45,6 +46,7 @@ class BatchStudentAssignRequest(BaseModel):
 )
 async def create_program(p_in: ProgramCreate, db: AsyncSession = Depends(get_db)):
     program = await academic_service.create_program(db, p_in)
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=ProgramResponse.model_validate(program))
 
 
@@ -54,8 +56,13 @@ async def create_program(p_in: ProgramCreate, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(require_permission("academic", "view_own"))],
 )
 async def list_programs(db: AsyncSession = Depends(get_db)):
+    cached = cache.get("academic:programs")
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     programs = await academic_service.list_programs(db)
-    return ResponseEnvelope(data=[ProgramResponse.model_validate(p) for p in programs])
+    result = [ProgramResponse.model_validate(p) for p in programs]
+    await cache.set("academic:programs", result, ttl_seconds=300, tags=["academic"])
+    return ResponseEnvelope(data=result)
 
 
 @router.put(
@@ -69,6 +76,7 @@ async def update_program(
     program = await academic_service.update_program(db, program_id, p_in)
     if not program:
         raise HTTPException(status_code=404, detail="Program not found")
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=ProgramResponse.model_validate(program))
 
 
@@ -80,6 +88,7 @@ async def delete_program(program_id: UUID, db: AsyncSession = Depends(get_db)):
     success = await academic_service.delete_program(db, program_id)
     if not success:
         raise HTTPException(status_code=404, detail="Program not found")
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data={"deleted": True})
 
 
@@ -92,6 +101,7 @@ async def delete_program(program_id: UUID, db: AsyncSession = Depends(get_db)):
 )
 async def create_academic_year(ay_in: AcademicYearCreate, db: AsyncSession = Depends(get_db)):
     ay = await academic_service.create_academic_year(db, ay_in)
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=AcademicYearResponse.model_validate(ay))
 
 
@@ -101,8 +111,13 @@ async def create_academic_year(ay_in: AcademicYearCreate, db: AsyncSession = Dep
     dependencies=[Depends(require_permission("academic", "view_own"))],
 )
 async def list_academic_years(db: AsyncSession = Depends(get_db)):
+    cached = cache.get("academic:years")
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     years = await academic_service.list_academic_years(db)
-    return ResponseEnvelope(data=[AcademicYearResponse.model_validate(y) for y in years])
+    result = [AcademicYearResponse.model_validate(y) for y in years]
+    await cache.set("academic:years", result, ttl_seconds=300, tags=["academic"])
+    return ResponseEnvelope(data=result)
 
 
 # Semesters
@@ -114,6 +129,7 @@ async def list_academic_years(db: AsyncSession = Depends(get_db)):
 )
 async def create_semester(sem_in: SemesterCreate, db: AsyncSession = Depends(get_db)):
     sem = await academic_service.create_semester(db, sem_in)
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=SemesterResponse.model_validate(sem))
 
 
@@ -125,8 +141,14 @@ async def create_semester(sem_in: SemesterCreate, db: AsyncSession = Depends(get
 async def list_semesters(
     program_id: Optional[UUID] = Query(None), db: AsyncSession = Depends(get_db)
 ):
+    cache_key = f"academic:semesters:{program_id or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     sems = await academic_service.list_semesters(db, program_id)
-    return ResponseEnvelope(data=[SemesterResponse.model_validate(s) for s in sems])
+    result = [SemesterResponse.model_validate(s) for s in sems]
+    await cache.set(cache_key, result, ttl_seconds=300, tags=["academic"])
+    return ResponseEnvelope(data=result)
 
 
 # Batches
@@ -138,6 +160,7 @@ async def list_semesters(
 )
 async def create_batch(b_in: BatchCreate, db: AsyncSession = Depends(get_db)):
     batch = await academic_service.create_batch(db, b_in)
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=BatchResponse.model_validate(batch))
 
 
@@ -149,8 +172,14 @@ async def create_batch(b_in: BatchCreate, db: AsyncSession = Depends(get_db)):
 async def list_batches(
     program_id: Optional[UUID] = Query(None), db: AsyncSession = Depends(get_db)
 ):
+    cache_key = f"academic:batches:{program_id or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     batches = await academic_service.list_batches(db, program_id)
-    return ResponseEnvelope(data=[BatchResponse.model_validate(b) for b in batches])
+    result = [BatchResponse.model_validate(b) for b in batches]
+    await cache.set(cache_key, result, ttl_seconds=300, tags=["academic"])
+    return ResponseEnvelope(data=result)
 
 
 @router.put(
@@ -164,6 +193,7 @@ async def update_batch(
     batch = await academic_service.update_batch(db, batch_id, b_in)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data=BatchResponse.model_validate(batch))
 
 
@@ -175,6 +205,7 @@ async def delete_batch(batch_id: UUID, db: AsyncSession = Depends(get_db)):
     success = await academic_service.delete_batch(db, batch_id)
     if not success:
         raise HTTPException(status_code=404, detail="Batch not found")
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data={"deleted": True})
 
 
@@ -700,6 +731,7 @@ async def assign_batch_students(
 )
 async def create_division(d_in: DivisionCreate, db: AsyncSession = Depends(get_db)):
     division = await academic_service.create_division(db, d_in)
+    await cache.invalidate_tags("academic")
     prog = await academic_service.get_program(db, division.program_id)
     resp = DivisionResponse.model_validate(division)
     if prog:
@@ -715,6 +747,10 @@ async def create_division(d_in: DivisionCreate, db: AsyncSession = Depends(get_d
 async def list_divisions(
     program_id: Optional[UUID] = Query(None), db: AsyncSession = Depends(get_db)
 ):
+    cache_key = f"academic:divisions:{program_id or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     divisions = await academic_service.list_divisions(db, program_id=program_id)
     res = []
     for d in divisions:
@@ -722,6 +758,7 @@ async def list_divisions(
         if d.program:
             r.program_name = d.program.name
         res.append(r)
+    await cache.set(cache_key, res, ttl_seconds=300, tags=["academic"])
     return ResponseEnvelope(data=res)
 
 
@@ -736,6 +773,7 @@ async def update_division(
     division = await academic_service.update_division(db, division_id, d_in)
     if not division:
         raise HTTPException(status_code=404, detail="Division not found")
+    await cache.invalidate_tags("academic")
     resp = DivisionResponse.model_validate(division)
     if division.program:
         resp.program_name = division.program.name
@@ -750,6 +788,7 @@ async def delete_division(division_id: UUID, db: AsyncSession = Depends(get_db))
     success = await academic_service.delete_division(db, division_id)
     if not success:
         raise HTTPException(status_code=404, detail="Division not found")
+    await cache.invalidate_tags("academic")
     return ResponseEnvelope(data={"deleted": True})
 
 

@@ -20,12 +20,8 @@ from app.schemas.dashboard import (
 async def get_dashboard_summary(db: AsyncSession) -> DashboardSummaryResponse:
     today = date.today()
 
-    # 1. Programs count
-    stmt_prog = select(func.count()).select_from(Program).where(Program.is_active == True)
-    res_prog = await db.execute(stmt_prog)
-    programs_count = res_prog.scalar_one() or 0
-
-    # 2. Faculty count (Active non-deleted internal + external faculty)
+    # Consolidated single roundtrip query using scalar subqueries to eliminate the 7-query waterfall across WAN
+    stmt_prog = select(func.count()).select_from(Program).where(Program.is_active == True).scalar_subquery()
     stmt_fac_ext = (
         select(func.count())
         .select_from(FacultyExternal)
@@ -34,10 +30,8 @@ async def get_dashboard_summary(db: AsyncSession) -> DashboardSummaryResponse:
             FacultyExternal.is_archived == False,
             FacultyExternal.is_active == True,
         )
+        .scalar_subquery()
     )
-    res_fac_ext = await db.execute(stmt_fac_ext)
-    fac_ext_count = res_fac_ext.scalar_one() or 0
-
     stmt_fac_int = (
         select(func.count())
         .select_from(FacultyInternal)
@@ -46,50 +40,45 @@ async def get_dashboard_summary(db: AsyncSession) -> DashboardSummaryResponse:
             FacultyInternal.is_archived == False,
             FacultyInternal.is_active == True,
         )
+        .scalar_subquery()
     )
-    res_fac_int = await db.execute(stmt_fac_int)
-    fac_int_count = res_fac_int.scalar_one() or 0
-
-    # 3. Scheduled sessions count
-    stmt_sess = select(func.count()).select_from(Session).where(Session.is_deleted == False)
-    res_sess = await db.execute(stmt_sess)
-    sessions_count = res_sess.scalar_one() or 0
-
-    # 4. Pending approvals count
-    stmt_app = select(func.count()).select_from(ApprovalAction).where(ApprovalAction.new_status == "pending")
-    res_app = await db.execute(stmt_app)
-    approvals_count = res_app.scalar_one() or 0
-
-    # 5. Sessions scheduled today
+    stmt_sess = select(func.count()).select_from(Session).where(Session.is_deleted == False).scalar_subquery()
+    stmt_app = select(func.count()).select_from(ApprovalAction).where(ApprovalAction.new_status == "pending").scalar_subquery()
     stmt_today = select(func.count()).select_from(Session).where(
         Session.session_date == today,
         Session.is_deleted == False,
         Session.status != "cancelled"
-    )
-    today_sessions_count = (await db.execute(stmt_today)).scalar_one() or 0
-
-    # 6. Pending student registrations
+    ).scalar_subquery()
     stmt_reg = select(func.count()).select_from(StudentRegistration).where(
         StudentRegistration.status == "pending_review"
-    )
-    pending_registrations_count = (await db.execute(stmt_reg)).scalar_one() or 0
-
-    # 7. Upcoming academic events
+    ).scalar_subquery()
     stmt_ev = select(func.count()).select_from(AcademicEvent).where(
         AcademicEvent.is_deleted == False,
         func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) >= today,
         AcademicEvent.status != "cancelled"
+    ).scalar_subquery()
+
+    consolidated_stmt = select(
+        stmt_prog.label("programs"),
+        stmt_fac_ext.label("fac_ext"),
+        stmt_fac_int.label("fac_int"),
+        stmt_sess.label("sessions"),
+        stmt_app.label("approvals"),
+        stmt_today.label("today_sessions"),
+        stmt_reg.label("registrations"),
+        stmt_ev.label("events"),
     )
-    upcoming_events_count = (await db.execute(stmt_ev)).scalar_one() or 0
+    res = await db.execute(consolidated_stmt)
+    row = res.one()
 
     return DashboardSummaryResponse(
-        active_programs_count=programs_count,
-        faculty_count=fac_ext_count + fac_int_count,
-        scheduled_sessions_count=sessions_count,
-        pending_approvals_count=approvals_count,
-        today_sessions_count=today_sessions_count,
-        pending_registrations_count=pending_registrations_count,
-        upcoming_events_count=upcoming_events_count,
+        active_programs_count=row.programs or 0,
+        faculty_count=(row.fac_ext or 0) + (row.fac_int or 0),
+        scheduled_sessions_count=row.sessions or 0,
+        pending_approvals_count=row.approvals or 0,
+        today_sessions_count=row.today_sessions or 0,
+        pending_registrations_count=row.registrations or 0,
+        upcoming_events_count=row.events or 0,
     )
 
 
@@ -123,56 +112,39 @@ async def get_student_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
 
     # Count enrolled subjects for this batch
     enrolled_count = 6
-    if student.batch_id:
-        from app.models.academic import SubjectBatch
-        sub_cnt = (
-            await db.execute(
-                select(func.count(SubjectBatch.id)).where(SubjectBatch.batch_id == student.batch_id)
-            )
-        ).scalar() or 0
-        if sub_cnt > 0:
-            enrolled_count = sub_cnt
-
-    # Count upcoming sessions
-    upcoming_count = 0
-    if student.batch_id:
-        from app.models.session import Session
-        sess_cnt = (
-            await db.execute(
-                select(func.count(Session.id)).where(
-                    Session.batch_id == student.batch_id,
-                    Session.is_deleted == False,
-                    Session.status.in_(["scheduled", "in_progress", "pending_review"])
-                )
-            )
-        ).scalar() or 0
-        upcoming_count = sess_cnt
-
-    # Count today's sessions for student
-    today_sessions_count = 0
-    if student.batch_id:
-        from datetime import date
-        today_date = date.today()
-        from app.models.session import Session
-        sess_today_cnt = (
-            await db.execute(
-                select(func.count(Session.id)).where(
-                    Session.batch_id == student.batch_id,
-                    Session.session_date == today_date,
-                    Session.is_deleted == False,
-                    Session.status != "cancelled"
-                )
-            )
-        ).scalar() or 0
-        today_sessions_count = sess_today_cnt
-
-    # Count active case studies
+    # Count enrolled subjects, upcoming sessions, today's sessions, and case studies in a single roundtrip
+    from app.models.academic import SubjectBatch
+    from app.models.session import Session
     from app.models.case_study import CaseStudy
-    case_cnt = (
-        await db.execute(
-            select(func.count(CaseStudy.id)).where(CaseStudy.is_deleted == False)
-        )
-    ).scalar() or 0
+    from datetime import date
+    today_date = date.today()
+
+    sub_sq = select(func.count(SubjectBatch.id)).where(SubjectBatch.batch_id == student.batch_id).scalar_subquery() if student.batch_id else select(func.coalesce(6, 6)).scalar_subquery()
+    sess_sq = select(func.count(Session.id)).where(
+        Session.batch_id == student.batch_id,
+        Session.is_deleted == False,
+        Session.status.in_(["scheduled", "in_progress", "pending_review"])
+    ).scalar_subquery() if student.batch_id else select(func.coalesce(0, 0)).scalar_subquery()
+    today_sq = select(func.count(Session.id)).where(
+        Session.batch_id == student.batch_id,
+        Session.session_date == today_date,
+        Session.is_deleted == False,
+        Session.status != "cancelled"
+    ).scalar_subquery() if student.batch_id else select(func.coalesce(0, 0)).scalar_subquery()
+    case_sq = select(func.count(CaseStudy.id)).where(CaseStudy.is_deleted == False).scalar_subquery()
+
+    consolidated_student_stmt = select(
+        sub_sq.label("sub_cnt"),
+        sess_sq.label("sess_cnt"),
+        today_sq.label("today_cnt"),
+        case_sq.label("case_cnt")
+    )
+    s_row = (await db.execute(consolidated_student_stmt)).one()
+    if student.batch_id and (s_row.sub_cnt or 0) > 0:
+        enrolled_count = s_row.sub_cnt
+    upcoming_count = s_row.sess_cnt or 0
+    today_sessions_count = s_row.today_cnt or 0
+    case_cnt = s_row.case_cnt or 0
 
     if enriched.total_sessions_conducted == 0:
         standing = "Classes Pending"
@@ -334,52 +306,64 @@ async def get_faculty_dashboard_summary(db: AsyncSession, user_id: Optional[UUID
         else:
             filter_clause = (Session.faculty_external_id == fac_id)
 
-        # Today's sessions
-        stmt_today = select(func.count(Session.id)).where(
+        # Consolidate faculty session, subject, and event counts into 1 roundtrip
+        sq_today = select(func.count(Session.id)).where(
             filter_clause,
             Session.session_date == today,
             Session.is_deleted == False,
             Session.status != "cancelled"
-        )
-        today_count = (await db.execute(stmt_today)).scalar() or 0
+        ).scalar_subquery()
 
-        # Upcoming sessions
-        stmt_up = select(func.count(Session.id)).where(
+        sq_up = select(func.count(Session.id)).where(
             filter_clause,
             Session.session_date >= today,
             Session.is_deleted == False,
             Session.status != "cancelled"
-        )
-        upcoming_count = (await db.execute(stmt_up)).scalar() or 0
+        ).scalar_subquery()
 
-        # Hyperbuild sessions
-        stmt_hyp = select(func.count(Session.id)).where(
+        sq_hyp = select(func.count(Session.id)).where(
             filter_clause,
             Session.session_type == "hyperbuild",
             Session.is_deleted == False
-        )
-        hyper_count = (await db.execute(stmt_hyp)).scalar() or 0
+        ).scalar_subquery()
 
-        # Active allocated subjects count from SubjectBatch
         if fac_type == "internal":
-            sub_stmt = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
+            sq_sub = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
                 SubjectBatch.faculty_internal_id == fac_id,
                 SubjectBatch.status == "active"
-            )
+            ).scalar_subquery()
         else:
-            sub_stmt = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
+            sq_sub = select(func.count(func.distinct(SubjectBatch.subject_id))).where(
                 SubjectBatch.faculty_external_id == fac_id,
                 SubjectBatch.status == "active"
-            )
-        subjects_cnt = (await db.scalar(sub_stmt)) or 0
+            ).scalar_subquery()
 
-    # Upcoming events
-    stmt_ev = select(func.count()).select_from(AcademicEvent).where(
-        AcademicEvent.is_deleted == False,
-        func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) >= today,
-        AcademicEvent.status != "cancelled",
-    )
-    events_count = (await db.execute(stmt_ev)).scalar() or 0
+        sq_ev = select(func.count()).select_from(AcademicEvent).where(
+            AcademicEvent.is_deleted == False,
+            func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) >= today,
+            AcademicEvent.status != "cancelled",
+        ).scalar_subquery()
+
+        fac_consolidated = select(
+            sq_today.label("today_cnt"),
+            sq_up.label("up_cnt"),
+            sq_hyp.label("hyp_cnt"),
+            sq_sub.label("sub_cnt"),
+            sq_ev.label("ev_cnt"),
+        )
+        frow = (await db.execute(fac_consolidated)).one()
+        today_count = frow.today_cnt or 0
+        upcoming_count = frow.up_cnt or 0
+        hyper_count = frow.hyp_cnt or 0
+        subjects_cnt = frow.sub_cnt or 0
+        events_count = frow.ev_cnt or 0
+    else:
+        stmt_ev = select(func.count()).select_from(AcademicEvent).where(
+            AcademicEvent.is_deleted == False,
+            func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date) >= today,
+            AcademicEvent.status != "cancelled",
+        )
+        events_count = (await db.execute(stmt_ev)).scalar() or 0
 
     return FacultyDashboardSummaryResponse(
         faculty_id=str(fac_id) if fac_id else None,

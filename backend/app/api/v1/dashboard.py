@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.cache import cache
 from app.core.permissions import require_role, get_current_token_payload
 from app.schemas.common import ResponseEnvelope
 from app.schemas.dashboard import (
@@ -23,7 +24,11 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
     dependencies=[Depends(require_role(["crc_admin", "crc_coordinator", "super_admin", "admin", "director", "finance", "approver", "reporting_readonly"]))],
 )
 async def get_summary(db: AsyncSession = Depends(get_db)):
+    cached = cache.get("dashboard:summary")
+    if cached is not None:
+        return ResponseEnvelope(data=cached)
     summary = await dashboard_service.get_dashboard_summary(db)
+    await cache.set("dashboard:summary", summary, ttl_seconds=30, tags=["dashboard"])
     return ResponseEnvelope(data=summary)
 
 
@@ -60,5 +65,10 @@ async def get_faculty_summary(
     response_model=ResponseEnvelope[ThoughtOfTheDayResponse],
 )
 async def get_thought_of_the_day(refresh: bool = Query(False, description="Force refresh thought via Gemini")):
+    if not refresh:
+        cached = cache.get("dashboard:thought")
+        if cached is not None:
+            return ResponseEnvelope(data=cached)
     data = await thought_service.get_thought_of_the_day(force_refresh=refresh)
+    await cache.set("dashboard:thought", data, ttl_seconds=1800, tags=["dashboard"])
     return ResponseEnvelope(data=data)
