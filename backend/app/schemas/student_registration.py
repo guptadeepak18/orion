@@ -165,3 +165,17 @@ class ApproveStudentRegistrationRequest(BaseModel):
     enrollment_no: Optional[str] = None
     specialization_major: Optional[str] = None
     specialization_minor: Optional[str] = None
+
+    @field_validator("program_id", "batch_id", "division_id", mode="before")
+    @classmethod
+    def empty_uuid_to_none(cls, v):
+        if v == "" or v == "null" or v == "undefined" or v is None:
+            return None
+        return v
+
+    @field_validator("roll_no", "enrollment_no", "specialization_minor", "specialization_major", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v

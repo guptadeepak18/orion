@@ -75,6 +75,17 @@ interface StudentRegistrationsPageProps {
   embedded?: boolean;
 }
 
+function formatErrorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+  }
+  if (typeof detail === 'object') return JSON.stringify(detail);
+  return fallback;
+}
+
 export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> = ({ embedded = false }) => {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('pending_review');
@@ -206,7 +217,16 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
   // Approve mutation
   const approveMutation = useMutation({
     mutationFn: async ({ regId, data }: { regId: string; data: typeof approvalForm }) => {
-      const res = await api.post(`/student-registrations/${regId}/approve`, data);
+      const payload = {
+        ...data,
+        division_id: data.division_id || null,
+        batch_id: data.batch_id || null,
+        program_id: data.program_id || null,
+        roll_no: data.roll_no || null,
+        enrollment_no: data.enrollment_no || null,
+        specialization_minor: data.specialization_minor || null,
+      };
+      const res = await api.post(`/student-registrations/${regId}/approve`, payload);
       return res.data.data;
     },
     onSuccess: () => {
@@ -219,7 +239,15 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to approve registration.');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+          : typeof detail === 'object' && detail !== null
+            ? JSON.stringify(detail)
+            : 'Failed to approve registration.';
+      setActionError(errorMsg);
     },
   });
 
@@ -239,7 +267,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to reject registration.');
+      setActionError(formatErrorMessage(err, 'Failed to reject registration.'));
     },
   });
 
@@ -254,7 +282,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to resend verification OTP.');
+      setActionError(formatErrorMessage(err, 'Failed to resend verification OTP.'));
     },
   });
 
@@ -271,7 +299,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to verify email manually.');
+      setActionError(formatErrorMessage(err, 'Failed to verify email manually.'));
     },
   });
 
@@ -288,7 +316,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to delete registration.');
+      setActionError(formatErrorMessage(err, 'Failed to delete registration.'));
     },
   });
 
@@ -304,7 +332,7 @@ export const StudentRegistrationsPage: React.FC<StudentRegistrationsPageProps> =
       setTimeout(() => setSuccessToast(null), 4000);
     },
     onError: (err: any) => {
-      setActionError(err.response?.data?.detail || 'Failed to purge stale registrations.');
+      setActionError(formatErrorMessage(err, 'Failed to purge stale registrations.'));
     },
   });
 
