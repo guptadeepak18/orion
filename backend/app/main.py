@@ -103,7 +103,15 @@ async def sanitize_empty_query_params(request: Request, call_next):
                 request.scope["query_string"] = "&".join(pairs).encode("latin-1")
         except Exception:
             pass
-    return await call_next(request)
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/") and response.status_code == 200:
+        # Vite assets are content-hashed; safe to cache at CDN/browser edge for 1 year
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+    elif path.startswith("/api/") and "Cache-Control" not in response.headers:
+        # Prevent edge CDNs from caching dynamic or authenticated API responses
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 from fastapi.encoders import jsonable_encoder
@@ -231,7 +239,12 @@ if os.path.exists(STATIC_DIR):
         target_file = os.path.join(STATIC_DIR, full_path)
         if full_path and os.path.exists(target_file) and os.path.isfile(target_file):
             media_type = "application/manifest+json" if full_path in ["manifest.json", "manifest.webmanifest"] else None
-            return FileResponse(target_file, media_type=media_type)
+            max_age = 3600 if full_path in ["manifest.json", "manifest.webmanifest"] else 86400
+            return FileResponse(
+                target_file,
+                media_type=media_type,
+                headers={"Cache-Control": f"public, max-age={max_age}"},
+            )
 
         # Serve index.html for all client-side routes (/dashboard, /login, /academic, etc.)
         index_file = os.path.join(STATIC_DIR, "index.html")
